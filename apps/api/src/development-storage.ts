@@ -45,6 +45,12 @@ interface DevelopmentStorageDependencies {
 
 const storageFileSystem: StorageFileSystem = { lstat, mkdir, open, unlink };
 
+interface ResolvedDevelopmentStorageDependencies {
+  fileSystem: StorageFileSystem;
+  getCurrentUid: () => number | undefined;
+  probeName: () => string;
+}
+
 function currentUid(): number | undefined {
   return typeof process.getuid === "function" ? process.getuid() : undefined;
 }
@@ -68,20 +74,20 @@ async function removeProbe(
   }
 }
 
-export async function bootstrapDevelopmentStorage(
+function resolveDependencies(
+  dependencies: DevelopmentStorageDependencies,
+): ResolvedDevelopmentStorageDependencies {
+  return {
+    fileSystem: { ...storageFileSystem, ...dependencies.fileSystem },
+    getCurrentUid: dependencies.getCurrentUid ?? currentUid,
+    probeName: dependencies.probeName ?? randomUUID,
+  };
+}
+
+async function validateDevelopmentStorage(
   dataDirectory: string,
-  dependencies: DevelopmentStorageDependencies = {},
+  { fileSystem, getCurrentUid, probeName }: ResolvedDevelopmentStorageDependencies,
 ): Promise<void> {
-  const fileSystem = { ...storageFileSystem, ...dependencies.fileSystem };
-  const getCurrentUid = dependencies.getCurrentUid ?? currentUid;
-  const probeName = dependencies.probeName ?? randomUUID;
-
-  try {
-    await fileSystem.mkdir(dataDirectory, { mode: 0o700, recursive: true });
-  } catch {
-    // lstat below differentiates an existing invalid target from initialization failure.
-  }
-
   let stats;
   try {
     stats = await fileSystem.lstat(dataDirectory);
@@ -120,4 +126,25 @@ export async function bootstrapDevelopmentStorage(
     await removeProbe(fileSystem, probePath, handle, created);
     throw new DevelopmentStorageError("write_probe");
   }
+}
+
+export async function checkDevelopmentStorage(
+  dataDirectory: string,
+  dependencies: DevelopmentStorageDependencies = {},
+): Promise<void> {
+  await validateDevelopmentStorage(dataDirectory, resolveDependencies(dependencies));
+}
+
+export async function bootstrapDevelopmentStorage(
+  dataDirectory: string,
+  dependencies: DevelopmentStorageDependencies = {},
+): Promise<void> {
+  const resolvedDependencies = resolveDependencies(dependencies);
+
+  try {
+    await resolvedDependencies.fileSystem.mkdir(dataDirectory, { mode: 0o700, recursive: true });
+  } catch {
+    // lstat below differentiates an existing invalid target from initialization failure.
+  }
+  await validateDevelopmentStorage(dataDirectory, resolvedDependencies);
 }

@@ -1,11 +1,22 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   bootstrapDevelopmentStorage,
+  checkDevelopmentStorage,
   DevelopmentStorageError,
 } from "./development-storage.js";
 
@@ -60,6 +71,18 @@ describe("bootstrapDevelopmentStorage", () => {
       bootstrapDevelopmentStorage(dataDirectory, { probeName: () => "collision" }),
     ).rejects.toMatchObject({ failure: "write_probe" });
     await expect(readFile(probePath, "utf8")).resolves.toBe("existing");
+  });
+
+  it("uses unique probes safely across concurrent live checks", async () => {
+    const root = await temporaryRoot();
+    const dataDirectory = path.join(root, "development");
+    await bootstrapDevelopmentStorage(dataDirectory);
+
+    await Promise.all(
+      Array.from({ length: 12 }, async () => checkDevelopmentStorage(dataDirectory)),
+    );
+
+    await expect(readdir(dataDirectory)).resolves.toEqual([]);
   });
 
   it("rejects a symbolic-link data directory without following it", async () => {

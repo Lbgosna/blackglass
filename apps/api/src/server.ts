@@ -1,6 +1,9 @@
 import { buildApp } from "./app.js";
 import { apiPortFromEnvironment, dataDirectoryFromEnvironment } from "./config.js";
-import { bootstrapDevelopmentStorage } from "./development-storage.js";
+import {
+  bootstrapDevelopmentStorage,
+  checkDevelopmentStorage,
+} from "./development-storage.js";
 
 const HOST = "127.0.0.1";
 
@@ -27,7 +30,12 @@ async function main(): Promise<void> {
     const dataDirectory = dataDirectoryFromEnvironment(process.env);
     await bootstrapDevelopmentStorage(dataDirectory);
 
-    app = buildApp({ getDevelopmentStorageReadiness: () => "ready" });
+    app = buildApp({
+      async getDevelopmentStorageReadiness() {
+        await checkDevelopmentStorage(dataDirectory);
+        return "ready" as const;
+      },
+    });
     process.once("SIGINT", () => void shutdown());
     process.once("SIGTERM", () => void shutdown());
     await app.listen({ host: HOST, port });
