@@ -97,6 +97,9 @@ export function ApplicationShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [desktopConsoleCollapsed, setDesktopConsoleCollapsed] = useState(false);
   const [mobileConsoleOpen, setMobileConsoleOpen] = useState(false);
+  const [desktopViewport, setDesktopViewport] = useState(
+    () => window.innerWidth >= DESKTOP_BREAKPOINT,
+  );
   const [consoleHeight, setConsoleHeight] = useState(() =>
     clampConsoleHeight(
       readStoredNumber(storage, CONSOLE_HEIGHT_STORAGE_KEY, DEFAULT_CONSOLE_HEIGHT),
@@ -136,6 +139,7 @@ export function ApplicationShell({
     const onResize = () => {
       const isDesktop = window.innerWidth >= DESKTOP_BREAKPOINT;
       const wasDesktopViewport = wasDesktop.current;
+      setDesktopViewport(isDesktop);
       if (isDesktop) {
         setSidebarWidth((current) =>
           clampSidebarWidth(
@@ -198,6 +202,16 @@ export function ApplicationShell({
     onChange: setConsoleHeight,
     value: consoleHeight,
   });
+  const { abortResize: abortSidebarResize, ...sidebarResizeHandlers } = sidebarResize;
+  const { abortResize: abortConsoleResize, ...consoleResizeHandlers } = consoleResize;
+
+  useEffect(() => {
+    if (!desktopSidebarOpen || !desktopViewport) abortSidebarResize();
+  }, [abortSidebarResize, desktopSidebarOpen, desktopViewport]);
+
+  useEffect(() => {
+    if (desktopConsoleCollapsed || !desktopViewport) abortConsoleResize();
+  }, [abortConsoleResize, desktopConsoleCollapsed, desktopViewport]);
 
   const style: ShellStyle = {
     "--shell-console-height": `${consoleHeight}px`,
@@ -232,7 +246,7 @@ export function ApplicationShell({
             aria-valuenow={Math.round(sidebarWidth)}
             className="shell-sidebar-resize absolute inset-y-0 right-0 z-10 w-2 translate-x-1/2 cursor-col-resize touch-none"
             role="separator"
-            {...sidebarResize}
+            {...sidebarResizeHandlers}
           />
         )}
       </aside>
@@ -303,7 +317,7 @@ export function ApplicationShell({
               aria-valuenow={Math.round(consoleHeight)}
               className="absolute inset-x-0 top-0 z-10 h-2 -translate-y-1/2 cursor-row-resize touch-none"
               role="separator"
-              {...consoleResize}
+              {...consoleResizeHandlers}
             />
           )}
           {desktopConsoleCollapsed ? (

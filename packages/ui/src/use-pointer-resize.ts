@@ -10,8 +10,11 @@ export interface PointerResizeOptions {
 }
 
 interface ResizeSession {
+  hadResizeClass: boolean;
   moved: boolean;
   pointerId: number;
+  previousCursor: string;
+  previousUserSelect: string;
   startCoordinate: number;
   startValue: number;
   target: HTMLElement;
@@ -29,8 +32,6 @@ export function usePointerResize({
   const pendingCoordinate = useRef<number | null>(null);
   const frame = useRef<number | null>(null);
   const suppressClick = useRef(false);
-  const previousCursor = useRef("");
-  const previousUserSelect = useRef("");
   const valueRef = useRef(value);
   const clampRef = useRef(clamp);
   const onChangeRef = useRef(onChange);
@@ -44,10 +45,20 @@ export function usePointerResize({
     [axis],
   );
 
-  const restoreDocument = useCallback(() => {
-    document.documentElement.classList.remove("shell-resizing");
-    document.body.style.cursor = previousCursor.current;
-    document.body.style.userSelect = previousUserSelect.current;
+  const restoreDocument = useCallback((active: ResizeSession) => {
+    document.documentElement.classList.toggle("shell-resizing", active.hadResizeClass);
+    document.body.style.cursor = active.previousCursor;
+    document.body.style.userSelect = active.previousUserSelect;
+  }, []);
+
+  const releaseCapture = useCallback((active: ResizeSession) => {
+    try {
+      if (active.target.hasPointerCapture?.(active.pointerId)) {
+        active.target.releasePointerCapture(active.pointerId);
+      }
+    } catch {
+      // The browser may release capture before cleanup reaches the element.
+    }
   }, []);
 
   const applyCoordinate = useCallback((coordinate: number) => {
@@ -70,59 +81,49 @@ export function usePointerResize({
       if (pendingCoordinate.current !== null) applyCoordinate(pendingCoordinate.current);
       cancelFrame();
       suppressClick.current = active.moved;
-      try {
-        if (active.target.hasPointerCapture?.(active.pointerId)) {
-          active.target.releasePointerCapture(active.pointerId);
-        }
-      } catch {
-        // The browser may release capture before pointercancel reaches React.
-      }
+      releaseCapture(active);
       session.current = null;
-      restoreDocument();
+      restoreDocument(active);
     },
-    [applyCoordinate, cancelFrame, restoreDocument],
+    [applyCoordinate, cancelFrame, releaseCapture, restoreDocument],
   );
 
-  useEffect(
-    () => () => {
-      const active = session.current;
-      cancelFrame();
-      if (active) {
-        try {
-          if (active.target.hasPointerCapture?.(active.pointerId)) {
-            active.target.releasePointerCapture(active.pointerId);
-          }
-        } catch {
-          // Cleanup must continue even if the capture was already lost.
-        }
-        restoreDocument();
-      }
-      session.current = null;
-    },
-    [cancelFrame, restoreDocument],
-  );
+  const abortResize = useCallback(() => {
+    const active = session.current;
+    cancelFrame();
+    suppressClick.current = false;
+    if (!active) return;
+    releaseCapture(active);
+    session.current = null;
+    restoreDocument(active);
+  }, [cancelFrame, releaseCapture, restoreDocument]);
+
+  useEffect(() => () => abortResize(), [abortResize]);
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
       if (event.button !== 0 || event.isPrimary === false || session.current) return;
       const target = event.currentTarget;
       session.current = {
+        hadResizeClass: document.documentElement.classList.contains("shell-resizing"),
         moved: false,
         pointerId: event.pointerId,
+        previousCursor: document.body.style.cursor,
+        previousUserSelect: document.body.style.userSelect,
         startCoordinate: coordinateFor(event),
         startValue: valueRef.current,
         target,
       };
-      previousCursor.current = document.body.style.cursor;
-      previousUserSelect.current = document.body.style.userSelect;
+      suppressClick.current = false;
       document.documentElement.classList.add("shell-resizing");
       document.body.style.cursor = cursor;
       document.body.style.userSelect = "none";
       try {
         target.setPointerCapture?.(event.pointerId);
       } catch {
+        const active = session.current;
         session.current = null;
-        restoreDocument();
+        if (active) restoreDocument(active);
         return;
       }
       event.preventDefault();
@@ -163,5 +164,5 @@ export function usePointerResize({
     event.stopPropagation();
   }, []);
 
-  return { onClick, onPointerCancel, onPointerDown, onPointerMove, onPointerUp };
+  return { abortResize, onClick, onPointerCancel, onPointerDown, onPointerMove, onPointerUp };
 }

@@ -419,6 +419,90 @@ describe("Application shell", () => {
     expect(nextClick.defaultPrevented).toBe(false);
   });
 
+  it("aborts an active sidebar resize when the sidebar closes", () => {
+    renderApp();
+    const rail = screen.getByRole("separator", { name: "Resize sidebar" });
+    const releasePointerCapture = vi.fn();
+    Object.assign(rail, {
+      hasPointerCapture: vi.fn(() => true),
+      releasePointerCapture,
+      setPointerCapture: vi.fn(),
+    });
+    document.body.style.cursor = "wait";
+    document.body.style.userSelect = "text";
+
+    fireEvent.pointerDown(rail, { button: 0, clientX: 256, isPrimary: true, pointerId: 10 });
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+
+    expect(screen.queryByRole("separator", { name: "Resize sidebar" })).toBeNull();
+    expect(releasePointerCapture).toHaveBeenCalledWith(10);
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
+    expect(document.body.style.cursor).toBe("wait");
+    expect(document.body.style.userSelect).toBe("text");
+  });
+
+  it("cancels pending console resize work when the console collapses", () => {
+    renderApp();
+    let queuedFrame: FrameRequestCallback | null = null;
+    Object.defineProperty(window, "requestAnimationFrame", {
+      configurable: true,
+      value: vi.fn((callback: FrameRequestCallback) => {
+        queuedFrame = callback;
+        return 44;
+      }),
+    });
+    const cancelFrame = vi.fn();
+    Object.defineProperty(window, "cancelAnimationFrame", {
+      configurable: true,
+      value: cancelFrame,
+    });
+    const rail = screen.getByRole("separator", { name: "Resize console" });
+    const releasePointerCapture = vi.fn();
+    Object.assign(rail, {
+      hasPointerCapture: vi.fn(() => true),
+      releasePointerCapture,
+      setPointerCapture: vi.fn(),
+    });
+
+    fireEvent.pointerDown(rail, { button: 0, clientY: 580, isPrimary: true, pointerId: 11 });
+    fireEvent.pointerMove(rail, { clientY: 400, pointerId: 11 });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse console" }));
+
+    expect(cancelFrame).toHaveBeenCalledWith(44);
+    expect(releasePointerCapture).toHaveBeenCalledWith(11);
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
+    expect(document.body.style.cursor).toBe("");
+    expect(document.body.style.userSelect).toBe("");
+    act(() => queuedFrame?.(0));
+    expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("320");
+  });
+
+  it("aborts an active resize when the viewport crosses to mobile", () => {
+    window.innerWidth = 848;
+    window.innerHeight = 400;
+    renderApp();
+    const rail = screen.getByRole("separator", { name: "Resize sidebar" });
+    const releasePointerCapture = vi.fn();
+    Object.assign(rail, {
+      hasPointerCapture: vi.fn(() => true),
+      releasePointerCapture,
+      setPointerCapture: vi.fn(),
+    });
+    document.documentElement.classList.add("shell-resizing");
+    document.body.style.cursor = "help";
+    document.body.style.userSelect = "all";
+
+    fireEvent.pointerDown(rail, { button: 0, clientX: 208, isPrimary: true, pointerId: 12 });
+    window.innerWidth = 700;
+    window.innerHeight = 300;
+    fireEvent(window, new Event("resize"));
+
+    expect(releasePointerCapture).toHaveBeenCalledWith(12);
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(true);
+    expect(document.body.style.cursor).toBe("help");
+    expect(document.body.style.userSelect).toBe("all");
+  });
+
   it("persists console resize and re-clamps both dimensions on viewport resize", () => {
     renderApp();
     const consoleRail = screen.getByRole("separator", { name: "Resize console" });
