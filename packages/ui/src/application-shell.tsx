@@ -39,7 +39,7 @@ export interface ApplicationShellProps {
   consolePanels: readonly ConsolePanel[];
   consoleStatus?: ReactNode;
   mobileTitle?: string;
-  sidebarActions: ReactNode;
+  sidebarActions?: ReactNode;
   sidebarContent: ShellSlot;
   sidebarFooter: ShellSlot;
   sidebarHeader: ReactNode;
@@ -62,7 +62,7 @@ function SidebarFrame({
   footer,
   header,
 }: {
-  actions: ReactNode;
+  actions?: ReactNode;
   content: ReactNode;
   footer: ReactNode;
   header: ReactNode;
@@ -70,7 +70,14 @@ function SidebarFrame({
   return (
     <div className="flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground">
       <div className="shrink-0">{header}</div>
-      <div className="shrink-0 border-y border-sidebar-border">{actions}</div>
+      {actions != null && (
+        <div
+          className="shrink-0 border-y border-sidebar-border"
+          data-testid="sidebar-actions"
+        >
+          {actions}
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{content}</div>
       <div className="shrink-0 border-t border-sidebar-border">{footer}</div>
     </div>
