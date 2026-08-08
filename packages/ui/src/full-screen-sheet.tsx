@@ -7,6 +7,7 @@ import { cn } from "./cn.js";
 export interface FullScreenSheetProps {
   children: ReactNode;
   description: string;
+  onOpenChangeComplete?: (open: boolean) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   title: string;
@@ -18,6 +19,7 @@ export interface FullScreenSheetProps {
 export function FullScreenSheet({
   children,
   description,
+  onOpenChangeComplete,
   onOpenChange,
   open,
   title,
@@ -26,7 +28,11 @@ export function FullScreenSheet({
   triggerLabel,
 }: FullScreenSheetProps) {
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={onOpenChangeComplete}
+    >
       <Dialog.Trigger
         aria-label={triggerLabel}
         className={cn(
@@ -39,7 +45,6 @@ export function FullScreenSheet({
       <Dialog.Portal>
         <Dialog.Backdrop
           className="fixed inset-0 z-50 bg-black/45 transition-opacity duration-200 ease-in-out data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none"
-          data-testid={`${title.toLowerCase().replaceAll(" ", "-")}-backdrop`}
         />
         <Dialog.Viewport className="fixed inset-0 z-50">
           <Dialog.Popup className="flex h-dvh w-dvw flex-col overflow-hidden bg-background text-foreground outline-none transition-transform duration-200 ease-in-out data-[ending-style]:translate-x-[-2%] data-[starting-style]:translate-x-[-2%] motion-reduce:transition-none">

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 
@@ -48,6 +49,8 @@ interface ShellStyle extends CSSProperties {
   "--shell-console-height": string;
   "--shell-sidebar-width": string;
 }
+
+const KEYBOARD_RESIZE_STEP = 16;
 
 function renderSlot(slot: ShellSlot, closeMobile: CloseMobile): ReactNode {
   return typeof slot === "function" ? slot(closeMobile) : slot;
@@ -107,6 +110,8 @@ export function ApplicationShell({
     ),
   );
   const wasDesktop = useRef(window.innerWidth >= DESKTOP_BREAKPOINT);
+  const desktopSidebarToggle = useRef<HTMLButtonElement>(null);
+  const desktopConsole = useRef<HTMLElement>(null);
 
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const renderedDesktopContent = useMemo(
@@ -140,6 +145,10 @@ export function ApplicationShell({
       const isDesktop = window.innerWidth >= DESKTOP_BREAKPOINT;
       const wasDesktopViewport = wasDesktop.current;
       setDesktopViewport(isDesktop);
+      if (isDesktop && !wasDesktopViewport) {
+        setMobileNavOpen(false);
+        setMobileConsoleOpen(false);
+      }
       if (isDesktop) {
         setSidebarWidth((current) =>
           clampSidebarWidth(
@@ -213,6 +222,28 @@ export function ApplicationShell({
     if (desktopConsoleCollapsed || !desktopViewport) abortConsoleResize();
   }, [abortConsoleResize, desktopConsoleCollapsed, desktopViewport]);
 
+  const resizeSidebarWithKeyboard = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    let next: ((current: number) => number) | undefined;
+    if (event.key === "ArrowLeft") next = (current) => current - KEYBOARD_RESIZE_STEP;
+    if (event.key === "ArrowRight") next = (current) => current + KEYBOARD_RESIZE_STEP;
+    if (event.key === "Home") next = () => MIN_SIDEBAR_WIDTH;
+    if (event.key === "End") next = () => Math.max(MIN_SIDEBAR_WIDTH, window.innerWidth - 640);
+    if (!next) return;
+    event.preventDefault();
+    setSidebarWidth((current) => clampSidebarWidth(next(current), window.innerWidth));
+  }, []);
+
+  const resizeConsoleWithKeyboard = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    let next: ((current: number) => number) | undefined;
+    if (event.key === "ArrowDown") next = (current) => current - KEYBOARD_RESIZE_STEP;
+    if (event.key === "ArrowUp") next = (current) => current + KEYBOARD_RESIZE_STEP;
+    if (event.key === "Home") next = () => MIN_CONSOLE_HEIGHT;
+    if (event.key === "End") next = () => Math.max(MIN_CONSOLE_HEIGHT, window.innerHeight * 0.6);
+    if (!next) return;
+    event.preventDefault();
+    setConsoleHeight((current) => clampConsoleHeight(next(current), window.innerHeight));
+  }, []);
+
   const style: ShellStyle = {
     "--shell-console-height": `${consoleHeight}px`,
     "--shell-sidebar-width": `${sidebarWidth}px`,
@@ -244,14 +275,17 @@ export function ApplicationShell({
             aria-valuemax={Math.max(MIN_SIDEBAR_WIDTH, window.innerWidth - 640)}
             aria-valuemin={MIN_SIDEBAR_WIDTH}
             aria-valuenow={Math.round(sidebarWidth)}
-            className="shell-sidebar-resize absolute inset-y-0 right-0 z-10 w-2 translate-x-1/2 cursor-col-resize touch-none"
+            className="shell-sidebar-resize absolute inset-y-0 right-0 z-10 w-2 translate-x-1/2 cursor-col-resize touch-none outline-none focus-visible:bg-ring/30 focus-visible:ring-2 focus-visible:ring-ring"
+            onKeyDown={resizeSidebarWithKeyboard}
             role="separator"
+            tabIndex={0}
             {...sidebarResizeHandlers}
           />
         )}
       </aside>
 
       <button
+        ref={desktopSidebarToggle}
         type="button"
         aria-keyshortcuts="Control+B Meta+B"
         aria-label={desktopSidebarOpen ? "Hide sidebar" : "Show sidebar"}
@@ -272,6 +306,11 @@ export function ApplicationShell({
           <FullScreenSheet
             description="Global navigation and Blackglass settings."
             onOpenChange={setMobileNavOpen}
+            onOpenChangeComplete={(open) => {
+              if (!open && window.innerWidth >= DESKTOP_BREAKPOINT) {
+                desktopSidebarToggle.current?.focus();
+              }
+            }}
             open={mobileNavOpen}
             title={mobileTitle}
             trigger={<Menu className="size-5" aria-hidden="true" />}
@@ -288,6 +327,9 @@ export function ApplicationShell({
           <FullScreenSheet
             description="Advisor, activity, and raw output views."
             onOpenChange={setMobileConsoleOpen}
+            onOpenChangeComplete={(open) => {
+              if (!open && window.innerWidth >= DESKTOP_BREAKPOINT) desktopConsole.current?.focus();
+            }}
             open={mobileConsoleOpen}
             title="Console"
             trigger={<Terminal className="size-5" aria-hidden="true" />}
@@ -302,11 +344,13 @@ export function ApplicationShell({
         </div>
 
         <section
+          ref={desktopConsole}
           aria-label="Console"
           className={cn(
             "shell-console relative hidden shrink-0 border-t border-border bg-card md:block",
             desktopConsoleCollapsed && "shell-console-collapsed",
           )}
+          tabIndex={-1}
         >
           {!desktopConsoleCollapsed && (
             <div
@@ -315,8 +359,10 @@ export function ApplicationShell({
               aria-valuemax={Math.max(MIN_CONSOLE_HEIGHT, window.innerHeight * 0.6)}
               aria-valuemin={MIN_CONSOLE_HEIGHT}
               aria-valuenow={Math.round(consoleHeight)}
-              className="absolute inset-x-0 top-0 z-10 h-2 -translate-y-1/2 cursor-row-resize touch-none"
+              className="absolute inset-x-0 top-0 z-10 h-2 -translate-y-1/2 cursor-row-resize touch-none outline-none focus-visible:bg-ring/30 focus-visible:ring-2 focus-visible:ring-ring"
+              onKeyDown={resizeConsoleWithKeyboard}
               role="separator"
+              tabIndex={0}
               {...consoleResizeHandlers}
             />
           )}

@@ -276,7 +276,7 @@ describe("Application shell", () => {
     expect(style).toContain("--shell-console-height: 410px");
   });
 
-  it("closes mobile navigation with Escape and backdrop", async () => {
+  it("closes mobile navigation with Escape", async () => {
     window.innerWidth = 500;
     renderApp();
     const trigger = screen.getByRole("button", { name: "Open navigation" });
@@ -286,14 +286,35 @@ describe("Application shell", () => {
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(trigger);
+  });
 
-    fireEvent.click(trigger);
+  it("closes both mobile sheets on desktop takeover and moves focus to desktop controls", async () => {
+    window.innerWidth = 390;
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     await screen.findByRole("dialog", { name: "Blackglass navigation" });
-    const backdrop = screen.getByTestId("blackglass-navigation-backdrop");
-    fireEvent.mouseDown(backdrop);
-    fireEvent.mouseUp(backdrop);
-    fireEvent.click(backdrop);
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    window.innerWidth = 700;
+    fireEvent(window, new Event("resize"));
+    expect(screen.getByRole("dialog", { name: "Blackglass navigation" })).toBeTruthy();
+    window.innerWidth = 1000;
+    fireEvent(window, new Event("resize"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Blackglass navigation" })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Hide sidebar" }));
+
+    window.innerWidth = 390;
+    fireEvent(window, new Event("resize"));
+    fireEvent.click(screen.getByRole("button", { name: "Open console" }));
+    await screen.findByRole("dialog", { name: "Console" });
+    window.innerWidth = 767;
+    fireEvent(window, new Event("resize"));
+    expect(screen.getByRole("dialog", { name: "Console" })).toBeTruthy();
+    window.innerWidth = 1000;
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Console" })).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Console" }));
   });
 
   it("provides keyboard tabs and independent mobile console state", async () => {
@@ -331,6 +352,56 @@ describe("Application shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand console" }));
     expect(consoleRegion.className).not.toContain("shell-console-collapsed");
     expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("410");
+  });
+
+  it("resizes the sidebar with keyboard controls and ignores unrelated keys", () => {
+    renderApp();
+    const rail = screen.getByRole("separator", { name: "Resize sidebar" });
+    expect(rail.getAttribute("tabindex")).toBe("0");
+    expect(rail.className).toContain("focus-visible:ring-2");
+
+    fireEvent.keyDown(rail, { key: "ArrowRight" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("272");
+    expect(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)).toBe("272");
+    fireEvent.keyDown(rail, { key: "ArrowLeft" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("256");
+    fireEvent.keyDown(rail, { key: "Home" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("208");
+    fireEvent.keyDown(rail, { key: "End" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("640");
+
+    const handled = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowRight",
+    });
+    expect(rail.dispatchEvent(handled)).toBe(false);
+    expect(handled.defaultPrevented).toBe(true);
+
+    const unrelated = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "PageUp",
+    });
+    expect(rail.dispatchEvent(unrelated)).toBe(true);
+    expect(unrelated.defaultPrevented).toBe(false);
+  });
+
+  it("resizes the console with keyboard controls", () => {
+    renderApp();
+    const rail = screen.getByRole("separator", { name: "Resize console" });
+    expect(rail.getAttribute("tabindex")).toBe("0");
+    expect(rail.className).toContain("focus-visible:ring-2");
+
+    fireEvent.keyDown(rail, { key: "ArrowUp" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("336");
+    expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("336");
+    fireEvent.keyDown(rail, { key: "ArrowDown" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("320");
+    fireEvent.keyDown(rail, { key: "Home" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("220");
+    fireEvent.keyDown(rail, { key: "End" });
+    expect(rail.getAttribute("aria-valuenow")).toBe("540");
   });
 
   it("batches sidebar resize into one frame, clamps, and restores document styles", () => {
