@@ -11,9 +11,10 @@
     "build": "node scripts/run-workspace-script.mjs build",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm test && pnpm run build",
     "check:docs": "node scripts/check-docs.mjs",
+    "dev": "node scripts/dev.mjs",
     "format:check": "node scripts/check-files.mjs format",
     "lint": "node scripts/check-files.mjs syntax && pnpm run check:docs",
-    "test": "node --test scripts/*.test.mjs",
+    "test": "node --test scripts/*.test.mjs && node scripts/run-workspace-script.mjs test",
     "typecheck": "node scripts/run-workspace-script.mjs typecheck"
   }
 }
