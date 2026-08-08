@@ -1,0 +1,62 @@
+:root {
+  color: #d8e3de;
+  background: #0b100e;
+  font-family: system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  padding: 0.65rem 1rem;
+  color: #05100b;
+  background: #63db9c;
+  border: 0;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid #c0f9da;
+  outline-offset: 3px;
+}
+
+.app {
+  display: grid;
+  min-height: 100vh;
+  padding: 1.5rem;
+  place-items: center;
+}
+
+.status-card {
+  width: min(100%, 32rem);
+  padding: 2rem;
+  background: #111a16;
+  border: 1px solid #263a31;
+  border-radius: 0.75rem;
+}
+
+.status-card h1 {
+  margin: 0 0 1.5rem;
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  line-height: 1;
+}
+
+.status-card p {
+  margin: 0.75rem 0;
+}
+
+.eyebrow {
+  color: #63db9c;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}

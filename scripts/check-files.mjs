@@ -3,8 +3,27 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const ignoredDirectories = new Set([".git", "node_modules"]);
-const textExtensions = new Set([".json", ".md", ".mjs", ".yaml", ".yml"]);
+const ignoredDirectories = new Set([
+  ".blackglass",
+  ".git",
+  ".vite",
+  "coverage",
+  "data",
+  "dist",
+  "evidence",
+  "node_modules",
+]);
+const textExtensions = new Set([
+  ".css",
+  ".html",
+  ".json",
+  ".md",
+  ".mjs",
+  ".ts",
+  ".tsx",
+  ".yaml",
+  ".yml",
+]);
 const textNames = new Set([".editorconfig", ".gitignore", ".node-version"]);
 
 async function repositoryFiles(directory) {
