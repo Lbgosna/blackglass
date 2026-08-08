@@ -719,3 +719,28 @@ describe("App theme preference", () => {
     expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
   });
 });
+
+describe("App state gallery", () => {
+  it("keeps the application shell mounted while every synthetic state changes", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    renderApp();
+    const shell = screen.getByTestId("application-shell");
+
+    expect(screen.getByRole("status", { name: "Loading workspace overview" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Empty" }));
+    expect(screen.getByText("No workspace activity yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Filtered" }));
+    expect(screen.getByText("No results match this view")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stale" }));
+    expect(screen.getByTestId("synthetic-stale-content")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Recoverable" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Retry" })[0]!);
+    expect(screen.getByText(/Retry attempts: 1/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Fatal" }));
+    expect(await screen.findByText("Blackglass hit a fatal error")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByTestId("synthetic-stale-content")).toBeTruthy();
+    expect(screen.getByTestId("application-shell")).toBe(shell);
+  });
+});
