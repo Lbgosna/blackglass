@@ -4,10 +4,15 @@ import {
   Button,
   cn,
   EmptyState,
+  FatalErrorBoundary,
+  LoadingRegion,
+  RecoverableError,
   SidebarCardRow,
   SidebarCompactRow,
   SidebarRowAction,
   SidebarShelf,
+  Skeleton,
+  StaleDataState,
   Status,
   useTheme,
   type ConsolePanel,
@@ -16,11 +21,21 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type ApiState = "checking" | "connected" | "unavailable";
+type GalleryState = "loading" | "empty" | "filtered" | "stale" | "recoverable" | "fatal";
 
 const themeOptions: ReadonlyArray<{ label: string; value: ThemePreference }> = [
   { label: "Light", value: "light" },
   { label: "Dark", value: "dark" },
   { label: "System", value: "system" },
+];
+
+const galleryStates: ReadonlyArray<{ label: string; value: GalleryState }> = [
+  { label: "Loading", value: "loading" },
+  { label: "Empty", value: "empty" },
+  { label: "Filtered", value: "filtered" },
+  { label: "Stale", value: "stale" },
+  { label: "Recoverable", value: "recoverable" },
+  { label: "Fatal", value: "fatal" },
 ];
 
 const consolePanels: readonly ConsolePanel[] = [
@@ -113,6 +128,159 @@ function ConsolePlaceholder({ detail, title }: { detail: string; title: string }
       <p className="m-0 text-sm font-bold">{title}</p>
       <p className="mt-1 mb-0 text-sm text-muted-foreground">{detail}</p>
     </div>
+  );
+}
+
+function SyntheticSurface() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2" data-testid="synthetic-stale-content">
+      <article className="rounded-lg border border-border bg-card p-4">
+        <p className="m-0 text-xs font-bold tracking-wide text-muted-foreground uppercase">
+          northstar.lab
+        </p>
+        <p className="mt-2 mb-0 text-base font-bold">12 discovered services</p>
+        <p className="mt-1 mb-0 font-mono text-xs text-muted-foreground">updated 4m ago</p>
+      </article>
+      <article className="rounded-lg border border-border bg-card p-4">
+        <p className="m-0 text-xs font-bold tracking-wide text-muted-foreground uppercase">
+          portal.lab
+        </p>
+        <p className="mt-2 mb-0 text-base font-bold">2 draft findings</p>
+        <p className="mt-1 mb-0 font-mono text-xs text-muted-foreground">updated 7m ago</p>
+      </article>
+    </div>
+  );
+}
+
+function SyntheticCrash({ crash }: { crash: boolean }) {
+  if (crash) throw new Error("Synthetic gallery render failure");
+  return <SyntheticSurface />;
+}
+
+function StateGallery() {
+  const [state, setState] = useState<GalleryState>("loading");
+  const [refreshAttempts, setRefreshAttempts] = useState(0);
+  const [retryAttempts, setRetryAttempts] = useState(0);
+  const [fatalCrash, setFatalCrash] = useState(true);
+  const [reloadRequested, setReloadRequested] = useState(false);
+
+  const selectState = (next: GalleryState) => {
+    if (next === "fatal") {
+      setFatalCrash(true);
+      setReloadRequested(false);
+    }
+    setState(next);
+  };
+
+  return (
+    <section className="mt-5 rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="m-0 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+            UI states
+          </p>
+          <h2 className="mt-1 mb-0 text-lg font-bold">Stable workspace states</h2>
+        </div>
+        <div className="flex max-w-full flex-wrap gap-1" role="group" aria-label="Preview state">
+          {galleryStates.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              aria-pressed={state === option.value}
+              className={cn(
+                "min-h-11 rounded-md px-3 text-xs font-bold outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                state === option.value
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => selectState(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5" data-testid="state-gallery-output">
+        {state === "loading" && (
+          <LoadingRegion label="Loading workspace overview" className="space-y-4">
+            <div className="rounded-lg border border-border p-4">
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="mt-3 h-7 w-56 max-w-full" />
+              <Skeleton className="mt-2 h-4 w-full max-w-md" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Skeleton className="h-28 w-full" />
+              <Skeleton className="h-28 w-full" />
+            </div>
+          </LoadingRegion>
+        )}
+
+        {state === "empty" && (
+          <EmptyState
+            variant="primary"
+            title="No workspace activity yet"
+            description="Start a local action when you are ready to populate this workspace."
+            action={<Button onClick={() => setState("loading")}>Preview loading</Button>}
+          />
+        )}
+
+        {state === "filtered" && (
+          <EmptyState
+            variant="filtered"
+            title="No results match this view"
+            description="Clear the current filters to show the existing workspace activity."
+            action={
+              <Button variant="secondary" onClick={() => setState("empty")}>
+                Clear preview filters
+              </Button>
+            }
+          />
+        )}
+
+        {state === "stale" && (
+          <StaleDataState
+            title="Showing the last successful refresh"
+            description={`The latest refresh failed. Existing data is still available. Attempts: ${refreshAttempts}.`}
+            onRetry={() => setRefreshAttempts((current) => current + 1)}
+          >
+            <SyntheticSurface />
+          </StaleDataState>
+        )}
+
+        {state === "recoverable" && (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <RecoverableError
+              title="This panel could not load"
+              description={`The rest of the workspace is still usable. Retry attempts: ${retryAttempts}.`}
+              onRetry={() => setRetryAttempts((current) => current + 1)}
+            />
+            <RecoverableError
+              variant="page"
+              title="Workspace view unavailable"
+              description="Retry this synthetic view without reloading the shell."
+              onRetry={() => setRetryAttempts((current) => current + 1)}
+            />
+          </div>
+        )}
+
+        {state === "fatal" && (
+          <div>
+            <FatalErrorBoundary
+              onReload={() => setReloadRequested(true)}
+              onRetry={() => setFatalCrash(false)}
+            >
+              <SyntheticCrash crash={fatalCrash} />
+            </FatalErrorBoundary>
+            {reloadRequested && (
+              <p className="mt-3 mb-0 text-sm text-muted-foreground" role="status">
+                Synthetic reload requested. The application was not reloaded.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -407,6 +575,8 @@ export function App() {
               }
             />
           </section>
+
+          <StateGallery />
         </div>
       </main>
     </ApplicationShell>
