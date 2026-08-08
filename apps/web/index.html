@@ -19,6 +19,41 @@
         document.documentElement.dataset.theme = resolved;
         document.documentElement.dataset.themePreference = preference;
         document.documentElement.style.colorScheme = resolved;
+
+        const number = (key, fallback) => {
+          try {
+            const stored = localStorage.getItem(key);
+            if (stored === null || stored.trim() === "") return fallback;
+            const value = Number(stored);
+            return Number.isFinite(value) ? value : fallback;
+          } catch {
+            return fallback;
+          }
+        };
+        const boolean = (key, fallback) => {
+          try {
+            const value = localStorage.getItem(key);
+            return value === "true" ? true : value === "false" ? false : fallback;
+          } catch {
+            return fallback;
+          }
+        };
+        const clamp = (value, minimum, maximum) => Math.min(Math.max(value, minimum), maximum);
+        const sidebarWidth = clamp(
+          number("blackglass.layout.sidebar.width", 256),
+          208,
+          Math.max(208, innerWidth - 640),
+        );
+        const consoleHeight = clamp(
+          number("blackglass.layout.console.height", 320),
+          220,
+          Math.max(220, innerHeight * 0.6),
+        );
+        document.documentElement.dataset.sidebarOpen = String(
+          boolean("blackglass.layout.sidebar.open", true),
+        );
+        document.documentElement.style.setProperty("--shell-sidebar-width", `${sidebarWidth}px`);
+        document.documentElement.style.setProperty("--shell-console-height", `${consoleHeight}px`);
       })();
     </script>
     <title>Blackglass</title>

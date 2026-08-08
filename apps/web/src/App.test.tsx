@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { THEME_STORAGE_KEY, ThemeProvider } from "@blackglass/ui";
+import {
+  CONSOLE_HEIGHT_STORAGE_KEY,
+  SIDEBAR_OPEN_STORAGE_KEY,
+  SIDEBAR_WIDTH_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  ThemeProvider,
+} from "@blackglass/ui";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -79,6 +85,9 @@ let media: MediaHarness;
 
 beforeEach(() => {
   window.localStorage.clear();
+  document.body.style.cssText = "";
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280, writable: true });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 900, writable: true });
   document.documentElement.className = "";
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themePreference;
@@ -151,12 +160,14 @@ describe("App health state", () => {
 
     const { container } = renderApp();
     const mountedPage = container.firstElementChild;
+    const mountedShell = screen.getByTestId("application-shell");
     first.reject(new Error("offline"));
     expect(await screen.findByText("API unavailable")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(screen.getByText("Checking API")).toBeTruthy();
     expect(container.firstElementChild).toBe(mountedPage);
+    expect(screen.getByTestId("application-shell")).toBe(mountedShell);
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     second.resolve(response({ status: "ok" }));
@@ -181,6 +192,265 @@ describe("App health state", () => {
 
     first.reject(new Error("late failure"));
     await waitFor(() => expect(screen.getByText("API connected")).toBeTruthy());
+  });
+});
+
+describe("Application shell", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+  });
+
+  it("restores, toggles, and persists desktop sidebar state", () => {
+    window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false");
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, "430");
+    renderApp();
+
+    const shell = screen.getByTestId("application-shell");
+    const toggle = screen.getByRole("button", { name: "Show sidebar" });
+    expect(shell.dataset.sidebarOpen).toBe("false");
+    expect(shell.getAttribute("style")).toContain("--shell-sidebar-width: 430px");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(toggle);
+    expect(shell.dataset.sidebarOpen).toBe("true");
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("true");
+    expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeTruthy();
+  });
+
+  it("handles Mod+B in capture phase and ignores keybinding capture regions", () => {
+    renderApp();
+    const shell = screen.getByTestId("application-shell");
+    const toggle = screen.getByRole("button", { name: "Hide sidebar" });
+    expect(toggle.getAttribute("aria-keyshortcuts")).toBe("Control+B Meta+B");
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(shell.dataset.sidebarOpen).toBe("false");
+
+    const captureRegion = document.createElement("div");
+    captureRegion.dataset.keybindingCapture = "";
+    const input = document.createElement("input");
+    captureRegion.append(input);
+    document.body.append(captureRegion);
+    fireEvent.keyDown(input, { key: "b", ctrlKey: true });
+    expect(shell.dataset.sidebarOpen).toBe("false");
+    captureRegion.remove();
+
+    fireEvent.keyDown(window, { key: "B", metaKey: true });
+    expect(shell.dataset.sidebarOpen).toBe("true");
+  });
+
+  it("keeps mobile navigation independent and restores focus after navigation", async () => {
+    window.innerWidth = 500;
+    window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false");
+    renderApp();
+
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("dialog", { name: "Blackglass navigation" })).toBeTruthy();
+    expect(screen.getByTestId("application-shell").dataset.sidebarOpen).toBe("false");
+
+    fireEvent.click(screen.getAllByRole("link", { name: "Engagements" })[0]!);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Blackglass navigation" })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByTestId("application-shell").dataset.sidebarOpen).toBe("false");
+  });
+
+  it("does not overwrite desktop geometry while mounted on mobile", () => {
+    window.innerWidth = 500;
+    window.innerHeight = 600;
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, "430");
+    window.localStorage.setItem(CONSOLE_HEIGHT_STORAGE_KEY, "410");
+    renderApp();
+
+    expect(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)).toBe("430");
+    expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("410");
+
+    window.innerWidth = 1280;
+    window.innerHeight = 900;
+    fireEvent(window, new Event("resize"));
+    const style = screen.getByTestId("application-shell").getAttribute("style");
+    expect(style).toContain("--shell-sidebar-width: 430px");
+    expect(style).toContain("--shell-console-height: 410px");
+  });
+
+  it("closes mobile navigation with Escape and backdrop", async () => {
+    window.innerWidth = 500;
+    renderApp();
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Blackglass navigation" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    await screen.findByRole("dialog", { name: "Blackglass navigation" });
+    const backdrop = screen.getByTestId("blackglass-navigation-backdrop");
+    fireEvent.mouseDown(backdrop);
+    fireEvent.mouseUp(backdrop);
+    fireEvent.click(backdrop);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("provides keyboard tabs and independent mobile console state", async () => {
+    window.innerWidth = 500;
+    window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false");
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open console" }));
+    expect(await screen.findByRole("dialog", { name: "Console" })).toBeTruthy();
+    const advisor = screen.getByRole("tab", { name: "Advisor" });
+    advisor.focus();
+    fireEvent.keyDown(advisor, { key: "ArrowRight" });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected")).toBe(
+        "true",
+      ),
+    );
+    expect(screen.getByRole("tabpanel", { name: "Activity" })).toBeTruthy();
+    expect(screen.getByTestId("application-shell").dataset.sidebarOpen).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close console" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Console" })).toBeNull());
+  });
+
+  it("collapses and reopens the desktop console without changing its height", () => {
+    window.localStorage.setItem(CONSOLE_HEIGHT_STORAGE_KEY, "410");
+    renderApp();
+    const consoleRegion = screen.getByRole("region", { name: "Console" });
+    expect(screen.getByRole("separator", { name: "Resize console" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse console" }));
+    expect(consoleRegion.className).toContain("shell-console-collapsed");
+    expect(screen.queryByRole("separator", { name: "Resize console" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand console" }));
+    expect(consoleRegion.className).not.toContain("shell-console-collapsed");
+    expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("410");
+  });
+
+  it("batches sidebar resize into one frame, clamps, and restores document styles", () => {
+    const frames: FrameRequestCallback[] = [];
+    Object.defineProperty(window, "requestAnimationFrame", {
+      configurable: true,
+      value: vi.fn((callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      }),
+    });
+    Object.defineProperty(window, "cancelAnimationFrame", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    renderApp();
+    frames.length = 0;
+    const rail = screen.getByRole("separator", { name: "Resize sidebar" });
+    Object.assign(rail, {
+      hasPointerCapture: vi.fn(() => true),
+      releasePointerCapture: vi.fn(),
+      setPointerCapture: vi.fn(),
+    });
+    document.body.style.cursor = "crosshair";
+    document.body.style.userSelect = "text";
+
+    fireEvent.pointerDown(rail, { button: 0, clientX: 256, isPrimary: true, pointerId: 7 });
+    fireEvent.pointerMove(rail, { clientX: 400, pointerId: 7 });
+    fireEvent.pointerMove(rail, { clientX: 2000, pointerId: 7 });
+    expect(frames).toHaveLength(1);
+    expect(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)).toBe("256");
+
+    act(() => frames.shift()?.(0));
+    expect(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)).toBe("640");
+    fireEvent.pointerUp(rail, { pointerId: 7 });
+    expect(document.body.style.cursor).toBe("crosshair");
+    expect(document.body.style.userSelect).toBe("text");
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
+  });
+
+  it("ignores non-primary resize and cleans up cancel and unmount", () => {
+    const { unmount } = renderApp();
+    const rail = screen.getByRole("separator", { name: "Resize sidebar" });
+    const releasePointerCapture = vi.fn();
+    Object.assign(rail, {
+      hasPointerCapture: vi.fn(() => true),
+      releasePointerCapture,
+      setPointerCapture: vi.fn(),
+    });
+
+    fireEvent.pointerDown(rail, { button: 2, clientX: 256, isPrimary: true, pointerId: 1 });
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
+    fireEvent.pointerDown(rail, { button: 0, clientX: 256, isPrimary: false, pointerId: 2 });
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
+
+    fireEvent.pointerDown(rail, { button: 0, clientX: 256, isPrimary: true, pointerId: 3 });
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(true);
+    fireEvent.pointerCancel(rail, { pointerId: 3 });
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
+
+    fireEvent.pointerDown(rail, { button: 0, clientX: 256, isPrimary: true, pointerId: 4 });
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    unmount();
+    expect(releasePointerCapture).toHaveBeenCalledWith(4);
+    expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
+    expect(document.body.style.cursor).toBe("");
+    expect(document.body.style.userSelect).toBe("");
+  });
+
+  it("suppresses the click after a drag longer than two pixels", () => {
+    renderApp();
+    const rail = screen.getByRole("separator", { name: "Resize sidebar" });
+    Object.assign(rail, {
+      hasPointerCapture: vi.fn(() => false),
+      setPointerCapture: vi.fn(),
+    });
+    fireEvent.pointerDown(rail, { button: 0, clientX: 256, isPrimary: true, pointerId: 5 });
+    fireEvent.pointerMove(rail, { clientX: 260, pointerId: 5 });
+    fireEvent.pointerUp(rail, { pointerId: 5 });
+    const suppressed = new MouseEvent("click", { bubbles: true, cancelable: true });
+    expect(rail.dispatchEvent(suppressed)).toBe(false);
+    expect(suppressed.defaultPrevented).toBe(true);
+    const nextClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+    expect(rail.dispatchEvent(nextClick)).toBe(true);
+    expect(nextClick.defaultPrevented).toBe(false);
+  });
+
+  it("persists console resize and re-clamps both dimensions on viewport resize", () => {
+    renderApp();
+    const consoleRail = screen.getByRole("separator", { name: "Resize console" });
+    Object.assign(consoleRail, {
+      hasPointerCapture: vi.fn(() => false),
+      setPointerCapture: vi.fn(),
+    });
+    fireEvent.pointerDown(consoleRail, {
+      button: 0,
+      clientY: 580,
+      isPrimary: true,
+      pointerId: 8,
+    });
+    fireEvent.pointerMove(consoleRail, { clientY: 400, pointerId: 8 });
+    fireEvent.pointerUp(consoleRail, { pointerId: 8 });
+    expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("500");
+
+    window.innerWidth = 700;
+    window.innerHeight = 300;
+    fireEvent(window, new Event("resize"));
+    const style = screen.getByTestId("application-shell").getAttribute("style");
+    expect(style).toContain("--shell-sidebar-width: 208px");
+    expect(style).toContain("--shell-console-height: 220px");
+    expect(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)).toBe("256");
+    expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("500");
+  });
+
+  it("exposes reduced-motion shell rules and labelled resize controls", () => {
+    renderApp();
+    expect(screen.getByRole("separator", { name: "Resize sidebar" })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: "Resize console" })).toBeTruthy();
+    expect(document.querySelector(".application-shell")).toBeTruthy();
   });
 });
 

@@ -115,6 +115,8 @@
 
 :root {
   --radius: 10px;
+  --shell-console-height: 320px;
+  --shell-sidebar-width: 256px;
   font-family: "DM Sans Variable", sans-serif;
 }
 
@@ -141,4 +143,65 @@ input {
 .theme-switching *::before,
 .theme-switching *::after {
   transition-duration: 0s !important;
+}
+
+.shell-sidebar {
+  left: 0;
+  width: var(--shell-sidebar-width);
+  transition:
+    left 200ms linear,
+    width 200ms linear;
+}
+
+.shell-workspace {
+  margin-left: var(--shell-sidebar-width);
+  transition: margin-left 200ms linear;
+}
+
+.shell-sidebar-toggle {
+  left: calc(var(--shell-sidebar-width) + 0.75rem);
+  transition: left 200ms linear;
+}
+
+.application-shell[data-sidebar-open="false"] .shell-sidebar {
+  left: calc(-1 * var(--shell-sidebar-width));
+}
+
+.application-shell[data-sidebar-open="false"] .shell-workspace {
+  margin-left: 0;
+}
+
+.application-shell[data-sidebar-open="false"] .shell-sidebar-toggle {
+  left: 0.75rem;
+}
+
+.shell-console {
+  height: var(--shell-console-height);
+  transition: height 200ms linear;
+}
+
+.shell-console.shell-console-collapsed {
+  height: 44px;
+}
+
+.shell-resizing .shell-sidebar,
+.shell-resizing .shell-sidebar-toggle,
+.shell-resizing .shell-workspace,
+.shell-resizing .shell-console {
+  transition-duration: 0s !important;
+}
+
+@media (max-width: 767px) {
+  .shell-workspace {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-sidebar,
+  .shell-sidebar-toggle,
+  .shell-workspace,
+  .shell-console {
+    transition-duration: 0s;
+  }
 }
