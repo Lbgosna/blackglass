@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "dev": "tsx --conditions=development src/server.ts",
-    "test": "vitest run",
+    "test": "NODE_ENV=development vitest run",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
