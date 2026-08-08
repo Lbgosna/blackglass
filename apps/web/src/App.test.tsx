@@ -664,7 +664,7 @@ describe("App theme preference", () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
 
-    await renderApp();
+    await renderApp("/settings");
 
     expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
     expect(document.documentElement.dataset.theme).toBe("dark");
@@ -679,7 +679,7 @@ describe("App theme preference", () => {
   it("falls back to system for invalid or unreadable storage", async () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, "sepia");
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    const first = await renderApp();
+    const first = await renderApp("/settings");
     expect((screen.getByRole("radio", { name: "System" }) as HTMLInputElement).checked).toBe(
       true,
     );
@@ -688,7 +688,7 @@ describe("App theme preference", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");
     });
-    await renderApp();
+    await renderApp("/settings");
     expect((screen.getByRole("radio", { name: "System" }) as HTMLInputElement).checked).toBe(
       true,
     );
@@ -696,7 +696,7 @@ describe("App theme preference", () => {
 
   it("reacts to OS changes only while system is selected and cleans up the listener", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    const { unmount } = await renderApp();
+    const { unmount } = await renderApp("/settings");
 
     act(() => media.dispatch(true));
     expect(document.documentElement.dataset.theme).toBe("dark");
@@ -712,7 +712,7 @@ describe("App theme preference", () => {
 
   it("synchronizes valid storage events and ignores malformed values", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    await renderApp();
+    await renderApp("/settings");
 
     act(() => {
       window.dispatchEvent(
@@ -735,7 +735,7 @@ describe("App theme preference", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("full");
     });
-    await renderApp();
+    await renderApp("/settings");
 
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
@@ -744,21 +744,43 @@ describe("App theme preference", () => {
 
   it("shows a distinct pill for every selected theme preference", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    await renderApp();
+    await renderApp("/settings");
 
     for (const preference of ["Light", "Dark", "System"]) {
       fireEvent.click(screen.getByRole("radio", { name: preference }));
+      expect((screen.getByRole("radio", { name: preference }) as HTMLInputElement).checked).toBe(
+        true,
+      );
       expect(screen.getByText(preference, { selector: "span" }).className).toContain(
-        "bg-sidebar-active",
+        "bg-card",
       );
       for (const other of ["Light", "Dark", "System"].filter(
         (candidate) => candidate !== preference,
       )) {
-        expect(screen.getByText(other, { selector: "span" }).className).not.toContain(
-          "bg-sidebar-active",
-        );
+        expect(screen.getByText(other, { selector: "span" }).className).not.toContain("bg-card");
       }
     }
+  });
+
+  it("updates the whole app theme and preserves it across navigation without remounting the shell", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    await renderApp("/settings");
+    const shell = screen.getByTestId("application-shell");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+
+    fireEvent.click(screen.getByRole("link", { name: "Dashboard" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Application shell" })).toBeTruthy();
+    expect(screen.getByTestId("application-shell")).toBe(shell);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(screen.queryByRole("radio")).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+    expect(screen.getByTestId("application-shell")).toBe(shell);
+    expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
   });
 
   it("keeps empty and error actions accessible by name", async () => {
@@ -861,6 +883,32 @@ describe("Application routes", () => {
     expect(
       within(globalNavigation).getByRole("link", { name: "Plugins" }).getAttribute("aria-current"),
     ).toBe("page");
+  });
+
+  it("renders one Appearance card and one native theme control set on direct Settings entry", async () => {
+    await renderApp("/settings");
+
+    expect(screen.getAllByRole("region", { name: "Appearance" })).toHaveLength(1);
+    expect(screen.getAllByRole("group", { name: "Theme" })).toHaveLength(1);
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    expect(screen.getByText("Choose a light or dark theme, or follow your system setting.")).toBeTruthy();
+  });
+
+  it("does not render theme controls or an action spacer in desktop or mobile navigation", async () => {
+    await renderApp();
+
+    const desktopSidebar = screen.getByRole("complementary", { name: "Primary" });
+    expect(within(desktopSidebar).queryByRole("radio")).toBeNull();
+    expect(screen.queryByTestId("sidebar-actions")).toBeNull();
+    expect(screen.queryByRole("radio")).toBeNull();
+
+    window.innerWidth = 500;
+    fireEvent(window, new Event("resize"));
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Blackglass navigation" });
+    expect(within(dialog).queryByRole("radio")).toBeNull();
+    expect(within(dialog).queryByTestId("sidebar-actions")).toBeNull();
+    expect(screen.queryByRole("radio")).toBeNull();
   });
 
   it("closes mobile navigation after global and footer route activation", async () => {

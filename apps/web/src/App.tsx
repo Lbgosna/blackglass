@@ -13,9 +13,7 @@ import {
   Skeleton,
   StaleDataState,
   Status,
-  useTheme,
   type ConsolePanel,
-  type ThemePreference,
 } from "@blackglass/ui";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -23,12 +21,6 @@ import { useState } from "react";
 import { useHealthQuery } from "./health-query.js";
 
 type GalleryState = "loading" | "empty" | "filtered" | "stale" | "recoverable" | "fatal";
-
-const themeOptions: ReadonlyArray<{ label: string; value: ThemePreference }> = [
-  { label: "Light", value: "light" },
-  { label: "Dark", value: "dark" },
-  { label: "System", value: "system" },
-];
 
 const galleryStates: ReadonlyArray<{ label: string; value: GalleryState }> = [
   { label: "Loading", value: "loading" },
@@ -291,41 +283,6 @@ function StateGallery() {
   );
 }
 
-function ThemeControl() {
-  const { preference, setPreference } = useTheme();
-
-  return (
-    <fieldset className="m-0 border-0 p-0">
-      <legend className="mb-2 text-xs font-bold tracking-widest text-sidebar-muted-foreground uppercase">
-        Theme
-      </legend>
-      <div className="grid grid-cols-3 rounded-lg border border-sidebar-border bg-sidebar-control p-1">
-        {themeOptions.map((option) => (
-          <label key={option.value} className="relative cursor-pointer">
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="theme"
-              value={option.value}
-              checked={preference === option.value}
-              onChange={() => setPreference(option.value)}
-            />
-            <span
-              className={cn(
-                "flex min-h-9 items-center justify-center rounded-md px-2 text-xs font-bold text-sidebar-muted-foreground outline-none transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring",
-                preference === option.value &&
-                  "bg-sidebar-active text-sidebar-foreground shadow-sm ring-1 ring-sidebar-border",
-              )}
-            >
-              {option.label}
-            </span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
 function SidebarHeader() {
   return (
     <div className="flex min-h-16 items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
@@ -464,11 +421,6 @@ export function ApplicationLayout() {
     <ApplicationShell
       consolePanels={consolePanels}
       consoleStatus="No active runs"
-      sidebarActions={
-        <div className="p-4">
-          <ThemeControl />
-        </div>
-      }
       sidebarContent={(closeMobile) => <SidebarNavigation onNavigate={closeMobile} />}
       sidebarFooter={(closeMobile) => <SidebarFooter onNavigate={closeMobile} />}
       sidebarHeader={<SidebarHeader />}
