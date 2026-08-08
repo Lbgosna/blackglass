@@ -26,6 +26,16 @@ export {
 } from "./layout.js";
 export { Status, type StatusProps } from "./status.js";
 export {
+  SidebarCardRow,
+  SidebarCompactRow,
+  SidebarRowAction,
+  SidebarShelf,
+  type SidebarCardRowProps,
+  type SidebarCompactRowProps,
+  type SidebarRowActionProps,
+  type SidebarShelfProps,
+} from "./sidebar-work-list.js";
+export {
   THEME_MEDIA_QUERY,
   THEME_STORAGE_KEY,
   ThemeProvider,
@@ -43,3 +53,17 @@ export {
   type ThemePreference,
 } from "./theme.js";
 export { usePointerResize, type PointerResizeOptions } from "./use-pointer-resize.js";
+export {
+  FatalErrorBoundary,
+  FatalErrorView,
+  LoadingRegion,
+  RecoverableError,
+  Skeleton,
+  StaleDataState,
+  type FatalErrorBoundaryProps,
+  type FatalErrorViewProps,
+  type LoadingRegionProps,
+  type RecoverableErrorProps,
+  type SkeletonProps,
+  type StaleDataStateProps,
+} from "./ui-states.js";
