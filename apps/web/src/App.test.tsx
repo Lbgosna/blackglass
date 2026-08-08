@@ -7,6 +7,7 @@ import {
   THEME_STORAGE_KEY,
   ThemeProvider,
 } from "@blackglass/ui";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import {
   act,
@@ -17,8 +18,10 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createAppQueryClient } from "./query-client.js";
 import { createAppRouter } from "./router.js";
 
 interface Deferred<Value> {
@@ -82,19 +85,30 @@ function createMediaHarness(initialMatches = false): MediaHarness {
   };
 }
 
-async function renderApp(initialEntry = "/") {
+interface RenderAppOptions {
+  strict?: boolean;
+}
+
+const testQueryClients = new Set<QueryClient>();
+
+async function renderApp(initialEntry = "/", { strict = false }: RenderAppOptions = {}) {
   const router = createAppRouter(
     createMemoryHistory({
       initialEntries: [initialEntry],
     }),
   );
   await router.load();
-  const result = render(
+  const queryClient = createAppQueryClient();
+  testQueryClients.add(queryClient);
+  const application = (
     <ThemeProvider>
-      <RouterProvider router={router} />
-    </ThemeProvider>,
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ThemeProvider>
   );
-  return { ...result, router };
+  const result = render(strict ? <StrictMode>{application}</StrictMode> : application);
+  return { ...result, queryClient, router };
 }
 
 let media: MediaHarness;
@@ -127,19 +141,23 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  for (const queryClient of testQueryClients) queryClient.clear();
+  testQueryClients.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("App health state", () => {
-  it("exposes a stable polite loading status, then connects", async () => {
+  it("deduplicates the initial StrictMode request, announces loading, then connects", async () => {
     const request = deferred<Response>();
-    vi.stubGlobal("fetch", vi.fn(() => request.promise));
+    const fetchMock = vi.fn(() => request.promise);
+    vi.stubGlobal("fetch", fetchMock);
 
-    await renderApp();
+    await renderApp("/", { strict: true });
     const loading = screen.getByRole("status", { name: "Checking API" });
     expect(loading.getAttribute("aria-live")).toBe("polite");
     expect(loading.getAttribute("aria-busy")).toBe("true");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     request.resolve(response({ status: "ok" }));
     expect(await screen.findByText("API connected")).toBeTruthy();
@@ -185,33 +203,45 @@ describe("App health state", () => {
     expect(await screen.findByText("API unavailable")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(screen.getByText("Checking API")).toBeTruthy();
+    expect(await screen.findByText("Checking API")).toBeTruthy();
     expect(container.firstElementChild).toBe(mountedPage);
     expect(screen.getByTestId("application-shell")).toBe(mountedShell);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
     second.resolve(response({ status: "ok" }));
     expect(await screen.findByText("API connected")).toBeTruthy();
   });
 
-  it("ignores a stale response after a newer health request completes", async () => {
-    const first = deferred<Response>();
+  it("preserves cached success and offers another retry after a refresh failure", async () => {
     const second = deferred<Response>();
+    const third = deferred<Response>();
     const fetchMock = vi
       .fn<() => Promise<Response>>()
-      .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => second.promise);
+      .mockResolvedValueOnce(response({ status: "ok" }))
+      .mockImplementationOnce(() => second.promise)
+      .mockImplementationOnce(() => third.promise);
     vi.stubGlobal("fetch", fetchMock);
 
     await renderApp();
-    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-
-    second.resolve(response({ status: "ok" }));
     expect(await screen.findByText("API connected")).toBeTruthy();
+    const shell = screen.getByTestId("application-shell");
 
-    first.reject(new Error("late failure"));
-    await waitFor(() => expect(screen.getByText("API connected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    second.reject(new Error("GET /health?token=secret failed with body-secret"));
+
+    const staleWarning = await screen.findByText("Health refresh failed");
+    expect(screen.getByText("API connected")).toBeTruthy();
+    expect(screen.queryByText("API unavailable")).toBeNull();
+    expect(screen.getByTestId("application-shell")).toBe(shell);
+
+    fireEvent.click(
+      within(staleWarning.closest("section")!).getByRole("button", { name: "Retry" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    third.resolve(response({ status: "ok" }));
+    await waitFor(() => expect(screen.queryByText("Health refresh failed")).toBeNull());
+    expect(screen.getByText("API connected")).toBeTruthy();
   });
 });
 
