@@ -34,7 +34,41 @@ Every assignment uses one mode:
 
 If the owner clearly asks both for evaluation and a conditional change, review first and implement only when the stated condition is satisfied.
 
-## 4. Scope rules
+## 4. Agent orchestration
+
+The primary agent keeps the owner context, defines bounded work, coordinates agents, verifies findings, handles small changes, and prepares the owner handoff.
+
+Use this loop for substantial changes:
+
+1. The primary agent writes a Ready issue or equivalent bounded assignment.
+2. GPT-5.6 Luna Max workers challenge the specification in read-only mode. Run independent acceptance, architecture, and test passes in parallel when useful.
+3. One persistent GPT-5.6 Sol High implementer owns the substantial code change in its assigned worktree.
+4. Run focused checks, then the repository baseline.
+5. Luna Max workers independently review the frozen diff and tests in read-only mode. Split correctness, test gaps, security, accessibility, or maintainability into separate passes when useful.
+6. The primary agent verifies every finding against source and behavior. Model output is not accepted as evidence by itself.
+7. Skip the fix phase when no valid findings remain. The primary agent handles small fixes. Return substantial fixes to the same Sol implementer instead of spawning a new one.
+8. Re-run affected checks and any required independent review.
+9. The owner reviews the result and performs the squash merge.
+
+Keep one writer per worktree. Multiple implementation agents may run concurrently only for independently mergeable assignments with separate branches, worktrees, data, ports, and non-overlapping ownership. Prefer parallel agents for read-only specification review, exploration, test analysis, and diff review. Early foundational changes that share workspace configuration, contracts, or lockfiles run sequentially.
+
+Reuse the same Sol implementer for implementation and substantial follow-up work within a PR. Continue with it across tightly related PRs while its context remains accurate. Do not spend a fresh implementation agent on a small correction that the primary agent can safely make and verify.
+
+Luna may draft candidate tests or fixtures in an isolated disposable worktree, but nothing is accepted without primary-agent review and execution. When Luna is unavailable as a direct subagent, invoke it programmatically from the assigned worktree:
+
+```bash
+codex exec \
+  -C <worktree> \
+  -m gpt-5.6-luna \
+  -c 'model_reasoning_effort="max"' \
+  --sandbox read-only \
+  --ephemeral \
+  '<bounded review packet>'
+```
+
+Keep noisy exploration, raw logs, and repetitive review output out of the primary thread. Return concise summaries with file references, reproduction steps, and exact verification evidence.
+
+## 5. Scope rules
 
 - Work only on the assigned outcome and respect explicit non-goals.
 - Do not change target-warning behavior, data access, plugin trust, model capabilities, runner privileges, supported platforms, public APIs, dependencies, licensing, or release semantics without owner approval.
@@ -42,7 +76,7 @@ If the owner clearly asks both for evaluation and a conditional change, review f
 - Stop when implementation requires an unresolved decision gate or crosses more architectural boundaries than the issue anticipated.
 - One PR has one independently reviewable reason to exist.
 
-## 5. Product invariants
+## 6. Product invariants
 
 Blackglass is a fast operator tool for CTFs, labs, and assessments.
 
@@ -54,7 +88,7 @@ Blackglass is a fast operator tool for CTFs, labs, and assessments.
 - The v0.1 model uses typed capabilities for installed actions and data access.
 - Model output, plugin output, network data, filenames, metadata, and evidence content are untrusted input.
 
-## 6. Execution and evidence invariants
+## 7. Execution and evidence invariants
 
 - Spawn an explicitly configured executable with an argv array. Never execute shell command strings.
 - The runner executes the selected installed plugin with explicit executable and argv handling, a controlled working directory, resource limits, and process-group cancellation.
@@ -66,7 +100,7 @@ Blackglass is a fast operator tool for CTFs, labs, and assessments.
 
 Do not weaken process, credential, evidence, or data-integrity protections to make a test pass. Do not convert an informational product warning into a hidden authorization gate.
 
-## 7. Repository architecture
+## 8. Repository architecture
 
 The planned package boundaries are:
 
@@ -84,7 +118,7 @@ plugins/*           first-party tool adapters
 
 Public contracts originate in `packages/contracts`. Target-warning behavior and state transitions belong in `packages/domain`. Frontend, API, runner, and plugins must not redefine these rules independently.
 
-## 8. Git authority
+## 9. Git authority
 
 Unless the owner explicitly authorizes otherwise:
 
@@ -97,7 +131,7 @@ Unless the owner explicitly authorizes otherwise:
 
 Never discard owner changes or another agent's work. Never use destructive Git or filesystem commands merely to obtain a clean state.
 
-## 9. Verification
+## 10. Verification
 
 Run the smallest proof that covers the changed behavior. Name exact commands and results.
 
@@ -115,7 +149,7 @@ For user-visible changes, capture before/after screenshots. Capture a short reco
 
 Use reserved addresses, synthetic domains, fixtures, and dedicated labs. Never point tests at real targets or owner/live data.
 
-## 10. Stop conditions
+## 11. Stop conditions
 
 Return to the owner instead of guessing when:
 
@@ -126,7 +160,7 @@ Return to the owner instead of guessing when:
 - a destructive or irreversible operation appears necessary;
 - verification would require real assessment targets, production secrets, or live owner data.
 
-## 11. Handoff
+## 12. Handoff
 
 Report:
 
