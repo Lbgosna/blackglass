@@ -2,6 +2,7 @@ import { HealthResponseSchema } from "@blackglass/contracts";
 import {
   ApplicationShell,
   Button,
+  cn,
   EmptyState,
   Status,
   useTheme,
@@ -64,7 +65,13 @@ function ThemeControl() {
               checked={preference === option.value}
               onChange={() => setPreference(option.value)}
             />
-            <span className="flex min-h-9 items-center justify-center rounded-md px-2 text-xs font-bold text-sidebar-muted-foreground outline-none peer-checked:bg-sidebar-active peer-checked:text-sidebar-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-ring">
+            <span
+              className={cn(
+                "flex min-h-9 items-center justify-center rounded-md px-2 text-xs font-bold text-sidebar-muted-foreground outline-none transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring",
+                preference === option.value &&
+                  "bg-sidebar-active text-sidebar-foreground shadow-sm ring-1 ring-sidebar-border",
+              )}
+            >
               {option.label}
             </span>
           </label>

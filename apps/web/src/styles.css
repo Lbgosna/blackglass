@@ -28,14 +28,14 @@
   --success-foreground: oklch(0.99 0.005 145);
   --warning: oklch(0.62 0.14 75);
   --warning-foreground: oklch(0.18 0.025 75);
-  --sidebar: oklch(0.23 0.035 168);
-  --sidebar-foreground: oklch(0.94 0.012 168);
-  --sidebar-muted-foreground: oklch(0.72 0.025 168);
-  --sidebar-control: oklch(0.29 0.04 168);
-  --sidebar-hover: oklch(0.33 0.05 168);
-  --sidebar-active: oklch(0.37 0.09 168);
-  --sidebar-selected: oklch(0.34 0.06 190);
-  --sidebar-border: oklch(0.4 0.035 168);
+  --sidebar: oklch(0.965 0.012 168);
+  --sidebar-foreground: oklch(0.21 0.03 168);
+  --sidebar-muted-foreground: oklch(0.46 0.025 168);
+  --sidebar-control: oklch(0.92 0.025 168);
+  --sidebar-hover: oklch(0.88 0.045 168);
+  --sidebar-active: oklch(0.82 0.1 160);
+  --sidebar-selected: oklch(0.86 0.055 190);
+  --sidebar-border: oklch(0.82 0.03 168);
 }
 
 :root[data-theme="dark"] {

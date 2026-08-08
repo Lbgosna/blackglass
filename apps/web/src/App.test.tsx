@@ -692,6 +692,25 @@ describe("App theme preference", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
+  it("shows a distinct pill for every selected theme preference", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    renderApp();
+
+    for (const preference of ["Light", "Dark", "System"]) {
+      fireEvent.click(screen.getByRole("radio", { name: preference }));
+      expect(screen.getByText(preference, { selector: "span" }).className).toContain(
+        "bg-sidebar-active",
+      );
+      for (const other of ["Light", "Dark", "System"].filter(
+        (candidate) => candidate !== preference,
+      )) {
+        expect(screen.getByText(other, { selector: "span" }).className).not.toContain(
+          "bg-sidebar-active",
+        );
+      }
+    }
+  });
+
   it("keeps empty and error actions accessible by name", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
     renderApp();
