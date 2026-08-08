@@ -9,6 +9,7 @@ import {
   readThemePreference,
   resolveTheme,
   storeThemePreference,
+  suppressThemeTransitions,
 } from "./theme.js";
 
 describe("theme preferences", () => {
@@ -99,7 +100,32 @@ describe("theme synchronization", () => {
     listener?.({ key: THEME_STORAGE_KEY, newValue: "dark" } as StorageEvent);
     expect(onPreference).toHaveBeenCalledWith("dark");
 
+    listener?.({ key: THEME_STORAGE_KEY, newValue: null } as StorageEvent);
+    listener?.({ key: null, newValue: null } as StorageEvent);
+    expect(onPreference).toHaveBeenNthCalledWith(2, "system");
+    expect(onPreference).toHaveBeenNthCalledWith(3, "system");
+
     cleanup();
     expect(events.removeEventListener).toHaveBeenCalledWith("storage", listener);
+  });
+
+  it("keeps transitions suppressed through one rendered frame", () => {
+    const callbacks: Array<() => void> = [];
+    const root = {
+      classList: { add: vi.fn(), remove: vi.fn() },
+      dataset: {} as DOMStringMap,
+      style: { colorScheme: "" },
+    };
+
+    suppressThemeTransitions(root, (callback) => callbacks.push(callback));
+    expect(root.classList.add).toHaveBeenCalledWith("theme-switching");
+    expect(callbacks).toHaveLength(1);
+
+    callbacks.shift()?.();
+    expect(root.classList.remove).not.toHaveBeenCalled();
+    expect(callbacks).toHaveLength(1);
+
+    callbacks.shift()?.();
+    expect(root.classList.remove).toHaveBeenCalledWith("theme-switching");
   });
 });

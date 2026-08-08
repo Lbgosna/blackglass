@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 export const THEME_STORAGE_KEY = "blackglass.theme";
 export const THEME_MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -79,7 +87,11 @@ export function listenForThemeStorage(
   onPreference: (preference: ThemePreference) => void,
 ): () => void {
   const listener = (event: StorageEvent) => {
-    if (event.key !== THEME_STORAGE_KEY) return;
+    if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
+    if (event.newValue === null) {
+      onPreference("system");
+      return;
+    }
     const preference = parseThemePreference(event.newValue);
     if (preference) onPreference(preference);
   };
@@ -89,7 +101,7 @@ export function listenForThemeStorage(
 
 export function suppressThemeTransitions(root: ThemeRoot, schedule: (callback: () => void) => number) {
   root.classList.add("theme-switching");
-  return schedule(() => root.classList.remove("theme-switching"));
+  return schedule(() => schedule(() => root.classList.remove("theme-switching")));
 }
 
 export function initializeTheme(browserWindow: Window = window): ThemePreference {
@@ -107,12 +119,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     readThemePreference(window.localStorage),
   );
 
-  useEffect(() =>
-    listenForThemeStorage(window, (nextPreference) => {
-      suppressThemeTransitions(document.documentElement, window.requestAnimationFrame.bind(window));
+  const changePreference = useCallback(
+    (nextPreference: ThemePreference, persist: boolean) => {
+      const root = document.documentElement;
+      suppressThemeTransitions(root, window.requestAnimationFrame.bind(window));
+      applyTheme(root, nextPreference, window.matchMedia(THEME_MEDIA_QUERY).matches);
+      if (persist) storeThemePreference(window.localStorage, nextPreference);
       setPreferenceState(nextPreference);
-    }),
-  []);
+    },
+    [],
+  );
+
+  useEffect(() =>
+    listenForThemeStorage(window, (nextPreference) => changePreference(nextPreference, false)),
+  [changePreference]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(THEME_MEDIA_QUERY);
@@ -129,12 +149,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     () => ({
       preference,
       setPreference(nextPreference) {
-        suppressThemeTransitions(document.documentElement, window.requestAnimationFrame.bind(window));
-        storeThemePreference(window.localStorage, nextPreference);
-        setPreferenceState(nextPreference);
+        changePreference(nextPreference, true);
       },
     }),
-    [preference],
+    [changePreference, preference],
   );
 
   return <ThemeContext value={value}>{children}</ThemeContext>;

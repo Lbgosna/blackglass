@@ -193,6 +193,12 @@ describe("App theme preference", () => {
 
     expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
     expect(document.documentElement.dataset.theme).toBe("dark");
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: null }));
+    });
+    expect((screen.getByRole("radio", { name: "System" }) as HTMLInputElement).checked).toBe(true);
+    expect(document.documentElement.dataset.theme).toBe("light");
   });
 
   it("falls back to system for invalid or unreadable storage", () => {
