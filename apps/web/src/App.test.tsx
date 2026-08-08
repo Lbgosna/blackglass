@@ -891,6 +891,9 @@ describe("Application routes", () => {
     expect(screen.getAllByRole("region", { name: "Appearance" })).toHaveLength(1);
     expect(screen.getAllByRole("group", { name: "Theme" })).toHaveLength(1);
     expect(screen.getAllByRole("radio")).toHaveLength(3);
+    for (const label of ["Light", "Dark", "System"]) {
+      expect(screen.getByText(label, { selector: "span" }).className).toContain("min-h-11");
+    }
     expect(screen.getByText("Choose a light or dark theme, or follow your system setting.")).toBeTruthy();
   });
 

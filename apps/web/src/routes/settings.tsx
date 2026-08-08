@@ -32,7 +32,7 @@ function ThemeControl() {
             />
             <span
               className={cn(
-                "flex min-h-9 items-center justify-center rounded-md px-2 text-xs font-bold text-muted-foreground outline-none transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring",
+                "flex min-h-11 items-center justify-center rounded-md px-2 text-xs font-bold text-muted-foreground outline-none transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring",
                 preference === option.value &&
                   "bg-card text-card-foreground shadow-sm ring-1 ring-border",
               )}
