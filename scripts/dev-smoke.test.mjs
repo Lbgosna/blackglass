@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { networkInterfaces } from "node:os";
+import { chmod, mkdir, readFile, rm } from "node:fs/promises";
+import { networkInterfaces, tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEADLINE_MS = 20_000;
+const temporaryDataDirectories = new Set();
+
+test.afterEach(async () => {
+  await Promise.all(
+    [...temporaryDataDirectories].map((directory) => rm(directory, { force: true, recursive: true })),
+  );
+  temporaryDataDirectories.clear();
+});
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -49,12 +58,19 @@ async function waitFor(description, operation, processState, timeout = DEADLINE_
 }
 
 function startDev(environment = {}) {
+  const dataDirectory =
+    environment.BLACKGLASS_DATA_DIR ??
+    path.join(tmpdir(), `blackglass-dev-smoke-${randomUUID()}`);
+  if (path.isAbsolute(dataDirectory) && !dataDirectory.includes("\0")) {
+    temporaryDataDirectories.add(dataDirectory);
+  }
   const child = spawn("pnpm", ["dev"], {
     cwd: repositoryRoot,
     detached: true,
     env: {
       ...process.env,
       BLACKGLASS_API_PORT: undefined,
+      BLACKGLASS_DATA_DIR: dataDirectory,
       BLACKGLASS_WEB_PORT: undefined,
       ...environment,
     },
@@ -183,6 +199,11 @@ test("pnpm dev boots the default loopback web and API path and stops on SIGINT",
   assert.deepEqual(await waitForJson("http://127.0.0.1:5173/health", dev.state), {
     status: "ok",
   });
+  assert.deepEqual(await waitForJson("http://127.0.0.1:5173/api/v1/system/status", dev.state), {
+    version: 1,
+    overall: "ready",
+    developmentStorage: "ready",
+  });
 
   const pageResponse = await fetch("http://127.0.0.1:5173/", { signal: AbortSignal.timeout(500) });
   const page = await pageResponse.text();
@@ -226,6 +247,10 @@ test("pnpm dev honors distinct port overrides and stops on SIGTERM", async (t) =
   assert.deepEqual(await waitForJson(`http://127.0.0.1:${webPort}/health`, dev.state), {
     status: "ok",
   });
+  assert.deepEqual(
+    await waitForJson(`http://127.0.0.1:${webPort}/api/v1/system/status`, dev.state),
+    { version: 1, overall: "ready", developmentStorage: "ready" },
+  );
 
   const descendants = await descendantProcessIds(dev.child.pid);
   signalGroup(dev.child, "SIGTERM");
@@ -257,8 +282,30 @@ test("pnpm dev rejects equal ports before opening a listener", async () => {
   await waitForClosed(port);
 });
 
-test("API bind failure stops the web sibling and propagates failure", async (t) => {
-  const occupiedApi = net.createServer();
+test("unsafe development storage prevents both listeners with a path-free error", async (t) => {
+  const apiPort = await allocatePort();
+  let webPort = await allocatePort();
+  while (webPort === apiPort) webPort = await allocatePort();
+  const dataDirectory = path.join(tmpdir(), `blackglass-secret-storage-${randomUUID()}`);
+  await mkdir(dataDirectory, { mode: 0o700 });
+  await chmod(dataDirectory, 0o750);
+  const dev = startDev({
+    BLACKGLASS_API_PORT: String(apiPort),
+    BLACKGLASS_DATA_DIR: dataDirectory,
+    BLACKGLASS_WEB_PORT: String(webPort),
+  });
+  t.after(() => {
+    if (!dev.state.exited) signalGroup(dev.child, "SIGKILL");
+  });
+
+  const result = await waitForExit(dev, "unsafe development storage to fail");
+  assert.notEqual(result.code, 0);
+  assert.doesNotMatch(`${dev.state.stdout}\n${dev.state.stderr}`, new RegExp(dataDirectory));
+  await Promise.all([waitForClosed(apiPort), waitForClosed(webPort)]);
+});
+
+test("API bind failure prevents the web listener and propagates failure", async (t) => {
+  const occupiedApi = net.createServer((socket) => socket.destroy());
   await new Promise((resolve, reject) => {
     occupiedApi.once("error", reject);
     occupiedApi.listen({ host: "127.0.0.1", port: 0 }, resolve);
@@ -282,6 +329,6 @@ test("API bind failure stops the web sibling and propagates failure", async (t) 
 
   const result = await waitForExit(dev, "API bind failure to stop development");
   assert.notEqual(result.code, 0);
-  assert.match(`${dev.state.stdout}\n${dev.state.stderr}`, /EADDRINUSE/);
+  assert.match(`${dev.state.stdout}\n${dev.state.stderr}`, /API.*(failed|exited)/i);
   await waitForClosed(webPort);
 });

@@ -53,6 +53,13 @@ function response(payload: unknown, options: { ok?: boolean; status?: number } =
   } as Response;
 }
 
+const readyStatus = { version: 1, overall: "ready", developmentStorage: "ready" };
+const notReadyStatus = {
+  version: 1,
+  overall: "not_ready",
+  developmentStorage: "not_ready",
+};
+
 function createMediaHarness(initialMatches = false): MediaHarness {
   let matches = initialMatches;
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -147,44 +154,60 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("App health state", () => {
-  it("deduplicates the initial StrictMode request, announces loading, then connects", async () => {
+describe("App system readiness", () => {
+  it("aborts the discarded StrictMode request, announces loading, then reports ready", async () => {
     const request = deferred<Response>();
-    const fetchMock = vi.fn(() => request.promise);
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return request.promise;
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await renderApp("/", { strict: true });
-    const loading = screen.getByRole("status", { name: "Checking API" });
+    const loading = screen.getByRole("status", { name: "Checking system" });
     expect(loading.getAttribute("aria-live")).toBe("polite");
     expect(loading.getAttribute("aria-busy")).toBe("true");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
 
-    request.resolve(response({ status: "ok" }));
-    expect(await screen.findByText("API connected")).toBeTruthy();
+    request.resolve(response(readyStatus));
+    expect(await screen.findByText("System ready")).toBeTruthy();
   });
 
-  it("reports network failures", async () => {
+  it("reports a valid 503 as a current not-ready state", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(response(notReadyStatus, { ok: false, status: 503 }))),
+    );
+
+    await renderApp();
+
+    expect(await screen.findByText("System not ready")).toBeTruthy();
+    expect(screen.getByText("Development storage is not ready.")).toBeTruthy();
+    expect(screen.queryByText("System unavailable")).toBeNull();
+  });
+
+  it("distinguishes a no-response failure from not-ready", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
 
     await renderApp();
 
-    expect(await screen.findByText("API unavailable")).toBeTruthy();
-  });
-
-  it("reports non-success responses", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response({}, { ok: false, status: 503 }))));
-
-    await renderApp();
-
-    expect(await screen.findByText("API unavailable")).toBeTruthy();
+    expect(await screen.findByText("System unavailable")).toBeTruthy();
+    expect(screen.queryByText("System not ready")).toBeNull();
   });
 
   it("reports responses that violate the shared contract", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response({ status: "ok", detail: true }))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(response({ ...readyStatus, path: "/private/data" }))),
+    );
 
     await renderApp();
 
-    expect(await screen.findByText("API unavailable")).toBeTruthy();
+    expect(await screen.findByText("System unavailable")).toBeTruthy();
+    expect(screen.queryByText("private")).toBeNull();
   });
 
   it("retries in the mounted page and accepts a later success", async () => {
@@ -200,48 +223,77 @@ describe("App health state", () => {
     const mountedPage = container.firstElementChild;
     const mountedShell = screen.getByTestId("application-shell");
     first.reject(new Error("offline"));
-    expect(await screen.findByText("API unavailable")).toBeTruthy();
+    expect(await screen.findByText("System unavailable")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("Checking API")).toBeTruthy();
+    expect(await screen.findByText("Checking system")).toBeTruthy();
     expect(container.firstElementChild).toBe(mountedPage);
     expect(screen.getByTestId("application-shell")).toBe(mountedShell);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
-    second.resolve(response({ status: "ok" }));
-    expect(await screen.findByText("API connected")).toBeTruthy();
+    second.resolve(response(readyStatus));
+    expect(await screen.findByText("System ready")).toBeTruthy();
   });
 
-  it("preserves cached success and offers another retry after a refresh failure", async () => {
+  it("preserves cached ready status with last-known wording after a network failure", async () => {
     const second = deferred<Response>();
     const third = deferred<Response>();
     const fetchMock = vi
       .fn<() => Promise<Response>>()
-      .mockResolvedValueOnce(response({ status: "ok" }))
+      .mockResolvedValueOnce(response(readyStatus))
       .mockImplementationOnce(() => second.promise)
       .mockImplementationOnce(() => third.promise);
     vi.stubGlobal("fetch", fetchMock);
 
     await renderApp();
-    expect(await screen.findByText("API connected")).toBeTruthy();
+    expect(await screen.findByText("System ready")).toBeTruthy();
     const shell = screen.getByTestId("application-shell");
 
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    second.reject(new Error("GET /health?token=secret failed with body-secret"));
+    second.reject(new Error("GET /api?token=secret failed with body-secret"));
 
-    const staleWarning = await screen.findByText("Health refresh failed");
-    expect(screen.getByText("API connected")).toBeTruthy();
-    expect(screen.queryByText("API unavailable")).toBeNull();
+    const staleWarning = await screen.findByText("Last known: system ready");
+    expect(screen.queryByText("System unavailable")).toBeNull();
     expect(screen.getByTestId("application-shell")).toBe(shell);
 
     fireEvent.click(
       within(staleWarning.closest("section")!).getByRole("button", { name: "Retry" }),
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    third.resolve(response({ status: "ok" }));
-    await waitFor(() => expect(screen.queryByText("Health refresh failed")).toBeNull());
-    expect(screen.getByText("API connected")).toBeTruthy();
+    third.resolve(response(readyStatus));
+    await waitFor(() => expect(screen.queryByText("Last known: system ready")).toBeNull());
+    expect(screen.getByText("System ready")).toBeTruthy();
+  });
+
+  it("preserves cached status after a malformed refresh", async () => {
+    const fetchMock = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(response(readyStatus))
+      .mockResolvedValueOnce(response({ ...readyStatus, rawError: "/private/path" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderApp();
+    expect(await screen.findByText("System ready")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+
+    expect(await screen.findByText("Last known: system ready")).toBeTruthy();
+    expect(screen.queryByText("private")).toBeNull();
+  });
+
+  it("replaces cached ready data with a valid not-ready 503", async () => {
+    const fetchMock = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(response(readyStatus))
+      .mockResolvedValueOnce(response(notReadyStatus, { ok: false, status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderApp();
+    expect(await screen.findByText("System ready")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+
+    expect(await screen.findByText("System not ready")).toBeTruthy();
+    expect(screen.queryByText("Last known: system ready")).toBeNull();
   });
 });
 
