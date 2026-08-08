@@ -26,6 +26,16 @@ export {
 } from "./layout.js";
 export { Status, type StatusProps } from "./status.js";
 export {
+  SidebarCardRow,
+  SidebarCompactRow,
+  SidebarRowAction,
+  SidebarShelf,
+  type SidebarCardRowProps,
+  type SidebarCompactRowProps,
+  type SidebarRowActionProps,
+  type SidebarShelfProps,
+} from "./sidebar-work-list.js";
+export {
   THEME_MEDIA_QUERY,
   THEME_STORAGE_KEY,
   ThemeProvider,

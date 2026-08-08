@@ -145,6 +145,28 @@ input {
   transition-duration: 0s !important;
 }
 
+.sidebar-row-actions {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-row-actions {
+    opacity: 0;
+    transition: opacity 150ms ease-out;
+  }
+
+  .sidebar-work-row:hover .sidebar-row-actions,
+  .sidebar-work-row:focus-within .sidebar-row-actions {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-row-actions {
+    transition-duration: 0s;
+  }
+}
+
 .shell-sidebar {
   left: 0;
   width: var(--shell-sidebar-width);

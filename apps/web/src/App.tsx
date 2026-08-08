@@ -4,6 +4,10 @@ import {
   Button,
   cn,
   EmptyState,
+  SidebarCardRow,
+  SidebarCompactRow,
+  SidebarRowAction,
+  SidebarShelf,
   Status,
   useTheme,
   type ConsolePanel,
@@ -36,6 +40,72 @@ const consolePanels: readonly ConsolePanel[] = [
     content: <ConsolePlaceholder title="Raw output" detail="Live tool output will appear here." />,
   },
 ];
+
+interface SyntheticWorkItem {
+  background?: boolean;
+  context: string;
+  id: string;
+  metadata: string;
+  selected?: boolean;
+  status: string;
+  title: string;
+}
+
+const activeWork: readonly SyntheticWorkItem[] = [
+  {
+    id: "active-service-sweep",
+    context: "northstar.lab",
+    title: "Service sweep",
+    status: "Running",
+    metadata: "3m 18s · 12 services",
+  },
+  {
+    id: "active-web-review",
+    context: "portal.lab",
+    title: "Web surface review",
+    status: "Needs input",
+    metadata: "2 findings",
+    selected: true,
+  },
+  {
+    id: "active-api-map",
+    context: "api.lab",
+    title: "API route map",
+    status: "Waiting",
+    metadata: "Queued locally",
+    background: true,
+  },
+];
+
+const queuedWork: readonly SyntheticWorkItem[] = [
+  {
+    id: "queued-http-probe",
+    context: "northstar.lab",
+    title: "HTTP probe",
+    status: "Queued",
+    metadata: "4 origins",
+  },
+  {
+    id: "queued-content-map",
+    context: "portal.lab",
+    title: "Content map",
+    status: "Paused",
+    metadata: "Ready to resume",
+  },
+];
+
+const historyWork: readonly SyntheticWorkItem[] = Array.from({ length: 40 }, (_, index) => {
+  const number = index + 1;
+  return {
+    id: `history-${number}`,
+    context: number % 2 === 0 ? "northstar.lab" : "portal.lab",
+    title: `Archived task ${number}`,
+    status: number === 38 ? "Reviewed" : "Complete",
+    metadata: `${number + 2}m`,
+  };
+});
+
+const currentHistoryId = "history-38";
 
 function ConsolePlaceholder({ detail, title }: { detail: string; title: string }) {
   return (
@@ -100,35 +170,100 @@ function SidebarHeader() {
 
 function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
   const links = [
-    { href: "#gallery", label: "Dashboard", active: true },
+    { href: "#gallery", label: "Dashboard", active: false },
     { href: "#engagements", label: "Engagements", active: false },
     { href: "#plugins", label: "Plugins", active: false },
   ];
 
   return (
-    <nav aria-label="Global" className="p-3">
-      <p className="px-2 pb-2 text-xs font-bold tracking-widest text-sidebar-muted-foreground uppercase">
-        Workspace
-      </p>
-      <ul className="m-0 list-none space-y-1 p-0">
-        {links.map((link) => (
-          <li key={link.label}>
-            <a
-              href={link.href}
-              aria-current={link.active ? "page" : undefined}
-              className={`flex min-h-11 items-center rounded-md px-3 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                link.active
-                  ? "bg-sidebar-active text-sidebar-foreground"
-                  : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-              }`}
-              onClick={onNavigate}
-            >
-              {link.label}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <div>
+      <nav aria-label="Global" className="p-3 pb-1">
+        <p className="px-2 pb-2 text-xs font-bold tracking-widest text-sidebar-muted-foreground uppercase">
+          Workspace
+        </p>
+        <ul className="m-0 list-none space-y-1 p-0">
+          {links.map((link) => (
+            <li key={link.label}>
+              <a
+                href={link.href}
+                aria-current={link.active ? "page" : undefined}
+                className={`flex min-h-11 items-center rounded-md px-3 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  link.active
+                    ? "bg-sidebar-active text-sidebar-foreground"
+                    : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                }`}
+                onClick={onNavigate}
+              >
+                {link.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <div className="space-y-3 px-3 pt-2 pb-4" aria-label="Work gallery">
+        <section>
+          <h2 className="m-0 min-h-9 px-2 text-xs font-bold tracking-wide text-sidebar-muted-foreground uppercase">
+            Active work
+          </h2>
+          <ul className="m-0 list-none space-y-1 p-0">
+            {activeWork.map((item) => (
+              <li key={item.id}>
+                <SidebarCardRow
+                  {...item}
+                  href={`#${item.id}`}
+                  itemId={item.id}
+                  onNavigate={onNavigate}
+                  action={
+                    <SidebarRowAction
+                      label={`Open ${item.title}`}
+                      onClick={() => {
+                        window.location.hash = item.id;
+                        onNavigate();
+                      }}
+                    >
+                      Open
+                    </SidebarRowAction>
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <SidebarShelf
+          defaultOpen={false}
+          getId={(item) => item.id}
+          items={queuedWork}
+          renderItem={(item) => (
+            <SidebarCompactRow
+              {...item}
+              href={`#${item.id}`}
+              itemId={item.id}
+              onNavigate={onNavigate}
+            />
+          )}
+          title="Queued"
+        />
+
+        <SidebarShelf
+          currentId={currentHistoryId}
+          getId={(item) => item.id}
+          items={historyWork}
+          paginated
+          renderItem={(item) => (
+            <SidebarCompactRow
+              {...item}
+              current={item.id === currentHistoryId}
+              href={`#${item.id}`}
+              itemId={item.id}
+              onNavigate={onNavigate}
+            />
+          )}
+          title="History"
+        />
+      </div>
+    </div>
   );
 }
 
