@@ -7,10 +7,19 @@ import {
   THEME_STORAGE_KEY,
   ThemeProvider,
 } from "@blackglass/ui";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "./App.js";
+import { createAppRouter } from "./router.js";
 
 interface Deferred<Value> {
   promise: Promise<Value>;
@@ -73,12 +82,19 @@ function createMediaHarness(initialMatches = false): MediaHarness {
   };
 }
 
-function renderApp() {
-  return render(
+async function renderApp(initialEntry = "/") {
+  const router = createAppRouter(
+    createMemoryHistory({
+      initialEntries: [initialEntry],
+    }),
+  );
+  await router.load();
+  const result = render(
     <ThemeProvider>
-      <App />
+      <RouterProvider router={router} />
     </ThemeProvider>,
   );
+  return { ...result, router };
 }
 
 let media: MediaHarness;
@@ -103,6 +119,10 @@ beforeEach(() => {
       return 1;
     }),
   });
+  Object.defineProperty(window, "scrollTo", {
+    configurable: true,
+    value: vi.fn(),
+  });
 });
 
 afterEach(() => {
@@ -116,7 +136,7 @@ describe("App health state", () => {
     const request = deferred<Response>();
     vi.stubGlobal("fetch", vi.fn(() => request.promise));
 
-    renderApp();
+    await renderApp();
     const loading = screen.getByRole("status", { name: "Checking API" });
     expect(loading.getAttribute("aria-live")).toBe("polite");
     expect(loading.getAttribute("aria-busy")).toBe("true");
@@ -128,7 +148,7 @@ describe("App health state", () => {
   it("reports network failures", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
 
-    renderApp();
+    await renderApp();
 
     expect(await screen.findByText("API unavailable")).toBeTruthy();
   });
@@ -136,7 +156,7 @@ describe("App health state", () => {
   it("reports non-success responses", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response({}, { ok: false, status: 503 }))));
 
-    renderApp();
+    await renderApp();
 
     expect(await screen.findByText("API unavailable")).toBeTruthy();
   });
@@ -144,7 +164,7 @@ describe("App health state", () => {
   it("reports responses that violate the shared contract", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response({ status: "ok", detail: true }))));
 
-    renderApp();
+    await renderApp();
 
     expect(await screen.findByText("API unavailable")).toBeTruthy();
   });
@@ -158,7 +178,7 @@ describe("App health state", () => {
       .mockImplementationOnce(() => second.promise);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { container } = renderApp();
+    const { container } = await renderApp();
     const mountedPage = container.firstElementChild;
     const mountedShell = screen.getByTestId("application-shell");
     first.reject(new Error("offline"));
@@ -183,7 +203,7 @@ describe("App health state", () => {
       .mockImplementationOnce(() => second.promise);
     vi.stubGlobal("fetch", fetchMock);
 
-    renderApp();
+    await renderApp();
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
@@ -200,10 +220,10 @@ describe("Application shell", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
   });
 
-  it("restores, toggles, and persists desktop sidebar state", () => {
+  it("restores, toggles, and persists desktop sidebar state", async () => {
     window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false");
     window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, "430");
-    renderApp();
+    await renderApp();
 
     const shell = screen.getByTestId("application-shell");
     const toggle = screen.getByRole("button", { name: "Show sidebar" });
@@ -217,8 +237,8 @@ describe("Application shell", () => {
     expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeTruthy();
   });
 
-  it("handles Mod+B in capture phase and ignores keybinding capture regions", () => {
-    renderApp();
+  it("handles Mod+B in capture phase and ignores keybinding capture regions", async () => {
+    await renderApp();
     const shell = screen.getByTestId("application-shell");
     const toggle = screen.getByRole("button", { name: "Hide sidebar" });
     expect(toggle.getAttribute("aria-keyshortcuts")).toBe("Control+B Meta+B");
@@ -242,7 +262,7 @@ describe("Application shell", () => {
   it("keeps mobile navigation independent and restores focus after navigation", async () => {
     window.innerWidth = 500;
     window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false");
-    renderApp();
+    await renderApp();
 
     const trigger = screen.getByRole("button", { name: "Open navigation" });
     trigger.focus();
@@ -258,12 +278,12 @@ describe("Application shell", () => {
     expect(screen.getByTestId("application-shell").dataset.sidebarOpen).toBe("false");
   });
 
-  it("does not overwrite desktop geometry while mounted on mobile", () => {
+  it("does not overwrite desktop geometry while mounted on mobile", async () => {
     window.innerWidth = 500;
     window.innerHeight = 600;
     window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, "430");
     window.localStorage.setItem(CONSOLE_HEIGHT_STORAGE_KEY, "410");
-    renderApp();
+    await renderApp();
 
     expect(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)).toBe("430");
     expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("410");
@@ -278,7 +298,7 @@ describe("Application shell", () => {
 
   it("closes mobile navigation with Escape", async () => {
     window.innerWidth = 500;
-    renderApp();
+    await renderApp();
     const trigger = screen.getByRole("button", { name: "Open navigation" });
 
     fireEvent.click(trigger);
@@ -290,7 +310,7 @@ describe("Application shell", () => {
 
   it("closes both mobile sheets on desktop takeover and moves focus to desktop controls", async () => {
     window.innerWidth = 390;
-    renderApp();
+    await renderApp();
 
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     await screen.findByRole("dialog", { name: "Blackglass navigation" });
@@ -320,7 +340,7 @@ describe("Application shell", () => {
   it("provides keyboard tabs and independent mobile console state", async () => {
     window.innerWidth = 500;
     window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false");
-    renderApp();
+    await renderApp();
 
     fireEvent.click(screen.getByRole("button", { name: "Open console" }));
     expect(await screen.findByRole("dialog", { name: "Console" })).toBeTruthy();
@@ -339,9 +359,9 @@ describe("Application shell", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Console" })).toBeNull());
   });
 
-  it("collapses and reopens the desktop console without changing its height", () => {
+  it("collapses and reopens the desktop console without changing its height", async () => {
     window.localStorage.setItem(CONSOLE_HEIGHT_STORAGE_KEY, "410");
-    renderApp();
+    await renderApp();
     const consoleRegion = screen.getByRole("region", { name: "Console" });
     expect(screen.getByRole("separator", { name: "Resize console" })).toBeTruthy();
 
@@ -354,8 +374,8 @@ describe("Application shell", () => {
     expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("410");
   });
 
-  it("resizes the sidebar with keyboard controls and ignores unrelated keys", () => {
-    renderApp();
+  it("resizes the sidebar with keyboard controls and ignores unrelated keys", async () => {
+    await renderApp();
     const rail = screen.getByRole("separator", { name: "Resize sidebar" });
     expect(rail.getAttribute("tabindex")).toBe("0");
     expect(rail.className).toContain("focus-visible:ring-2");
@@ -387,8 +407,8 @@ describe("Application shell", () => {
     expect(unrelated.defaultPrevented).toBe(false);
   });
 
-  it("resizes the console with keyboard controls", () => {
-    renderApp();
+  it("resizes the console with keyboard controls", async () => {
+    await renderApp();
     const rail = screen.getByRole("separator", { name: "Resize console" });
     expect(rail.getAttribute("tabindex")).toBe("0");
     expect(rail.className).toContain("focus-visible:ring-2");
@@ -404,7 +424,7 @@ describe("Application shell", () => {
     expect(rail.getAttribute("aria-valuenow")).toBe("540");
   });
 
-  it("batches sidebar resize into one frame, clamps, and restores document styles", () => {
+  it("batches sidebar resize into one frame, clamps, and restores document styles", async () => {
     const frames: FrameRequestCallback[] = [];
     Object.defineProperty(window, "requestAnimationFrame", {
       configurable: true,
@@ -417,7 +437,7 @@ describe("Application shell", () => {
       configurable: true,
       value: vi.fn(),
     });
-    renderApp();
+    await renderApp();
     frames.length = 0;
     const rail = screen.getByRole("separator", { name: "Resize sidebar" });
     Object.assign(rail, {
@@ -442,8 +462,8 @@ describe("Application shell", () => {
     expect(document.documentElement.classList.contains("shell-resizing")).toBe(false);
   });
 
-  it("ignores non-primary resize and cleans up cancel and unmount", () => {
-    const { unmount } = renderApp();
+  it("ignores non-primary resize and cleans up cancel and unmount", async () => {
+    const { unmount } = await renderApp();
     const rail = screen.getByRole("separator", { name: "Resize sidebar" });
     const releasePointerCapture = vi.fn();
     Object.assign(rail, {
@@ -472,8 +492,8 @@ describe("Application shell", () => {
     expect(document.body.style.userSelect).toBe("");
   });
 
-  it("suppresses the click after a drag longer than two pixels", () => {
-    renderApp();
+  it("suppresses the click after a drag longer than two pixels", async () => {
+    await renderApp();
     const rail = screen.getByRole("separator", { name: "Resize sidebar" });
     Object.assign(rail, {
       hasPointerCapture: vi.fn(() => false),
@@ -490,8 +510,8 @@ describe("Application shell", () => {
     expect(nextClick.defaultPrevented).toBe(false);
   });
 
-  it("aborts an active sidebar resize when the sidebar closes", () => {
-    renderApp();
+  it("aborts an active sidebar resize when the sidebar closes", async () => {
+    await renderApp();
     const rail = screen.getByRole("separator", { name: "Resize sidebar" });
     const releasePointerCapture = vi.fn();
     Object.assign(rail, {
@@ -512,8 +532,8 @@ describe("Application shell", () => {
     expect(document.body.style.userSelect).toBe("text");
   });
 
-  it("cancels pending console resize work when the console collapses", () => {
-    renderApp();
+  it("cancels pending console resize work when the console collapses", async () => {
+    await renderApp();
     let queuedFrame: FrameRequestCallback | null = null;
     Object.defineProperty(window, "requestAnimationFrame", {
       configurable: true,
@@ -548,10 +568,10 @@ describe("Application shell", () => {
     expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("320");
   });
 
-  it("aborts an active resize when the viewport crosses to mobile", () => {
+  it("aborts an active resize when the viewport crosses to mobile", async () => {
     window.innerWidth = 848;
     window.innerHeight = 400;
-    renderApp();
+    await renderApp();
     const rail = screen.getByRole("separator", { name: "Resize sidebar" });
     const releasePointerCapture = vi.fn();
     Object.assign(rail, {
@@ -574,8 +594,8 @@ describe("Application shell", () => {
     expect(document.body.style.userSelect).toBe("all");
   });
 
-  it("persists console resize and re-clamps both dimensions on viewport resize", () => {
-    renderApp();
+  it("persists console resize and re-clamps both dimensions on viewport resize", async () => {
+    await renderApp();
     const consoleRail = screen.getByRole("separator", { name: "Resize console" });
     Object.assign(consoleRail, {
       hasPointerCapture: vi.fn(() => false),
@@ -601,8 +621,8 @@ describe("Application shell", () => {
     expect(window.localStorage.getItem(CONSOLE_HEIGHT_STORAGE_KEY)).toBe("500");
   });
 
-  it("exposes reduced-motion shell rules and labelled resize controls", () => {
-    renderApp();
+  it("exposes reduced-motion shell rules and labelled resize controls", async () => {
+    await renderApp();
     expect(screen.getByRole("separator", { name: "Resize sidebar" })).toBeTruthy();
     expect(screen.getByRole("separator", { name: "Resize console" })).toBeTruthy();
     expect(document.querySelector(".application-shell")).toBeTruthy();
@@ -610,11 +630,11 @@ describe("Application shell", () => {
 });
 
 describe("App theme preference", () => {
-  it("uses the stored preference and exposes native selected state", () => {
+  it("uses the stored preference and exposes native selected state", async () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
 
-    renderApp();
+    await renderApp();
 
     expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
     expect(document.documentElement.dataset.theme).toBe("dark");
@@ -626,10 +646,10 @@ describe("App theme preference", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
-  it("falls back to system for invalid or unreadable storage", () => {
+  it("falls back to system for invalid or unreadable storage", async () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, "sepia");
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    const first = renderApp();
+    const first = await renderApp();
     expect((screen.getByRole("radio", { name: "System" }) as HTMLInputElement).checked).toBe(
       true,
     );
@@ -638,15 +658,15 @@ describe("App theme preference", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");
     });
-    renderApp();
+    await renderApp();
     expect((screen.getByRole("radio", { name: "System" }) as HTMLInputElement).checked).toBe(
       true,
     );
   });
 
-  it("reacts to OS changes only while system is selected and cleans up the listener", () => {
+  it("reacts to OS changes only while system is selected and cleans up the listener", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    const { unmount } = renderApp();
+    const { unmount } = await renderApp();
 
     act(() => media.dispatch(true));
     expect(document.documentElement.dataset.theme).toBe("dark");
@@ -662,7 +682,7 @@ describe("App theme preference", () => {
 
   it("synchronizes valid storage events and ignores malformed values", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    renderApp();
+    await renderApp();
 
     act(() => {
       window.dispatchEvent(
@@ -680,21 +700,21 @@ describe("App theme preference", () => {
     expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
   });
 
-  it("keeps theme selection usable when storage writes fail", () => {
+  it("keeps theme selection usable when storage writes fail", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("full");
     });
-    renderApp();
+    await renderApp();
 
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("shows a distinct pill for every selected theme preference", () => {
+  it("shows a distinct pill for every selected theme preference", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    renderApp();
+    await renderApp();
 
     for (const preference of ["Light", "Dark", "System"]) {
       fireEvent.click(screen.getByRole("radio", { name: preference }));
@@ -713,7 +733,7 @@ describe("App theme preference", () => {
 
   it("keeps empty and error actions accessible by name", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
-    renderApp();
+    await renderApp();
 
     expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
@@ -724,7 +744,7 @@ describe("App state gallery", () => {
   it("keeps the application shell mounted while every synthetic state changes", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    renderApp();
+    await renderApp();
     const shell = screen.getByTestId("application-shell");
 
     expect(screen.getByRole("status", { name: "Loading workspace overview" })).toBeTruthy();
@@ -742,5 +762,115 @@ describe("App state gallery", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(screen.getByTestId("synthetic-stale-content")).toBeTruthy();
     expect(screen.getByTestId("application-shell")).toBe(shell);
+  });
+});
+
+describe("Application routes", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+  });
+
+  it.each([
+    ["/", "Application shell", "Dashboard"],
+    ["/engagements", "Engagements", "Engagements"],
+    ["/plugins", "Plugins", "Plugins"],
+    ["/settings", "Settings", "Settings"],
+  ])("renders a direct entry for %s inside the shell", async (path, heading, activeLabel) => {
+    await renderApp(path);
+
+    expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeTruthy();
+    expect(screen.getByTestId("application-shell")).toBeTruthy();
+
+    const globalNavigation = screen.getByRole("navigation", { name: "Global" });
+    const activeGlobalLinks = within(globalNavigation)
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") === "page");
+    if (path === "/settings") {
+      expect(activeGlobalLinks).toHaveLength(0);
+      expect(screen.getByRole("link", { name: activeLabel }).getAttribute("aria-current")).toBe(
+        "page",
+      );
+    } else {
+      expect(activeGlobalLinks).toHaveLength(1);
+      expect(activeGlobalLinks[0]?.textContent).toBe(activeLabel);
+    }
+  });
+
+  it("navigates with exact active state while preserving the shell node", async () => {
+    await renderApp();
+    const shell = screen.getByTestId("application-shell");
+    const globalNavigation = screen.getByRole("navigation", { name: "Global" });
+
+    expect(
+      within(globalNavigation)
+        .getByRole("link", { name: "Dashboard" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    fireEvent.click(within(globalNavigation).getByRole("link", { name: "Engagements" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Engagements" })).toBeTruthy();
+    expect(screen.getByTestId("application-shell")).toBe(shell);
+    expect(
+      within(globalNavigation)
+        .getByRole("link", { name: "Dashboard" })
+        .getAttribute("aria-current"),
+    ).toBeNull();
+    expect(
+      within(globalNavigation)
+        .getByRole("link", { name: "Engagements" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+
+    fireEvent.click(within(globalNavigation).getByRole("link", { name: "Plugins" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Plugins" })).toBeTruthy();
+    expect(screen.getByTestId("application-shell")).toBe(shell);
+    expect(
+      within(globalNavigation)
+        .getByRole("link", { name: "Engagements" })
+        .getAttribute("aria-current"),
+    ).toBeNull();
+    expect(
+      within(globalNavigation).getByRole("link", { name: "Plugins" }).getAttribute("aria-current"),
+    ).toBe("page");
+  });
+
+  it("closes mobile navigation after global and footer route activation", async () => {
+    window.innerWidth = 500;
+    await renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    let dialog = await screen.findByRole("dialog", { name: "Blackglass navigation" });
+    fireEvent.click(within(dialog).getByRole("link", { name: "Engagements" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Engagements" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    dialog = await screen.findByRole("dialog", { name: "Blackglass navigation" });
+    fireEvent.click(within(dialog).getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps unknown paths inside the shell with a useful recovery link", async () => {
+    await renderApp("/missing/workspace");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeTruthy();
+    expect(screen.getByText("/missing/workspace")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Return to Dashboard" }).getAttribute("href")).toBe(
+      "/",
+    );
+    expect(screen.getByTestId("application-shell")).toBeTruthy();
+    expect(
+      within(screen.getByRole("navigation", { name: "Global" }))
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("aria-current") === "page"),
+    ).toHaveLength(0);
+  });
+
+  it("keeps synthetic work links as Dashboard hash anchors", async () => {
+    await renderApp("/plugins");
+
+    expect(screen.getByRole("link", { name: /Service sweep/ }).getAttribute("href")).toBe(
+      "/#active-service-sweep",
+    );
   });
 });

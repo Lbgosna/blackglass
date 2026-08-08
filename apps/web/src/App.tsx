@@ -18,6 +18,7 @@ import {
   type ConsolePanel,
   type ThemePreference,
 } from "@blackglass/ui";
+import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type ApiState = "checking" | "connected" | "unavailable";
@@ -37,6 +38,12 @@ const galleryStates: ReadonlyArray<{ label: string; value: GalleryState }> = [
   { label: "Recoverable", value: "recoverable" },
   { label: "Fatal", value: "fatal" },
 ];
+
+const navigationLinks = [
+  { label: "Dashboard", to: "/" },
+  { label: "Engagements", to: "/engagements" },
+  { label: "Plugins", to: "/plugins" },
+] as const;
 
 const consolePanels: readonly ConsolePanel[] = [
   {
@@ -337,11 +344,7 @@ function SidebarHeader() {
 }
 
 function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
-  const links = [
-    { href: "#gallery", label: "Dashboard", active: false },
-    { href: "#engagements", label: "Engagements", active: false },
-    { href: "#plugins", label: "Plugins", active: false },
-  ];
+  const navigate = useNavigate();
 
   return (
     <div>
@@ -350,20 +353,23 @@ function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
           Workspace
         </p>
         <ul className="m-0 list-none space-y-1 p-0">
-          {links.map((link) => (
+          {navigationLinks.map((link) => (
             <li key={link.label}>
-              <a
-                href={link.href}
-                aria-current={link.active ? "page" : undefined}
-                className={`flex min-h-11 items-center rounded-md px-3 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  link.active
-                    ? "bg-sidebar-active text-sidebar-foreground"
-                    : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-                }`}
+              <Link
+                to={link.to}
+                activeOptions={{ exact: true }}
+                activeProps={{
+                  className: "bg-sidebar-active text-sidebar-foreground",
+                }}
+                className="flex min-h-11 items-center rounded-md px-3 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                inactiveProps={{
+                  className:
+                    "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                }}
                 onClick={onNavigate}
               >
                 {link.label}
-              </a>
+              </Link>
             </li>
           ))}
         </ul>
@@ -379,14 +385,14 @@ function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
               <li key={item.id}>
                 <SidebarCardRow
                   {...item}
-                  href={`#${item.id}`}
+                  href={`/#${item.id}`}
                   itemId={item.id}
                   onNavigate={onNavigate}
                   action={
                     <SidebarRowAction
                       label={`Open ${item.title}`}
                       onClick={() => {
-                        window.location.hash = item.id;
+                        void navigate({ to: "/", hash: item.id });
                         onNavigate();
                       }}
                     >
@@ -406,7 +412,7 @@ function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
           renderItem={(item) => (
             <SidebarCompactRow
               {...item}
-              href={`#${item.id}`}
+              href={`/#${item.id}`}
               itemId={item.id}
               onNavigate={onNavigate}
             />
@@ -423,7 +429,7 @@ function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
             <SidebarCompactRow
               {...item}
               current={item.id === currentHistoryId}
-              href={`#${item.id}`}
+              href={`/#${item.id}`}
               itemId={item.id}
               onNavigate={onNavigate}
             />
@@ -437,17 +443,42 @@ function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
 
 function SidebarFooter({ onNavigate }: { onNavigate: () => void }) {
   return (
-    <a
-      href="#settings"
-      className="flex min-h-14 items-center px-5 text-sm font-bold text-sidebar-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    <Link
+      to="/settings"
+      activeOptions={{ exact: true }}
+      activeProps={{ className: "bg-sidebar-active text-sidebar-foreground" }}
+      className="flex min-h-14 items-center px-5 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      inactiveProps={{
+        className:
+          "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
+      }}
       onClick={onNavigate}
     >
       Settings
-    </a>
+    </Link>
   );
 }
 
-export function App() {
+export function ApplicationLayout() {
+  return (
+    <ApplicationShell
+      consolePanels={consolePanels}
+      consoleStatus="No active runs"
+      sidebarActions={
+        <div className="p-4">
+          <ThemeControl />
+        </div>
+      }
+      sidebarContent={(closeMobile) => <SidebarNavigation onNavigate={closeMobile} />}
+      sidebarFooter={(closeMobile) => <SidebarFooter onNavigate={closeMobile} />}
+      sidebarHeader={<SidebarHeader />}
+    >
+      <Outlet />
+    </ApplicationShell>
+  );
+}
+
+export function DashboardPage() {
   const [apiState, setApiState] = useState<ApiState>("checking");
   const [requestNumber, setRequestNumber] = useState(0);
   const latestRequest = useRef(0);
@@ -482,103 +513,90 @@ export function App() {
   }, [requestNumber]);
 
   return (
-    <ApplicationShell
-      consolePanels={consolePanels}
-      consoleStatus="No active runs"
-      sidebarActions={
-        <div className="p-4">
-          <ThemeControl />
-        </div>
-      }
-      sidebarContent={(closeMobile) => <SidebarNavigation onNavigate={closeMobile} />}
-      sidebarFooter={(closeMobile) => <SidebarFooter onNavigate={closeMobile} />}
-      sidebarHeader={<SidebarHeader />}
-    >
-      <main id="gallery" className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-12">
-        <div className="mx-auto w-full max-w-3xl">
-          <header className="mb-8">
-            <p className="m-0 text-xs font-extrabold tracking-[0.18em] text-primary uppercase">
-              Blackglass
-            </p>
-            <h1 className="mt-2 mb-0 text-3xl leading-none font-bold tracking-tight sm:text-4xl">
-              Application shell
-            </h1>
-            <p className="mt-3 mb-0 max-w-xl text-sm leading-6 text-muted-foreground">
-              Shared navigation, workspace, and console surfaces connected to the local control
-              plane.
-            </p>
-          </header>
+    <main id="gallery" className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-12">
+      <div className="mx-auto w-full max-w-3xl">
+        <header className="mb-8">
+          <p className="m-0 text-xs font-extrabold tracking-[0.18em] text-primary uppercase">
+            Blackglass
+          </p>
+          <h1 className="mt-2 mb-0 text-3xl leading-none font-bold tracking-tight sm:text-4xl">
+            Application shell
+          </h1>
+          <p className="mt-3 mb-0 max-w-xl text-sm leading-6 text-muted-foreground">
+            Shared navigation, workspace, and console surfaces connected to the local control
+            plane.
+          </p>
+        </header>
 
-          <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-            <section className="rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="m-0 text-xs font-bold tracking-wider text-muted-foreground uppercase">
-                    Runtime
-                  </p>
-                  <h2 className="mt-1 mb-0 text-lg font-bold">Control plane</h2>
-                </div>
-                <code className="rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
-                  /health
-                </code>
+        <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+          <section className="rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="m-0 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                  Runtime
+                </p>
+                <h2 className="mt-1 mb-0 text-lg font-bold">Control plane</h2>
               </div>
+              <code className="rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                /health
+              </code>
+            </div>
 
-              {apiState === "checking" && (
-                <Status
-                  loading
-                  title="Checking API"
-                  detail="Waiting for the local control plane to respond."
-                />
-              )}
-              {apiState === "connected" && (
-                <Status
-                  tone="success"
-                  title="API connected"
-                  detail="The shared health contract returned a valid response."
-                />
-              )}
-              {apiState === "unavailable" && (
-                <Status
-                  tone="warning"
-                  title="API unavailable"
-                  detail="The control plane did not return a valid health response."
-                  action={<Button onClick={retry}>Retry</Button>}
-                />
-              )}
-            </section>
-
-            <section className="rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
-              <p className="m-0 text-xs font-bold tracking-wider text-muted-foreground uppercase">
-                Actions
-              </p>
-              <h2 className="mt-1 mb-4 text-lg font-bold">Button primitives</h2>
-              <div className="flex flex-wrap gap-2">
-                <Button>Primary</Button>
-                <Button variant="secondary">Secondary</Button>
-                <Button variant="quiet">Quiet</Button>
-              </div>
-            </section>
-          </div>
-
-          <section className="mt-5 rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
-            <p className="m-0 text-xs font-bold tracking-wider text-muted-foreground uppercase">
-              Empty state
-            </p>
-            <h2 className="mt-1 mb-4 text-lg font-bold">Stable workspace surface</h2>
-            <EmptyState
-              title="No recent activity"
-              description="Runtime events will appear here after the first local action."
-              action={
-                <Button variant="secondary" onClick={retry}>
-                  Check again
-                </Button>
-              }
-            />
+            {apiState === "checking" && (
+              <Status
+                loading
+                title="Checking API"
+                detail="Waiting for the local control plane to respond."
+              />
+            )}
+            {apiState === "connected" && (
+              <Status
+                tone="success"
+                title="API connected"
+                detail="The shared health contract returned a valid response."
+              />
+            )}
+            {apiState === "unavailable" && (
+              <Status
+                tone="warning"
+                title="API unavailable"
+                detail="The control plane did not return a valid health response."
+                action={<Button onClick={retry}>Retry</Button>}
+              />
+            )}
           </section>
 
-          <StateGallery />
+          <section className="rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
+            <p className="m-0 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+              Actions
+            </p>
+            <h2 className="mt-1 mb-4 text-lg font-bold">Button primitives</h2>
+            <div className="flex flex-wrap gap-2">
+              <Button>Primary</Button>
+              <Button variant="secondary">Secondary</Button>
+              <Button variant="quiet">Quiet</Button>
+            </div>
+          </section>
         </div>
-      </main>
-    </ApplicationShell>
+
+        <section className="mt-5 rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
+          <p className="m-0 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+            Empty state
+          </p>
+          <h2 className="mt-1 mb-4 text-lg font-bold">Stable workspace surface</h2>
+          <EmptyState
+            title="No recent activity"
+            description="Runtime events will appear here after the first local action."
+            action={
+              <Button variant="secondary" onClick={retry}>
+                Check again
+              </Button>
+            }
+          />
+        </section>
+
+        <StateGallery />
+      </div>
+    </main>
   );
 }
