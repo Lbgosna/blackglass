@@ -13,6 +13,9 @@ export default defineConfig({
     port: WEB_PORT,
     strictPort: true,
     proxy: {
+      "/api": {
+        target: `http://127.0.0.1:${API_PORT}`,
+      },
       "/health": {
         target: `http://127.0.0.1:${API_PORT}`,
       },

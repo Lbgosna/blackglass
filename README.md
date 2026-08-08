@@ -20,9 +20,9 @@ The first useful slice is simple: create an engagement, enter a target, run Nmap
 
 ## Current status
 
-The repository foundation includes the AGPL license, pnpm workspace, local checks, CI, templates, and a squash-based Git workflow.
+M1 is complete. The loopback-only Fastify API and React app start through one supervised development command, use guarded isolated development storage, expose strict health and readiness contracts, and render the responsive application shell.
 
-Product work starts with M1: boot the Fastify API and React app locally, keep development data isolated, add health checks, and build the first version of the shell.
+Current product work is M2: engagement and target context.
 
 ## Stack
 
@@ -42,4 +42,5 @@ Native development is the primary path because my current LXC host does not run 
 - [`docs/development/V0.1_PLAN.md`](./docs/development/V0.1_PLAN.md): product plan and milestone sequence
 - [`docs/architecture/DECISION_GATES.md`](./docs/architecture/DECISION_GATES.md): decisions that need to be settled before their milestone
 - [`docs/development/MAINTAINER_HANDBOOK.md`](./docs/development/MAINTAINER_HANDBOOK.md): issue, worktree, review, and release workflow
+- [`docs/development/M1_STATUS.md`](./docs/development/M1_STATUS.md): verified executable-shell behavior
 - [`docs/ui/constitution.md`](./docs/ui/constitution.md): shell, motion, theme, responsive, and accessibility behavior

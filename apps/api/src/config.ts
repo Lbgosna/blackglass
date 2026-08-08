@@ -1,3 +1,5 @@
+import path from "node:path";
+
 const DEFAULT_API_PORT = 3001;
 
 export function apiPortFromEnvironment(environment: NodeJS.ProcessEnv): number {
@@ -12,4 +14,17 @@ export function apiPortFromEnvironment(environment: NodeJS.ProcessEnv): number {
     throw new Error("BLACKGLASS_API_PORT must be a decimal integer from 1 through 65535.");
   }
   return port;
+}
+
+export function dataDirectoryFromEnvironment(environment: NodeJS.ProcessEnv): string {
+  const rawDataDirectory = environment.BLACKGLASS_DATA_DIR;
+  if (
+    rawDataDirectory === undefined ||
+    rawDataDirectory.length === 0 ||
+    rawDataDirectory.includes("\0") ||
+    !path.isAbsolute(rawDataDirectory)
+  ) {
+    throw new Error("BLACKGLASS_DATA_DIR must be an explicit absolute path without NUL bytes.");
+  }
+  return path.resolve(rawDataDirectory);
 }

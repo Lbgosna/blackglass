@@ -3,12 +3,14 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { readDevConfig } from "./dev-config.mjs";
+import { startApiThenWeb, waitForApiReadiness } from "./dev-readiness.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const FORCE_STOP_AFTER_MS = 5_000;
 
 function exitPromise(child) {
   return new Promise((resolve) => {
+    child.once("error", () => resolve({ code: 1, signal: null }));
     child.once("exit", (code, signal) => resolve({ code, signal }));
   });
 }
@@ -56,7 +58,7 @@ async function stopChild(child, exited, signal) {
 async function main() {
   let config;
   try {
-    config = readDevConfig(process.env);
+    config = readDevConfig(process.env, repositoryRoot);
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
@@ -73,13 +75,12 @@ async function main() {
   const environment = {
     ...process.env,
     BLACKGLASS_API_PORT: String(config.apiPort),
+    BLACKGLASS_DATA_DIR: config.dataDirectory,
     BLACKGLASS_WEB_PORT: String(config.webPort),
   };
-  const definitions = [
-    { label: "API", packageName: "@blackglass/api" },
-    { label: "web", packageName: "@blackglass/web" },
-  ];
-  const children = definitions.map(({ label, packageName }) => {
+  const children = [];
+
+  function startChild(label, packageName) {
     const child = spawn(process.execPath, [pnpmProgram, "--filter", packageName, "run", "dev"], {
       cwd: repositoryRoot,
       detached: true,
@@ -87,8 +88,10 @@ async function main() {
       shell: false,
       stdio: "inherit",
     });
-    return { child, exited: exitPromise(child), label };
-  });
+    const managedChild = { child, exited: exitPromise(child), label };
+    children.push(managedChild);
+    return managedChild;
+  }
 
   let shutdownPromise;
   function shutdown(signal, exitCode) {
@@ -103,14 +106,33 @@ async function main() {
   process.once("SIGINT", () => void shutdown("SIGINT", 130));
   process.once("SIGTERM", () => void shutdown("SIGTERM", 143));
 
-  for (const { child, label } of children) {
-    child.once("error", (error) => {
-      console.error(`Failed to start the Blackglass ${label} process.`, error);
-      void shutdown("SIGTERM", 1);
+  let started;
+  try {
+    started = await startApiThenWeb({
+      apiIsRunning: ({ child }) => processGroupExists(child),
+      startApi: () => startChild("API", "@blackglass/api"),
+      startWeb: () => startChild("web", "@blackglass/web"),
+      waitUntilReady: ({ exited }) =>
+        waitForApiReadiness({
+          exited,
+          url: `http://127.0.0.1:${config.apiPort}/health`,
+        }),
     });
+  } catch (error) {
+    if (!shutdownPromise) {
+      console.error(error instanceof Error ? error.message : "Blackglass API readiness failed.");
+      await shutdown("SIGTERM", 1);
+    } else {
+      await shutdownPromise;
+    }
+    return;
   }
 
-  for (const { exited, label } of children) {
+  for (const { child, exited, label } of [started.api, started.web]) {
+    child.once("error", () => {
+      console.error(`Failed to start the Blackglass ${label} process.`);
+      void shutdown("SIGTERM", 1);
+    });
     void exited.then(({ code, signal }) => {
       if (shutdownPromise) return;
       console.error(
