@@ -1,4 +1,3 @@
-import { HealthResponseSchema } from "@blackglass/contracts";
 import {
   ApplicationShell,
   Button,
@@ -19,9 +18,10 @@ import {
   type ThemePreference,
 } from "@blackglass/ui";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
-type ApiState = "checking" | "connected" | "unavailable";
+import { useHealthQuery } from "./health-query.js";
+
 type GalleryState = "loading" | "empty" | "filtered" | "stale" | "recoverable" | "fatal";
 
 const themeOptions: ReadonlyArray<{ label: string; value: ThemePreference }> = [
@@ -479,38 +479,9 @@ export function ApplicationLayout() {
 }
 
 export function DashboardPage() {
-  const [apiState, setApiState] = useState<ApiState>("checking");
-  const [requestNumber, setRequestNumber] = useState(0);
-  const latestRequest = useRef(0);
-
-  const retry = useCallback(() => {
-    setApiState("checking");
-    setRequestNumber((current) => current + 1);
-  }, []);
-
-  useEffect(() => {
-    const requestId = latestRequest.current + 1;
-    latestRequest.current = requestId;
-    let mounted = true;
-
-    async function checkHealth() {
-      try {
-        const response = await fetch("/health");
-        if (!response.ok) throw new Error(`Health returned HTTP ${response.status}.`);
-        const payload: unknown = await response.json();
-        const result = HealthResponseSchema.safeParse(payload);
-        if (!result.success) throw new Error("Health response did not match its contract.");
-        if (mounted && latestRequest.current === requestId) setApiState("connected");
-      } catch {
-        if (mounted && latestRequest.current === requestId) setApiState("unavailable");
-      }
-    }
-
-    void checkHealth();
-    return () => {
-      mounted = false;
-    };
-  }, [requestNumber]);
+  const health = useHealthQuery();
+  const hasHealthData = health.data !== undefined;
+  const retryHealth = () => void health.refetch();
 
   return (
     <main id="gallery" className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-12">
@@ -542,26 +513,36 @@ export function DashboardPage() {
               </code>
             </div>
 
-            {apiState === "checking" && (
+            {!hasHealthData && health.isFetching && (
               <Status
                 loading
                 title="Checking API"
                 detail="Waiting for the local control plane to respond."
               />
             )}
-            {apiState === "connected" && (
-              <Status
-                tone="success"
-                title="API connected"
-                detail="The shared health contract returned a valid response."
-              />
+            {hasHealthData && (
+              <div className="space-y-3">
+                <Status
+                  tone="success"
+                  title="API connected"
+                  detail="The shared health contract returned a valid response."
+                />
+                {health.isError && (
+                  <Status
+                    tone="warning"
+                    title="Health refresh failed"
+                    detail="Showing the last valid health result."
+                    action={<Button onClick={retryHealth}>Retry</Button>}
+                  />
+                )}
+              </div>
             )}
-            {apiState === "unavailable" && (
+            {!hasHealthData && health.isError && !health.isFetching && (
               <Status
                 tone="warning"
                 title="API unavailable"
                 detail="The control plane did not return a valid health response."
-                action={<Button onClick={retry}>Retry</Button>}
+                action={<Button onClick={retryHealth}>Retry</Button>}
               />
             )}
           </section>
@@ -588,7 +569,7 @@ export function DashboardPage() {
             title="No recent activity"
             description="Runtime events will appear here after the first local action."
             action={
-              <Button variant="secondary" onClick={retry}>
+              <Button variant="secondary" onClick={retryHealth}>
                 Check again
               </Button>
             }
