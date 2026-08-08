@@ -1,8 +1,11 @@
 import { initializeTheme, ThemeProvider } from "@blackglass/ui";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { App } from "./App.js";
+import { queryClient } from "./query-client.js";
+import { router } from "./router.js";
 import "./styles.css";
 
 const rootElement = document.querySelector<HTMLDivElement>("#root");
@@ -13,7 +16,9 @@ initializeTheme();
 createRoot(rootElement).render(
   <StrictMode>
     <ThemeProvider>
-      <App />
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,
 );
