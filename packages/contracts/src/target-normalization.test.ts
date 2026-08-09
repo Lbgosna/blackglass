@@ -73,6 +73,11 @@ describe("target normalization contracts", () => {
       address: "192.0.2.7",
       zone: null,
     },
+  ])("rejects a family-address structural mismatch", (target) => {
+    expect(CanonicalTargetSchema.safeParse(target).success).toBe(false);
+  });
+
+  it.each([
     {
       kind: "ip",
       normalizationProfile,
@@ -88,11 +93,6 @@ describe("target normalization contracts", () => {
       zone: null,
     },
     { kind: "hostname", normalizationProfile, hostname: "Target.Example" },
-  ])("rejects a noncanonical or mismatched target", (target) => {
-    expect(CanonicalTargetSchema.safeParse(target).success).toBe(false);
-  });
-
-  it.each([
     {
       kind: "cidr",
       normalizationProfile,
@@ -123,8 +123,17 @@ describe("target normalization contracts", () => {
       address: "2001:db8::7",
       zone: "Eth0",
     },
-  ])("rejects a target with noncanonical identity", (target) => {
-    expect(CanonicalTargetSchema.safeParse(target).success).toBe(false);
+    {
+      kind: "url",
+      normalizationProfile,
+      url: "https://target.example/other",
+      origin: "https://different.example:443",
+      host: { hostname: "third.example" },
+      effectivePort: 443,
+      pathAndQuery: "/",
+    },
+  ])("leaves semantic canonicality to the domain", (target) => {
+    expect(CanonicalTargetSchema.safeParse(target).success).toBe(true);
   });
 
   it("rejects missing profiles and unknown fields", () => {
@@ -154,20 +163,6 @@ describe("target normalization contracts", () => {
         origin: "https://target.example",
         host: { hostname: "target.example" },
         effectivePort: port,
-        pathAndQuery: "/",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects inconsistent canonical URL fields", () => {
-    expect(
-      CanonicalUrlTargetSchema.safeParse({
-        kind: "url",
-        normalizationProfile,
-        url: "https://target.example/other",
-        origin: "https://target.example:443",
-        host: { hostname: "target.example" },
-        effectivePort: 443,
         pathAndQuery: "/",
       }).success,
     ).toBe(false);

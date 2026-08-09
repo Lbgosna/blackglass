@@ -71,6 +71,10 @@ function serializeIpv4(components: readonly number[]): string {
 function numericHostError(
   value: string,
 ): TargetNormalizationErrorCode | null {
+  if (/^[+-]?0x[0-9a-f]+$/i.test(value)) {
+    return "ambiguous_numeric_host";
+  }
+
   if (/^[0-9.]+$/.test(value) && /\d/.test(value)) {
     return value.split(".").length === 4
       ? "invalid_ipv4"
@@ -316,6 +320,14 @@ function normalizeHostname(
   }
 
   const hostname = ascii.toLowerCase();
+  if (parseStrictIpv4(hostname) !== null) {
+    return failure("ambiguous_numeric_host");
+  }
+  const mappedNumericError = numericHostError(hostname);
+  if (mappedNumericError !== null) {
+    return failure(mappedNumericError);
+  }
+
   const labels = hostname.split(".");
   if (
     labels.some(
@@ -607,6 +619,8 @@ function normalizeUrl(value: string): TargetNormalizationResult {
     serializedParserHost,
     canonicalHostText,
   );
+  const serializedQuery =
+    parsed.search.length > 0 ? parsed.search : parsed.href.endsWith("?") ? "?" : "";
 
   return success({
     normalizationProfile: TARGET_NORMALIZATION_PROFILE,
@@ -615,7 +629,7 @@ function normalizeUrl(value: string): TargetNormalizationResult {
     origin: `${parts.scheme}://${canonicalHostText}:${effectivePort}`,
     host: canonicalHost,
     effectivePort,
-    pathAndQuery: `${parsed.pathname}${parsed.search}`,
+    pathAndQuery: `${parsed.pathname}${serializedQuery}`,
   });
 }
 

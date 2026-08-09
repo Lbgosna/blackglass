@@ -150,6 +150,18 @@ describe("normalizeTarget classification is terminal", () => {
   ])("does not reinterpret %s after selection", (input, code) => {
     expect(normalizeTarget(input)).toEqual({ ok: false, error: { code } });
   });
+
+  it.each([
+    "0x7f000001",
+    "http://0x7f000001/",
+    "１９２.０.２.７",
+    "http://１９２.０.２.７/",
+  ])("does not admit alternate numeric identity %s as a hostname", (input) => {
+    expect(normalizeTarget(input)).toEqual({
+      ok: false,
+      error: { code: "ambiguous_numeric_host" },
+    });
+  });
 });
 
 describe("normalizeTarget URL authority handling", () => {
@@ -234,6 +246,27 @@ describe("normalizeTarget URL authority handling", () => {
       address: bare.target.address,
       zone: bare.target.zone,
     });
+  });
+
+  it.each([
+    ["https://target.test/?", "/?"],
+    ["https://target.test/path?", "/path?"],
+  ])("preserves the empty query delimiter in %s", (input, pathAndQuery) => {
+    const result = normalizeTarget(input);
+
+    expect(result).toEqual({
+      ok: true,
+      target: {
+        normalizationProfile: "d1-v1",
+        kind: "url",
+        url: input,
+        origin: "https://target.test:443",
+        host: { hostname: "target.test" },
+        effectivePort: 443,
+        pathAndQuery,
+      },
+    });
+    expect(TargetNormalizationResultSchema.safeParse(result).success).toBe(true);
   });
 });
 
