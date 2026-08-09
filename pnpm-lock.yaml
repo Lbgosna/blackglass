@@ -107,6 +107,25 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@26.2.0)(jsdom@30.0.1)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))
 
+  packages/domain:
+    dependencies:
+      '@blackglass/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      tr46:
+        specifier: 5.0.0
+        version: 5.0.0
+    devDependencies:
+      '@types/tr46':
+        specifier: 5.0.1
+        version: 5.0.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.2.0)(jsdom@30.0.1)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))
+
   packages/ui:
     dependencies:
       '@base-ui/react':
@@ -805,6 +824,9 @@ packages:
   '@types/react@19.2.18':
     resolution: {integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}
 
+  '@types/tr46@5.0.1':
+    resolution: {integrity: sha512-/nNLTzy884WMMjksAFsrazXpwKcipQn1FltlXu4PycQFD8t6a4aq/z+F7mw05UI7p5O8MUvXLTPbISOoQtaugg==}
+
   '@vitejs/plugin-react@6.0.5':
     resolution: {integrity: sha512-BOVzne/NL162sMdResB25mUv+vWMF5NoAjNf09TeGlE7ZpszZWSD3winycicLJw72yeVsoCn/2kOhEuCvEShMA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1481,6 +1503,10 @@ packages:
   tough-cookie@6.0.2:
     resolution: {integrity: sha512-exgYmnmL/sJpR3upZfXG5PoatXQii55xAiXGXzY+sROLZ/Y+SLcp9PgJNI9Vz37HpQ74WvDcLT8eqm+kV3FzrA==}
     engines: {node: '>=16'}
+
+  tr46@5.0.0:
+    resolution: {integrity: sha512-tk2G5R2KRwBd+ZN0zaEXpmzdKyOYksXwywulIX95MBODjSzMIuQnQ3m8JxgbhnL1LeVo7lqQKsYa1O3Htl7K5g==}
+    engines: {node: '>=18'}
 
   tr46@6.0.0:
     resolution: {integrity: sha512-bLVMLPtstlZ4iMQHpFHTR7GAGj2jxi8Dg0s2h2MafAE4uSWF98FC/3MomU51iQAMf8/qDUbKWf5GxuvvVcXEhw==}
@@ -2241,6 +2267,8 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
+  '@types/tr46@5.0.1': {}
+
   '@vitejs/plugin-react@6.0.5(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
@@ -2861,6 +2889,10 @@ snapshots:
   tough-cookie@6.0.2:
     dependencies:
       tldts: 7.4.10
+
+  tr46@5.0.0:
+    dependencies:
+      punycode: 2.3.1
 
   tr46@6.0.0:
     dependencies:
