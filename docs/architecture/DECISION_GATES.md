@@ -24,6 +24,8 @@ Before M0 closes, verify which branch rules and security features are available 
 
 Required before M2.
 
+Status: accepted in [ADR-0001](./0001-target-normalization-scope-warnings.md).
+
 Decide and test:
 
 - hostname and domain normalization;

@@ -1,10 +1,63 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { checkDocumentation, localMarkdownTargets } from "./check-docs.mjs";
+import { checkD1Fixtures, checkDocumentation, localMarkdownTargets } from "./check-docs.mjs";
+
+const fixtureKinds = new Map([
+  ["normalization.json", "normalization"],
+  ["scope-comparison.json", "scope-comparison"],
+  ["resolution-snapshot.json", "resolution-snapshot"],
+  ["warning-flow.json", "warning-flow"],
+]);
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+function materializeInputTemplate(template) {
+  if (Array.isArray(template.labels)) {
+    return template.labels
+      .map((label) =>
+        typeof label === "string" ? label : label.repeat.repeat(label.count),
+      )
+      .join(template.separator);
+  }
+  return `${template.prefix ?? ""}${template.repeat.repeat(template.count)}${template.suffix ?? ""}`;
+}
+
+async function writeFixtureSuite(root) {
+  const fixtureDirectory = path.join(root, "docs", "architecture", "fixtures", "d1");
+  await mkdir(fixtureDirectory, { recursive: true });
+
+  let caseNumber = 0;
+  for (const [fileName, kind] of fixtureKinds) {
+    caseNumber += 1;
+    await writeFile(
+      path.join(fixtureDirectory, fileName),
+      `${JSON.stringify(
+        {
+          fixtureVersion: 1,
+          normalizationProfile: "d1-v1",
+          kind,
+          cases: [
+            {
+              id: `d1.test.case-${caseNumber}`,
+              description: "Synthetic reserved fixture case.",
+              given: { target: `target-${caseNumber}.test`, address: `192.0.2.${caseNumber}` },
+              expected: { accepted: true },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
+
+  return fixtureDirectory;
+}
 
 test("extracts only local Markdown targets", () => {
   assert.deepEqual(
@@ -40,4 +93,194 @@ test("reports review metadata", async () => {
   const errors = await checkDocumentation(root);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /review\/source metadata/);
+});
+
+test("accepts a complete reserved D1 fixture suite through the documentation check", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  await writeFixtureSuite(root);
+
+  assert.deepEqual(await checkD1Fixtures(root), []);
+  assert.deepEqual(await checkDocumentation(root), []);
+});
+
+test("requires the D1 fixture suite when the accepted ADR marker exists", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const architectureDirectory = path.join(root, "docs", "architecture");
+  await mkdir(architectureDirectory, { recursive: true });
+  await writeFile(
+    path.join(architectureDirectory, "0001-target-normalization-scope-warnings.md"),
+    "# ADR-0001\n\nStatus: accepted\n",
+    "utf8",
+  );
+
+  assert.deepEqual(await checkDocumentation(root), [
+    "docs/architecture/fixtures/d1: missing D1 fixture directory",
+  ]);
+});
+
+test("reports fixture version, shape, and duplicate case IDs", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const scopePath = path.join(fixtureDirectory, "scope-comparison.json");
+  const scopeFixture = JSON.parse(await readFile(scopePath, "utf8"));
+  scopeFixture.fixtureVersion = 2;
+  scopeFixture.cases[0].id = "d1.test.case-1";
+  delete scopeFixture.cases[0].expected;
+  await writeFile(scopePath, `${JSON.stringify(scopeFixture, null, 2)}\n`, "utf8");
+
+  const errors = await checkD1Fixtures(root);
+  assert.ok(errors.some((error) => error.includes("fixtureVersion must be 1")));
+  assert.ok(errors.some((error) => error.includes("duplicates d1.test.case-1")));
+  assert.ok(errors.some((error) => error.includes("exactly one of expected or error")));
+});
+
+test("reports malformed JSON and a missing required fixture", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = path.join(root, "docs", "architecture", "fixtures", "d1");
+  await mkdir(fixtureDirectory, { recursive: true });
+  await writeFile(path.join(fixtureDirectory, "normalization.json"), "{\n", "utf8");
+
+  const errors = await checkD1Fixtures(root);
+  assert.ok(errors.some((error) => error.includes("normalization.json: invalid JSON")));
+  assert.ok(errors.some((error) => error.includes("warning-flow.json: missing required")));
+});
+
+test("reports secret-bearing fields and non-reserved target content", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const warningPath = path.join(fixtureDirectory, "warning-flow.json");
+  const warningFixture = JSON.parse(await readFile(warningPath, "utf8"));
+  warningFixture.cases[0].given.password = "synthetic-fixture-value";
+  warningFixture.cases[0].given.client_secret = "synthetic-fixture-value";
+  warningFixture.cases[0].given.runner_token = "synthetic-fixture-value";
+  warningFixture.cases[0].given.githubToken = "synthetic-fixture-value";
+  warningFixture.cases[0].given.target = "host.example.org";
+  warningFixture.cases[0].given.address = "ff02::1";
+  warningFixture.cases[0].given.note = ["gh", "p_", "a".repeat(36)].join("");
+  warningFixture.cases[0].given.metadata = ["github", "_pat_", "b".repeat(24)].join("");
+  warningFixture.cases[0].given.message = ["xo", "xb-", "1".repeat(12), "-", "c".repeat(24)].join(
+    "",
+  );
+  await writeFile(warningPath, `${JSON.stringify(warningFixture, null, 2)}\n`, "utf8");
+
+  const errors = await checkD1Fixtures(root);
+  assert.ok(errors.some((error) => error.includes("forbidden secret-bearing field password")));
+  assert.ok(errors.some((error) => error.includes("forbidden secret-bearing field client_secret")));
+  assert.ok(errors.some((error) => error.includes("forbidden secret-bearing field runner_token")));
+  assert.ok(errors.some((error) => error.includes("forbidden secret-bearing field githubToken")));
+  assert.ok(errors.some((error) => error.includes("non-reserved hostname host.example.org")));
+  assert.ok(errors.some((error) => error.includes("non-documentation IPv6 address ff02::1")));
+  assert.equal(errors.filter((error) => error.includes("secret-like content")).length, 3);
+});
+
+test("allows only the synthetic lab convention in target-bearing fields", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const normalizationPath = path.join(fixtureDirectory, "normalization.json");
+  const normalizationFixture = JSON.parse(await readFile(normalizationPath, "utf8"));
+  normalizationFixture.cases[0].given.target = "internal-db";
+  await writeFile(
+    normalizationPath,
+    `${JSON.stringify(normalizationFixture, null, 2)}\n`,
+    "utf8",
+  );
+
+  let errors = await checkD1Fixtures(root);
+  assert.ok(
+    errors.some((error) => error.includes("non-synthetic single-label hostname internal-db")),
+  );
+
+  normalizationFixture.cases[0].given.target = "TARGET-LAB";
+  await writeFile(
+    normalizationPath,
+    `${JSON.stringify(normalizationFixture, null, 2)}\n`,
+    "utf8",
+  );
+  errors = await checkD1Fixtures(root);
+  assert.deepEqual(errors, []);
+});
+
+test("reports encoded mapped IPv6 and Unicode live targets", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const normalizationPath = path.join(fixtureDirectory, "normalization.json");
+  const normalizationFixture = JSON.parse(await readFile(normalizationPath, "utf8"));
+  normalizationFixture.cases[0].given.input = [
+    "https://[::ffff:",
+    "0808:0808",
+    "]/",
+  ].join("");
+  normalizationFixture.cases[0].given.target = ["https://faß", ".de/"].join("");
+  await writeFile(
+    normalizationPath,
+    `${JSON.stringify(normalizationFixture, null, 2)}\n`,
+    "utf8",
+  );
+
+  const errors = await checkD1Fixtures(root);
+  assert.ok(
+    errors.some((error) =>
+      error.includes("non-documentation IPv6 address ::ffff:0808:0808"),
+    ),
+  );
+  assert.ok(errors.some((error) => error.includes("non-reserved hostname xn--fa-hia.de")));
+});
+
+test("encodes exact D1 accepted and just-over boundary vectors", async () => {
+  const fixtureDirectory = path.join(repositoryRoot, "docs", "architecture", "fixtures", "d1");
+  const normalizationFixture = JSON.parse(
+    await readFile(path.join(fixtureDirectory, "normalization.json"), "utf8"),
+  );
+  const normalizationCases = new Map(
+    normalizationFixture.cases.map((fixtureCase) => [fixtureCase.id, fixtureCase]),
+  );
+
+  const input4096 = materializeInputTemplate(
+    normalizationCases.get("d1.normalization.utf8-4096-byte-input-accepted").given
+      .inputTemplate,
+  );
+  const input4097 = materializeInputTemplate(
+    normalizationCases.get("d1.normalization.utf8-4097-byte-input-rejected").given
+      .inputTemplate,
+  );
+  assert.equal(Buffer.byteLength(input4096, "utf8"), 4096);
+  assert.equal(Buffer.byteLength(input4097, "utf8"), 4097);
+
+  const label63 = materializeInputTemplate(
+    normalizationCases.get("d1.normalization.hostname-label-63-bytes-accepted").given
+      .inputTemplate,
+  );
+  const label64 = materializeInputTemplate(
+    normalizationCases.get("d1.normalization.hostname-label-64-bytes-rejected").given
+      .inputTemplate,
+  );
+  assert.equal(Buffer.byteLength(label63.split(".")[0], "utf8"), 63);
+  assert.equal(Buffer.byteLength(label64.split(".")[0], "utf8"), 64);
+
+  const hostname253 = materializeInputTemplate(
+    normalizationCases.get("d1.normalization.hostname-253-bytes-accepted").given.inputTemplate,
+  );
+  const hostname254 = materializeInputTemplate(
+    normalizationCases.get("d1.normalization.hostname-254-bytes-rejected").given.inputTemplate,
+  );
+  assert.equal(Buffer.byteLength(hostname253, "utf8"), 253);
+  assert.equal(Buffer.byteLength(hostname254, "utf8"), 254);
+
+  const zone15 = normalizationCases
+    .get("d1.normalization.zone-maximum-length-accepted")
+    .given.input.split("%", 2)[1];
+  const zone16 = normalizationCases
+    .get("d1.normalization.zone-too-long-rejected")
+    .given.input.split("%", 2)[1];
+  assert.equal(zone15.length, 15);
+  assert.equal(zone16.length, 16);
+
+  const scopeFixture = JSON.parse(
+    await readFile(path.join(fixtureDirectory, "scope-comparison.json"), "utf8"),
+  );
+  const scopeCases = new Map(scopeFixture.cases.map((fixtureCase) => [fixtureCase.id, fixtureCase]));
+  assert.equal(scopeCases.get("d1.scope.port-lower-bound-accepted").given.ranges[0].from, 1);
+  assert.equal(scopeCases.get("d1.scope.port-upper-bound-accepted").given.ranges[0].to, 65535);
+  assert.equal(scopeCases.get("d1.scope.port-zero-rejected").given.ranges[0].from, 0);
+  assert.equal(scopeCases.get("d1.scope.port-65536-rejected").given.ranges[0].to, 65536);
 });
