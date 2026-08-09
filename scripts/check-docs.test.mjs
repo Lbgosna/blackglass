@@ -90,6 +90,21 @@ test("accepts a complete reserved D1 fixture suite through the documentation che
   assert.deepEqual(await checkDocumentation(root), []);
 });
 
+test("requires the D1 fixture suite when the accepted ADR marker exists", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const architectureDirectory = path.join(root, "docs", "architecture");
+  await mkdir(architectureDirectory, { recursive: true });
+  await writeFile(
+    path.join(architectureDirectory, "0001-target-normalization-scope-warnings.md"),
+    "# ADR-0001\n\nStatus: accepted\n",
+    "utf8",
+  );
+
+  assert.deepEqual(await checkDocumentation(root), [
+    "docs/architecture/fixtures/d1: missing D1 fixture directory",
+  ]);
+});
+
 test("reports fixture version, shape, and duplicate case IDs", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
   const fixtureDirectory = await writeFixtureSuite(root);
@@ -125,10 +140,43 @@ test("reports secret-bearing fields and non-reserved target content", async () =
   warningFixture.cases[0].given.password = "synthetic-fixture-value";
   warningFixture.cases[0].given.target = "host.example.org";
   warningFixture.cases[0].given.address = "ff02::1";
+  warningFixture.cases[0].given.note = ["gh", "p_", "a".repeat(36)].join("");
+  warningFixture.cases[0].given.metadata = ["github", "_pat_", "b".repeat(24)].join("");
+  warningFixture.cases[0].given.message = ["xo", "xb-", "1".repeat(12), "-", "c".repeat(24)].join(
+    "",
+  );
   await writeFile(warningPath, `${JSON.stringify(warningFixture, null, 2)}\n`, "utf8");
 
   const errors = await checkD1Fixtures(root);
   assert.ok(errors.some((error) => error.includes("forbidden secret-bearing field password")));
   assert.ok(errors.some((error) => error.includes("non-reserved hostname host.example.org")));
   assert.ok(errors.some((error) => error.includes("non-documentation IPv6 address ff02::1")));
+  assert.equal(errors.filter((error) => error.includes("secret-like content")).length, 3);
+});
+
+test("allows only the synthetic lab convention for raw single-label hostname input", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const normalizationPath = path.join(fixtureDirectory, "normalization.json");
+  const normalizationFixture = JSON.parse(await readFile(normalizationPath, "utf8"));
+  normalizationFixture.cases[0].given.input = "internal-db";
+  await writeFile(
+    normalizationPath,
+    `${JSON.stringify(normalizationFixture, null, 2)}\n`,
+    "utf8",
+  );
+
+  let errors = await checkD1Fixtures(root);
+  assert.ok(
+    errors.some((error) => error.includes("non-synthetic single-label hostname internal-db")),
+  );
+
+  normalizationFixture.cases[0].given.input = "TARGET-LAB";
+  await writeFile(
+    normalizationPath,
+    `${JSON.stringify(normalizationFixture, null, 2)}\n`,
+    "utf8",
+  );
+  errors = await checkD1Fixtures(root);
+  assert.deepEqual(errors, []);
 });

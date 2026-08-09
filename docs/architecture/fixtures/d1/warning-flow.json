@@ -330,7 +330,7 @@
         "targetSnapshotId": "target-snapshot-record",
         "targetSnapshotDigest": "sha256:fixture-target-snapshot-record",
         "snapshotHash": "sha256:fixture-action-context-record",
-        "scopeRevisionId": null,
+        "scopeRevisionId": "scope-revision-record",
         "knownReasonCodes": ["large_target_set"],
         "knownAdditions": [{ "estimatedConcreteTargets": 4097 }],
         "source": "operator_continue",

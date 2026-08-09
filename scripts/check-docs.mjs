@@ -14,10 +14,12 @@ const d1FixtureFiles = new Map([
 ]);
 const forbiddenFixtureKey =
   /^(?:api[-_]?key|password|secret|access[-_]?token|refresh[-_]?token|authorization|cookie|private[-_]?key)$/i;
-const forbiddenFixtureValue = /(?:-----BEGIN [A-Z ]+PRIVATE KEY-----|\bbearer\s+\S+|\bsk-[a-z0-9_-]{12,})/i;
+const forbiddenFixtureValue =
+  /(?:-----BEGIN [A-Z ]+PRIVATE KEY-----|\bbearer\s+\S+|\bsk-[a-z0-9_-]{12,}|\bghp_[a-z0-9]{20,}|\bgithub_pat_[a-z0-9_]{20,}|\bxoxb-[a-z0-9-]{20,})/i;
 const ipv4Like = /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
 const ipv6Like = /(?<![a-z0-9])(?:[0-9a-f]{0,4}:){2,}[0-9a-f:.]*(?:%25?[a-z0-9._~-]+)?(?:\/\d{1,3})?/gi;
 const domainLike = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}\.?/giu;
+const singleLabelHostname = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 
 export const forbiddenMetaPatterns = [
   /what was learned/i,
@@ -121,7 +123,11 @@ function fixtureContentErrors(value, location, key = "") {
       }
     }
 
-    if (key !== "id") {
+    if (key === "input" && singleLabelHostname.test(value) && !/-lab$/i.test(value)) {
+      errors.push(`${location}: contains non-synthetic single-label hostname ${value}`);
+    }
+
+    if (key !== "id" && key !== "description") {
       for (const match of value.matchAll(domainLike)) {
         const hostname = match[0].replace(/\.$/, "").toLowerCase();
         if (!/\.(?:test|example|invalid)$/.test(hostname)) {
@@ -269,7 +275,13 @@ export async function checkDocumentation(repositoryRoot) {
   }
 
   const d1FixtureDirectory = path.join(repositoryRoot, "docs", "architecture", "fixtures", "d1");
-  if (await exists(d1FixtureDirectory)) {
+  const d1AdrPath = path.join(
+    repositoryRoot,
+    "docs",
+    "architecture",
+    "0001-target-normalization-scope-warnings.md",
+  );
+  if ((await exists(d1AdrPath)) || (await exists(d1FixtureDirectory))) {
     errors.push(...(await checkD1Fixtures(repositoryRoot)));
   }
 

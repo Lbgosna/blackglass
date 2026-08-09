@@ -49,7 +49,7 @@ CIDR canonicalization validates the prefix, masks host bits to the network addre
 
 Only HTTP and HTTPS URLs are supported. Any userinfo is invalid. Any fragment delimiter is invalid, including an empty `#`. Except for the zone preprocessing described above, parsing and serialization use the WHATWG basic URL parser and serializer from the pinned Node.js 24 control plane.
 
-The action target preserves the serializer-produced path and query. An empty path becomes `/`. Default port 80 for HTTP and 443 for HTTPS is removed from serialization. A non-default port remains. The saved-scope identity is the canonical origin only: scheme, canonical host, and effective port. Path and query do not widen or narrow scope.
+The action target preserves the serializer-produced path and query. An empty path becomes `/`. Normalized URL serialization omits default port 80 for HTTP and 443 for HTTPS, while a non-default port remains. Canonical origin identity is always serialized as `scheme://host:effectivePort`, including the effective default port when URL serialization omits it. Path and query do not widen or narrow scope.
 
 ### Saved-scope revisions and matching
 
