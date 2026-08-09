@@ -40,6 +40,23 @@ const requiredMalformedTargetCases = [
     error: { code: "invalid_cidr" },
   },
 ];
+const requiredPositiveTargetCases = [
+  {
+    id: "d1.normalization.url-zone-leading-25-preserved",
+    given: { input: "https://[fe80::7%2525Eth0]/" },
+    expected: {
+      canonicalTarget: {
+        normalizationProfile: "d1-v1",
+        kind: "url",
+        url: "https://[fe80::7%2525Eth0]/",
+        origin: "https://[fe80::7%2525Eth0]:443",
+        host: { address: "fe80::7", zone: "25Eth0" },
+        effectivePort: 443,
+        pathAndQuery: "/",
+      },
+    },
+  },
+];
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function materializeInputTemplate(template) {
@@ -75,10 +92,16 @@ async function writeFixtureSuite(root) {
               expected: { accepted: true },
             },
             ...(kind === "normalization"
-              ? requiredMalformedTargetCases.map((fixtureCase) => ({
-                  ...fixtureCase,
-                  description: "Required synthetic malformed target case.",
-                }))
+              ? [
+                  ...requiredMalformedTargetCases.map((fixtureCase) => ({
+                    ...fixtureCase,
+                    description: "Required synthetic malformed target case.",
+                  })),
+                  ...requiredPositiveTargetCases.map((fixtureCase) => ({
+                    ...fixtureCase,
+                    description: "Required synthetic positive target case.",
+                  })),
+                ]
               : []),
           ],
         },
@@ -216,6 +239,56 @@ test("requires exact malformed target vectors and error codes", async () => {
       ),
     );
   }
+});
+
+test("requires the exact positive zone-leading-25 target vector", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const normalizationPath = path.join(fixtureDirectory, "normalization.json");
+  const validFixture = JSON.parse(await readFile(normalizationPath, "utf8"));
+  const requiredCase = requiredPositiveTargetCases[0];
+
+  const missingFixture = structuredClone(validFixture);
+  missingFixture.cases = missingFixture.cases.filter(
+    (fixtureCase) => fixtureCase.id !== requiredCase.id,
+  );
+  await writeFile(normalizationPath, `${JSON.stringify(missingFixture, null, 2)}\n`, "utf8");
+  let errors = await checkD1Fixtures(root);
+  assert.ok(
+    errors.some((error) =>
+      error.includes(`missing required positive target case ${requiredCase.id}`),
+    ),
+  );
+
+  const changedInputFixture = structuredClone(validFixture);
+  changedInputFixture.cases.find(
+    (fixtureCase) => fixtureCase.id === requiredCase.id,
+  ).given.input = "https://[fe80::7%25Eth0]/";
+  await writeFile(
+    normalizationPath,
+    `${JSON.stringify(changedInputFixture, null, 2)}\n`,
+    "utf8",
+  );
+  errors = await checkD1Fixtures(root);
+  assert.ok(errors.some((error) => error.includes(`${requiredCase.id}.given.input must be`)));
+
+  const changedOutputFixture = structuredClone(validFixture);
+  changedOutputFixture.cases.find(
+    (fixtureCase) => fixtureCase.id === requiredCase.id,
+  ).expected.canonicalTarget.host.zone = "Eth0";
+  await writeFile(
+    normalizationPath,
+    `${JSON.stringify(changedOutputFixture, null, 2)}\n`,
+    "utf8",
+  );
+  errors = await checkD1Fixtures(root);
+  assert.ok(
+    errors.some((error) =>
+      error.includes(
+        `${requiredCase.id}.expected.canonicalTarget must preserve zone 25Eth0`,
+      ),
+    ),
+  );
 });
 
 test("reports malformed JSON and a missing required fixture", async () => {

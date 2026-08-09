@@ -6,3 +6,4 @@ export {
   type Readiness,
   type SystemStatusResponse,
 } from "./system-status.js";
+export * from "./target-normalization.js";

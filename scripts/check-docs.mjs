@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import { domainToASCII, fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 const ignoredDirectories = new Set([".git", "node_modules"]);
 const d1FixtureVersion = 1;
@@ -37,6 +38,21 @@ const requiredD1MalformedTargetCases = [
     id: "d1.normalization.invalid-ipv6-cidr-prefix",
     input: "2001:db8::1/129",
     code: "invalid_cidr",
+  },
+];
+const requiredD1PositiveTargetCases = [
+  {
+    id: "d1.normalization.url-zone-leading-25-preserved",
+    input: "https://[fe80::7%2525Eth0]/",
+    canonicalTarget: {
+      normalizationProfile: "d1-v1",
+      kind: "url",
+      url: "https://[fe80::7%2525Eth0]/",
+      origin: "https://[fe80::7%2525Eth0]:443",
+      host: { address: "fe80::7", zone: "25Eth0" },
+      effectivePort: 443,
+      pathAndQuery: "/",
+    },
   },
 ];
 const forbiddenFixtureValue =
@@ -284,6 +300,35 @@ function requiredMalformedTargetErrors(fixtureCases, relativePath) {
   return errors;
 }
 
+function requiredPositiveTargetErrors(fixtureCases, relativePath) {
+  const errors = [];
+  const casesById = new Map(
+    fixtureCases
+      .filter((fixtureCase) => isRecord(fixtureCase) && typeof fixtureCase.id === "string")
+      .map((fixtureCase) => [fixtureCase.id, fixtureCase]),
+  );
+
+  for (const requiredCase of requiredD1PositiveTargetCases) {
+    const fixtureCase = casesById.get(requiredCase.id);
+    if (!fixtureCase) {
+      errors.push(`${relativePath}: missing required positive target case ${requiredCase.id}`);
+      continue;
+    }
+    if (fixtureCase.given?.input !== requiredCase.input) {
+      errors.push(
+        `${relativePath}: ${requiredCase.id}.given.input must be ${JSON.stringify(requiredCase.input)}`,
+      );
+    }
+    if (!isDeepStrictEqual(fixtureCase.expected?.canonicalTarget, requiredCase.canonicalTarget)) {
+      errors.push(
+        `${relativePath}: ${requiredCase.id}.expected.canonicalTarget must preserve zone 25Eth0`,
+      );
+    }
+  }
+
+  return errors;
+}
+
 export async function checkD1Fixtures(repositoryRoot) {
   const fixtureDirectory = path.join(repositoryRoot, "docs", "architecture", "fixtures", "d1");
   const errors = [];
@@ -380,6 +425,7 @@ export async function checkD1Fixtures(repositoryRoot) {
 
     if (expectedKind === "normalization") {
       errors.push(...requiredMalformedTargetErrors(fixture.cases, relativePath));
+      errors.push(...requiredPositiveTargetErrors(fixture.cases, relativePath));
     }
   }
 
