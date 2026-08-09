@@ -150,10 +150,25 @@
       "error": { "code": "invalid_zone" }
     },
     {
+      "id": "d1.normalization.zone-maximum-length-accepted",
+      "description": "A 15-character zone is accepted at the d1-v1 boundary.",
+      "given": { "input": "fe80::7%abcdefghijklmno" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "ip",
+          "family": 6,
+          "address": "fe80::7",
+          "zone": "abcdefghijklmno"
+        },
+        "zoneLength": 15
+      }
+    },
+    {
       "id": "d1.normalization.zone-too-long-rejected",
-      "description": "A zone is at most 15 characters.",
+      "description": "A 16-character zone is rejected just over the d1-v1 boundary.",
       "given": { "input": "fe80::7%abcdefghijklmnop" },
-      "error": { "code": "invalid_zone" }
+      "error": { "code": "invalid_zone", "zoneLength": 16, "maximumZoneLength": 15 }
     },
     {
       "id": "d1.normalization.idna-bucher-profile",
@@ -195,6 +210,76 @@
           "kind": "hostname",
           "hostname": "target-lab"
         }
+      }
+    },
+    {
+      "id": "d1.normalization.hostname-label-63-bytes-accepted",
+      "description": "An ASCII hostname label is accepted at 63 bytes.",
+      "given": {
+        "inputTemplate": { "repeat": "a", "count": 63, "suffix": ".test" }
+      },
+      "expected": {
+        "accepted": true,
+        "normalizationProfile": "d1-v1",
+        "kind": "hostname",
+        "labelByteLengths": [63, 4],
+        "hostnameUtf8Bytes": 68
+      }
+    },
+    {
+      "id": "d1.normalization.hostname-label-64-bytes-rejected",
+      "description": "An ASCII hostname label is rejected at 64 bytes.",
+      "given": {
+        "inputTemplate": { "repeat": "a", "count": 64, "suffix": ".test" }
+      },
+      "error": {
+        "code": "hostname_label_too_long",
+        "labelUtf8Bytes": 64,
+        "maximumLabelUtf8Bytes": 63
+      }
+    },
+    {
+      "id": "d1.normalization.hostname-253-bytes-accepted",
+      "description": "A hostname with valid labels is accepted at 253 bytes total.",
+      "given": {
+        "inputTemplate": {
+          "labels": [
+            { "repeat": "a", "count": 63 },
+            { "repeat": "b", "count": 63 },
+            { "repeat": "c", "count": 63 },
+            { "repeat": "d", "count": 56 },
+            "test"
+          ],
+          "separator": "."
+        }
+      },
+      "expected": {
+        "accepted": true,
+        "normalizationProfile": "d1-v1",
+        "kind": "hostname",
+        "labelByteLengths": [63, 63, 63, 56, 4],
+        "hostnameUtf8Bytes": 253
+      }
+    },
+    {
+      "id": "d1.normalization.hostname-254-bytes-rejected",
+      "description": "A hostname with otherwise valid labels is rejected at 254 bytes total.",
+      "given": {
+        "inputTemplate": {
+          "labels": [
+            { "repeat": "a", "count": 63 },
+            { "repeat": "b", "count": 63 },
+            { "repeat": "c", "count": 63 },
+            { "repeat": "d", "count": 57 },
+            "test"
+          ],
+          "separator": "."
+        }
+      },
+      "error": {
+        "code": "hostname_too_long",
+        "hostnameUtf8Bytes": 254,
+        "maximumHostnameUtf8Bytes": 253
       }
     },
     {
@@ -330,10 +415,39 @@
       "error": { "code": "control_byte" }
     },
     {
-      "id": "d1.normalization.utf8-byte-limit-rejected",
-      "description": "The 4096-byte limit applies before grammar classification.",
-      "given": { "inputTemplate": { "repeat": "a", "count": 4097 } },
-      "error": { "code": "target_too_long", "maximumUtf8Bytes": 4096 }
+      "id": "d1.normalization.utf8-4096-byte-input-accepted",
+      "description": "A valid URL target is accepted at exactly 4096 UTF-8 bytes.",
+      "given": {
+        "inputTemplate": {
+          "prefix": "https://target.test/",
+          "repeat": "a",
+          "count": 4076,
+          "totalUtf8Bytes": 4096
+        }
+      },
+      "expected": {
+        "accepted": true,
+        "normalizationProfile": "d1-v1",
+        "kind": "url",
+        "inputUtf8Bytes": 4096
+      }
+    },
+    {
+      "id": "d1.normalization.utf8-4097-byte-input-rejected",
+      "description": "A valid URL target shape is rejected at 4097 UTF-8 bytes.",
+      "given": {
+        "inputTemplate": {
+          "prefix": "https://target.test/",
+          "repeat": "a",
+          "count": 4077,
+          "totalUtf8Bytes": 4097
+        }
+      },
+      "error": {
+        "code": "target_too_long",
+        "inputUtf8Bytes": 4097,
+        "maximumUtf8Bytes": 4096
+      }
     }
   ]
 }

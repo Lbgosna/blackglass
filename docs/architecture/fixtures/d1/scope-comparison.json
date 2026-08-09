@@ -469,10 +469,28 @@
       }
     },
     {
-      "id": "d1.scope.invalid-port-range-rejected",
-      "description": "Port restrictions stay within inclusive range 1 through 65535.",
-      "given": { "ranges": [{ "from": 0, "to": 443 }] },
-      "error": { "code": "invalid_port_range" }
+      "id": "d1.scope.port-lower-bound-accepted",
+      "description": "Port restriction 1 is accepted at the inclusive lower boundary.",
+      "given": { "ranges": [{ "from": 1, "to": 1 }] },
+      "expected": { "normalizedRanges": [{ "from": 1, "to": 1 }] }
+    },
+    {
+      "id": "d1.scope.port-upper-bound-accepted",
+      "description": "Port restriction 65535 is accepted at the inclusive upper boundary.",
+      "given": { "ranges": [{ "from": 65535, "to": 65535 }] },
+      "expected": { "normalizedRanges": [{ "from": 65535, "to": 65535 }] }
+    },
+    {
+      "id": "d1.scope.port-zero-rejected",
+      "description": "Port restriction 0 is rejected just below the inclusive lower boundary.",
+      "given": { "ranges": [{ "from": 0, "to": 0 }] },
+      "error": { "code": "invalid_port_range", "port": 0, "minimumPort": 1 }
+    },
+    {
+      "id": "d1.scope.port-65536-rejected",
+      "description": "Port restriction 65536 is rejected just above the inclusive upper boundary.",
+      "given": { "ranges": [{ "from": 65536, "to": 65536 }] },
+      "error": { "code": "invalid_port_range", "port": 65536, "maximumPort": 65535 }
     }
   ]
 }

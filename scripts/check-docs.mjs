@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { domainToASCII, fileURLToPath } from "node:url";
 
 const ignoredDirectories = new Set([".git", "node_modules"]);
 const d1FixtureVersion = 1;
@@ -12,8 +12,6 @@ const d1FixtureFiles = new Map([
   ["resolution-snapshot.json", "resolution-snapshot"],
   ["warning-flow.json", "warning-flow"],
 ]);
-const forbiddenFixtureKey =
-  /^(?:api[-_]?key|password|secret|access[-_]?token|refresh[-_]?token|authorization|cookie|private[-_]?key)$/i;
 const forbiddenFixtureValue =
   /(?:-----BEGIN [A-Z ]+PRIVATE KEY-----|\bbearer\s+\S+|\bsk-[a-z0-9_-]{12,}|\bghp_[a-z0-9]{20,}|\bgithub_pat_[a-z0-9_]{20,}|\bxoxb-[a-z0-9-]{20,})/i;
 const ipv4Like = /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
@@ -80,27 +78,95 @@ function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isReservedFixtureIpv6(address) {
-  const lowercaseAddress = address.toLowerCase();
-  if (
-    lowercaseAddress.startsWith("::ffff:") ||
-    lowercaseAddress.startsWith("0:0:0:0:0:ffff:")
-  ) {
-    return true;
+function normalizedFieldName(key) {
+  return key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function isForbiddenFixtureKey(key) {
+  const normalizedKey = normalizedFieldName(key);
+  return (
+    /(?:secret|token|password|apikey|privatekey|cookie)$/.test(normalizedKey) ||
+    normalizedKey === "authorization"
+  );
+}
+
+function isSingleLabelTargetField(key) {
+  return /(?:input|target|hostname|host|queryname|sniname|hostheader)$/.test(
+    normalizedFieldName(key),
+  );
+}
+
+function isTargetBearingField(key) {
+  return (
+    isSingleLabelTargetField(key) ||
+    /(?:url|origin|location|destination)$/.test(normalizedFieldName(key))
+  );
+}
+
+function documentationIpv4(address) {
+  return /^(?:192\.0\.2|198\.51\.100|203\.0\.113)\./.test(address);
+}
+
+function ipv6Words(address) {
+  let expandedAddress = address.toLowerCase();
+  if (expandedAddress.includes(".")) {
+    const lastColon = expandedAddress.lastIndexOf(":");
+    const octets = expandedAddress
+      .slice(lastColon + 1)
+      .split(".")
+      .map((octet) => Number.parseInt(octet, 10));
+    expandedAddress = `${expandedAddress.slice(0, lastColon)}:${(
+      (octets[0] << 8) |
+      octets[1]
+    ).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`;
   }
 
-  const [first = "", second = ""] = lowercaseAddress.split(":");
-  const firstValue = Number.parseInt(first, 16);
-  const secondValue = Number.parseInt(second, 16);
-  const isDocumentationAddress = firstValue === 0x2001 && secondValue === 0x0db8;
-  const isLinkLocalAddress = Number.isInteger(firstValue) && (firstValue & 0xffc0) === 0xfe80;
+  const halves = expandedAddress.split("::");
+  const left = halves[0] ? halves[0].split(":").map((word) => Number.parseInt(word, 16)) : [];
+  const right = halves[1] ? halves[1].split(":").map((word) => Number.parseInt(word, 16)) : [];
+  const zeroCount = halves.length === 2 ? 8 - left.length - right.length : 0;
+  return [...left, ...Array.from({ length: zeroCount }, () => 0), ...right];
+}
+
+function isReservedFixtureIpv6(address) {
+  const words = ipv6Words(address);
+  const isMappedIpv4 = words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff;
+  if (isMappedIpv4) {
+    const mappedAddress = [words[6] >> 8, words[6] & 0xff, words[7] >> 8, words[7] & 0xff].join(
+      ".",
+    );
+    return documentationIpv4(mappedAddress);
+  }
+
+  const isDocumentationAddress = words[0] === 0x2001 && words[1] === 0x0db8;
+  const isLinkLocalAddress = (words[0] & 0xffc0) === 0xfe80;
   return isDocumentationAddress || isLinkLocalAddress;
+}
+
+function unicodeTargetHostname(value, key) {
+  if (!isTargetBearingField(key)) return undefined;
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const hostname = new URL(value).hostname;
+      if (!hostname.startsWith("[") && isIP(hostname) === 0) return hostname.toLowerCase();
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (value.includes(".") && /[^\x00-\x7f]/u.test(value)) {
+    const hostname = domainToASCII(value.replace(/\.$/, ""));
+    if (hostname) return hostname.toLowerCase();
+  }
+
+  return undefined;
 }
 
 function fixtureContentErrors(value, location, key = "") {
   const errors = [];
 
-  if (forbiddenFixtureKey.test(key)) {
+  if (isForbiddenFixtureKey(key)) {
     errors.push(`${location}: forbidden secret-bearing field ${key}`);
   }
 
@@ -111,7 +177,7 @@ function fixtureContentErrors(value, location, key = "") {
 
     for (const match of value.matchAll(ipv4Like)) {
       const address = match[0];
-      if (!/^(?:192\.0\.2|198\.51\.100|203\.0\.113)\./.test(address)) {
+      if (!documentationIpv4(address)) {
         errors.push(`${location}: contains non-documentation IPv4 address ${address}`);
       }
     }
@@ -123,8 +189,17 @@ function fixtureContentErrors(value, location, key = "") {
       }
     }
 
-    if (key === "input" && singleLabelHostname.test(value) && !/-lab$/i.test(value)) {
+    if (
+      isSingleLabelTargetField(key) &&
+      singleLabelHostname.test(value) &&
+      !/-lab$/i.test(value)
+    ) {
       errors.push(`${location}: contains non-synthetic single-label hostname ${value}`);
+    }
+
+    const unicodeHostname = unicodeTargetHostname(value, key);
+    if (unicodeHostname && !/\.(?:test|example|invalid)$/.test(unicodeHostname)) {
+      errors.push(`${location}: contains non-reserved hostname ${unicodeHostname}`);
     }
 
     if (key !== "id" && key !== "description") {
