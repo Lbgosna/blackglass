@@ -1,0 +1,67 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d2-v1",
+  "kind": "runner-identity",
+  "cases": [
+    {
+      "id": "d2.runner.enrollment-owner-confirmation",
+      "description": "Enrollment requires loopback owner confirmation of the synthetic installation fingerprint.",
+      "given": { "challengeAgeSeconds": 30, "challengeTtlSeconds": 600, "ownerConfirmed": true, "runnerName": "fixture-runner", "installationFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      "expected": { "identityCreated": true, "credentialBytes": 32, "encoding": "base64url", "presentationCount": 1 }
+    },
+    {
+      "id": "d2.runner.enrollment-expired",
+      "description": "An expired one-use challenge creates no identity.",
+      "given": { "challengeAgeSeconds": 601, "challengeTtlSeconds": 600, "ownerConfirmed": true },
+      "error": { "code": "enrollment_challenge_expired", "identityCreated": false, "presentationCount": 0 }
+    },
+    {
+      "id": "d2.runner.credential-hashed-at-rest",
+      "description": "Only the concrete scrypt verifier configuration is persisted.",
+      "given": { "credentialBytes": 32, "saltBytes": 32, "kdf": "scrypt", "costN": 16384, "blockSizeR": 8, "parallelizationP": 1, "verifierBytes": 32 },
+      "expected": { "plaintextStored": false, "constantTimeCompare": true, "redisplaySupported": false }
+    },
+    {
+      "id": "d2.runner.rotation-handover",
+      "description": "Rotation allows the prior credential only to finish existing leases for 60 seconds.",
+      "given": { "ownerConfirmed": true, "handoverSeconds": 60, "oldCredentialOperation": "lease_new_work", "existingLeaseOperation": "complete" },
+      "expected": { "newCredentialPresentationCount": 1, "oldMayLease": false, "oldMayCompleteExisting": true, "oldRevokedAfterSeconds": 60 }
+    },
+    {
+      "id": "d2.runner.revocation-fences-work",
+      "description": "Revocation immediately denies endpoints and fences current leases.",
+      "given": { "runnerId": "runner-fixture-1", "activeLeaseIds": ["lease-fixture-1"], "ownerRevokes": true },
+      "expected": { "authenticationAccepted": false, "leasesFenced": 1, "cancellationRequested": true, "runnerCancelsOnAuthenticationRejection": true, "newLeaseAllowed": false }
+    },
+    {
+      "id": "d2.runner.lost-credential-reenrollment",
+      "description": "Credential recovery is revoke, local deletion, and new enrollment rather than redisplay.",
+      "given": { "credentialFileLost": true, "serverHasVerifier": true },
+      "expected": { "secretRecoverable": false, "requiredSteps": ["revoke_identity", "remove_local_file", "enroll_again"] }
+    },
+    {
+      "id": "d2.runner.route-separation",
+      "description": "Runner and operator identities are accepted only on their own route families.",
+      "given": { "runnerRoute": "/api/v1/runner/lease", "operatorRoute": "/api/v1/actions", "crossUseAttempts": 2 },
+      "expected": { "runnerOnOperatorRoute": "rejected", "operatorOnRunnerRoute": "rejected", "runnerAllowedOperations": ["handshake", "lease", "heartbeat", "event_append", "staging_transfer", "completion"] }
+    },
+    {
+      "id": "d2.runner.protocol-handshake-accepted",
+      "description": "The exact protocol and required capability set permit leasing.",
+      "given": { "protocol": "runner-control-v1", "eventSchemas": ["runner-event-v1"], "sessionId": "session-fixture-1", "registryDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "requiredCapabilitiesPresent": true },
+      "expected": { "acceptedProtocol": "runner-control-v1", "leaseAllowed": true, "sessionPinned": true, "registryPinned": true }
+    },
+    {
+      "id": "d2.runner.protocol-mismatch",
+      "description": "An unsupported protocol receives an actionable response and no lease.",
+      "given": { "protocol": "runner-control-v2", "eventSchemas": ["runner-event-v1"] },
+      "error": { "httpStatus": 426, "code": "runner_protocol_unsupported", "supported": ["runner-control-v1"], "leaseAllowed": false }
+    },
+    {
+      "id": "d2.runner.required-capability-missing",
+      "description": "A lease is withheld when its pinned action needs an unenforceable capability.",
+      "given": { "protocol": "runner-control-v1", "requiredCapability": "memory_limit", "advertisedCapabilities": ["duration_limit", "bounded_output", "process_group_cancel"] },
+      "error": { "code": "runner_capability_unavailable", "leaseAllowed": false }
+    }
+  ]
+}

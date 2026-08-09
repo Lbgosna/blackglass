@@ -1,0 +1,109 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d2-v1",
+  "kind": "lease-events",
+  "cases": [
+    {
+      "id": "d2.lease.acquire-once",
+      "description": "Concurrent acquisition produces one current lease and the first fence.",
+      "given": { "runId": "run-fixture-9", "state": "queued", "concurrentAcquirers": 2, "leaseDurationSeconds": 30 },
+      "expected": { "leasesCreated": 1, "state": "leased", "fence": 1, "loserResult": "no_work" }
+    },
+    {
+      "id": "d2.lease.heartbeat-extends-from-server-time",
+      "description": "Heartbeat ignores runner wall time and extends from control-plane time.",
+      "given": { "fence": 1, "heartbeatSequence": 1, "serverNow": "2026-08-09T12:00:10.000Z", "runnerReportedNow": "2030-01-01T00:00:00.000Z", "leaseDurationSeconds": 30 },
+      "expected": { "leaseExpiresAt": "2026-08-09T12:00:40.000Z", "runnerClockUsed": false }
+    },
+    {
+      "id": "d2.lease.heartbeat-replay",
+      "description": "An identical heartbeat sequence replays its stored expiry once.",
+      "given": { "leaseId": "lease-fixture-2", "fence": 2, "heartbeatSequence": 4, "canonicalDigestMatches": true, "replayCount": 2 },
+      "expected": { "result": "stored_heartbeat_replayed", "expiryWriteCount": 1 }
+    },
+    {
+      "id": "d2.lease.unstarted-expiry-requeues",
+      "description": "Only an expired lease that never started returns to the queue.",
+      "given": { "runId": "run-fixture-10", "state": "leased", "fence": 3, "expiredByMs": 1 },
+      "expected": { "state": "queued", "event": "lease_expired", "terminal": false }
+    },
+    {
+      "id": "d2.lease.reassignment-increments-fence",
+      "description": "Reassignment creates a new lease ID and monotonically increases the fence.",
+      "given": { "runId": "run-fixture-10", "priorLeaseId": "lease-fixture-3", "priorFence": 3, "state": "queued" },
+      "expected": { "newLeaseId": "lease-fixture-4", "newFence": 4, "state": "leased", "priorLeaseCurrent": false }
+    },
+    {
+      "id": "d2.lease.running-expiry-fails",
+      "description": "A running action is not silently repeated after runner loss.",
+      "given": { "runId": "run-fixture-11", "state": "running", "fence": 4, "expiredByMs": 1 },
+      "expected": { "state": "failed", "reason": "runner_lost", "automaticallyRequeued": false }
+    },
+    {
+      "id": "d2.lease.control-plane-restart-preserves-lease",
+      "description": "A persisted unexpired lease remains current across control-plane restart.",
+      "given": { "leaseId": "lease-fixture-5", "fence": 5, "expiresAt": "2026-08-09T12:01:00.000Z", "serverRestartAt": "2026-08-09T12:00:30.000Z", "sessionId": "session-fixture-2" },
+      "expected": { "leaseCurrent": true, "fenceChanged": false, "resumeHeartbeatAllowed": true }
+    },
+    {
+      "id": "d2.lease.runner-restart-fences-abandoned-work",
+      "description": "A new runner session cleans journalled groups and cannot adopt an old lease.",
+      "given": { "oldSessionId": "session-fixture-3", "newSessionId": "session-fixture-4", "journalledProcessGroups": [4242], "oldFence": 6 },
+      "expected": { "cleanupRequired": true, "oldLeaseAdopted": false, "terminalReason": "runner_restarted", "newHandshakeRequired": true }
+    },
+    {
+      "id": "d2.lease.stale-fence-rejected",
+      "description": "A superseded executor cannot append an event.",
+      "given": { "runId": "run-fixture-12", "leaseId": "lease-fixture-6", "presentedFence": 6, "currentFence": 7, "sequence": 3 },
+      "error": { "httpStatus": 409, "code": "stale_fence", "eventAppendCount": 0, "stateChanged": false }
+    },
+    {
+      "id": "d2.lease.expired-append-rejected",
+      "description": "An expired current fence cannot append late output.",
+      "given": { "runId": "run-fixture-13", "leaseId": "lease-fixture-7", "fence": 8, "sequence": 5, "expiredByMs": 1 },
+      "error": { "httpStatus": 409, "code": "lease_expired", "eventAppendCount": 0, "stateChanged": false }
+    },
+    {
+      "id": "d2.event.identical-sequence-replay",
+      "description": "An identical fenced event replay returns the previously assigned event ID.",
+      "given": { "runId": "run-fixture-14", "fence": 9, "sequence": 2, "eventDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "replayDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+      "expected": { "eventId": 42, "result": "stored_event_replayed", "eventAppendCount": 1, "projectionWriteCount": 1 }
+    },
+    {
+      "id": "d2.event.sequence-body-conflict",
+      "description": "The same fence and sequence cannot identify different event content.",
+      "given": { "runId": "run-fixture-15", "fence": 10, "sequence": 2, "storedDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "requestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+      "error": { "httpStatus": 409, "code": "event_replay_conflict", "eventAppendCount": 0 }
+    },
+    {
+      "id": "d2.event.sequence-gap-rejected",
+      "description": "Per-fence client event sequences are contiguous from one.",
+      "given": { "runId": "run-fixture-16", "fence": 11, "lastAcceptedSequence": 2, "presentedSequence": 4 },
+      "error": { "httpStatus": 409, "code": "event_sequence_gap", "expectedSequence": 3, "eventAppendCount": 0 }
+    },
+    {
+      "id": "d2.event.duplicate-completion-no-duplicates",
+      "description": "Completion replay cannot duplicate a terminal transition or projected records.",
+      "given": { "runId": "run-fixture-17", "fence": 12, "sequence": 8, "kind": "succeeded", "replayCount": 3 },
+      "expected": { "terminalWriteCount": 1, "artifactIdentityWrites": 1, "observationIdentityWrites": 1, "result": "stored_terminal_replayed" }
+    },
+    {
+      "id": "d2.sse.ordered-resume",
+      "description": "Resume returns only persistent stream events after the cursor in ascending order.",
+      "given": { "retainedEventIds": [40, 41, 42, 43], "lastEventId": 41 },
+      "expected": { "deliveredEventIds": [42, 43], "duplicates": 0, "order": "ascending" }
+    },
+    {
+      "id": "d2.sse.expired-cursor",
+      "description": "A cursor below the retained lower bound requires snapshot recovery.",
+      "given": { "lastEventId": 39, "earliestRetainedEventId": 40, "retentionDays": 7, "minimumNewestEvents": 100000 },
+      "error": { "httpStatus": 410, "code": "sse_cursor_expired", "earliestEventId": 40, "snapshotUrl": "/api/v1/engagements/engagement-fixture-2/snapshot" }
+    },
+    {
+      "id": "d2.sse.future-cursor",
+      "description": "A cursor beyond the stream watermark is rejected rather than silently skipped.",
+      "given": { "lastEventId": 44, "currentWatermark": 43 },
+      "error": { "httpStatus": 409, "code": "sse_cursor_ahead", "currentWatermark": 43 }
+    }
+  ]
+}

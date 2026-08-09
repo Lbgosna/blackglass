@@ -1,0 +1,61 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d2-v1",
+  "kind": "idempotency-concurrency",
+  "cases": [
+    {
+      "id": "d2.idempotency.same-key-same-request-replays",
+      "description": "A command replay returns the byte-equivalent stored result.",
+      "given": { "actorId": "operator-fixture", "route": "/api/v1/actions", "operation": "create", "key": "fixture-key-0001", "canonicalRequestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "replayDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      "expected": { "result": "stored_response_replayed", "mutationCount": 1, "eventCount": 1 }
+    },
+    {
+      "id": "d2.idempotency.same-key-different-request-conflicts",
+      "description": "A reused key with another canonical request cannot mutate state.",
+      "given": { "actorId": "operator-fixture", "route": "/api/v1/actions", "operation": "create", "key": "fixture-key-0002", "storedDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "requestDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      "error": { "httpStatus": 409, "code": "idempotency_conflict", "mutationCount": 0 }
+    },
+    {
+      "id": "d2.idempotency.continue-replay",
+      "description": "Continue binds one warning acknowledgment and queues once.",
+      "given": { "actionId": "action-fixture-6", "key": "fixture-key-0003", "expectedRevision": 4, "snapshotVersion": 1, "replayCount": 2 },
+      "expected": { "acknowledgmentCount": 1, "queueCount": 1, "finalRevision": 5, "result": "stored_response_replayed" }
+    },
+    {
+      "id": "d2.idempotency.add-scope-transaction-replay",
+      "description": "Scope revision, planning version, warning binding, and queueing commit atomically once.",
+      "given": { "actionId": "action-fixture-7", "engagementId": "engagement-fixture-1", "key": "fixture-key-0004", "actionExpectedRevision": 2, "engagementExpectedRevision": 5, "replayCount": 2 },
+      "expected": { "scopeRevisionsAdded": 1, "planningVersionsAdded": 1, "acknowledgmentsAdded": 1, "runsAdded": 1, "transactionCount": 1 }
+    },
+    {
+      "id": "d2.idempotency.retry-replay",
+      "description": "Retry replay creates one new Run attempt.",
+      "given": { "actionId": "action-fixture-8", "terminalRunId": "run-fixture-6", "key": "fixture-key-0005", "expectedRevision": 9, "replayCount": 3 },
+      "expected": { "newRunId": "run-fixture-7", "newAttempt": 2, "runsAdded": 1, "actionRevision": 10 }
+    },
+    {
+      "id": "d2.idempotency.cancel-replay",
+      "description": "Cancel replay does not repeat cancellation or terminal writes.",
+      "given": { "actionId": "action-fixture-9", "runId": "run-fixture-8", "state": "queued", "key": "fixture-key-0006", "expectedRevision": 3, "replayCount": 2 },
+      "expected": { "state": "cancelled", "terminalWriteCount": 1, "cancelEventCount": 1, "result": "stored_response_replayed" }
+    },
+    {
+      "id": "d2.concurrency.revision-conflict",
+      "description": "A stale revision loses without merging mutable state.",
+      "given": { "resourceType": "Action", "resourceId": "action-fixture-10", "expectedRevision": 4, "currentRevision": 5 },
+      "error": { "httpStatus": 409, "code": "revision_conflict", "currentRevision": 5, "mutationCount": 0 }
+    },
+    {
+      "id": "d2.concurrency.sqlite-mutation-boundary",
+      "description": "The control plane is the only writer and performs no external I/O in write transactions.",
+      "given": { "journalMode": "WAL", "foreignKeys": true, "synchronous": "FULL", "busyTimeoutMs": 5000, "writerProcesses": 1, "transactionMode": "BEGIN IMMEDIATE", "externalIoInsideTransaction": false },
+      "expected": { "accepted": true, "runnerDatabaseAccess": false, "composeReplicasSupported": false }
+    },
+    {
+      "id": "d2.concurrency.sqlite-busy-retry",
+      "description": "A mutation blocked beyond the timeout fails safely and remains replayable.",
+      "given": { "blockedForMs": 5001, "busyTimeoutMs": 5000, "sameKeyCanReplay": true },
+      "error": { "httpStatus": 503, "code": "storage_busy", "mutationCount": 0 }
+    }
+  ]
+}

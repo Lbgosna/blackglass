@@ -1,0 +1,80 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d2-v1",
+  "kind": "state-machine",
+  "cases": [
+    {
+      "id": "d2.state.action-transition-matrix",
+      "description": "The listed Action edges are valid and every other ordered state pair is invalid.",
+      "given": {
+        "states": ["planning", "paused_for_warning", "queued", "active", "succeeded", "failed", "cancelled", "capability_error"],
+        "validEdges": [
+          ["planning", "paused_for_warning"], ["planning", "queued"], ["planning", "capability_error"], ["planning", "cancelled"],
+          ["paused_for_warning", "planning"], ["paused_for_warning", "queued"], ["paused_for_warning", "cancelled"],
+          ["queued", "active"], ["queued", "cancelled"],
+          ["active", "queued"], ["active", "succeeded"], ["active", "failed"], ["active", "cancelled"],
+          ["failed", "queued"], ["cancelled", "queued"]
+        ],
+        "invalidRule": "every_ordered_pair_not_in_valid_edges_including_same_state"
+      },
+      "expected": { "validResult": "transition_applied", "invalidCode": "invalid_action_transition", "terminalStates": ["succeeded", "capability_error"] }
+    },
+    {
+      "id": "d2.state.run-transition-matrix",
+      "description": "The listed Run edges are valid and every other ordered state pair is invalid.",
+      "given": {
+        "states": ["queued", "leased", "running", "cancel_requested", "succeeded", "failed", "cancelled"],
+        "validEdges": [
+          ["queued", "leased"], ["queued", "cancelled"],
+          ["leased", "queued"], ["leased", "running"], ["leased", "cancel_requested"], ["leased", "failed"],
+          ["running", "cancel_requested"], ["running", "succeeded"], ["running", "failed"],
+          ["cancel_requested", "cancelled"], ["cancel_requested", "failed"]
+        ],
+        "invalidRule": "every_ordered_pair_not_in_valid_edges_including_same_state"
+      },
+      "expected": { "validResult": "transition_applied", "invalidCode": "invalid_run_transition", "terminalStates": ["succeeded", "failed", "cancelled"] }
+    },
+    {
+      "id": "d2.state.d1-warning-and-capability-routing",
+      "description": "D1 warning remains runnable while representability failure never enters warning flow.",
+      "given": { "representableWithWarning": true, "continueAvailable": true, "unrepresentable": true },
+      "expected": { "warningState": "paused_for_warning", "continuedState": "queued", "unrepresentableState": "capability_error" }
+    },
+    {
+      "id": "d2.state.add-scope-appends-planning-version",
+      "description": "Add to scope appends a planning snapshot and preserves prior bytes.",
+      "given": { "actionId": "action-fixture-1", "versionsBefore": [1], "sourceVersion": 1, "addScopeAndRun": true, "postRecheckDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      "expected": { "versionsAfter": [1, 2], "version1Changed": false, "queuedSnapshotVersion": 2, "recheckCount": 1, "warningSource": "add_scope_and_run" }
+    },
+    {
+      "id": "d2.state.queued-snapshot-is-final",
+      "description": "Once queued, planning versions and the queued snapshot pointer cannot change.",
+      "given": { "actionId": "action-fixture-2", "state": "queued", "queuedSnapshotVersion": 2, "attemptedVersion": 3 },
+      "error": { "code": "action_already_queued", "stateChanged": false, "snapshotAppended": false }
+    },
+    {
+      "id": "d2.state.retry-preserves-action-identity",
+      "description": "Retry creates a new attempt under the Action and pins the queued snapshot and warning binding.",
+      "given": { "actionId": "action-fixture-3", "terminalRunId": "run-fixture-1", "terminalState": "failed", "attempt": 1, "queuedSnapshotVersion": 2, "warningAcknowledgmentId": "warning-fixture-1" },
+      "expected": { "actionId": "action-fixture-3", "newRunId": "run-fixture-2", "attempt": 2, "queuedSnapshotVersion": 2, "warningAcknowledgmentId": "warning-fixture-1", "priorRunChanged": false }
+    },
+    {
+      "id": "d2.state.successful-run-retry-rejected",
+      "description": "A succeeded Run cannot be retried in v0.1.",
+      "given": { "actionId": "action-fixture-4", "terminalRunId": "run-fixture-3", "terminalState": "succeeded" },
+      "error": { "code": "run_not_retryable", "stateChanged": false }
+    },
+    {
+      "id": "d2.state.one-terminal-winner",
+      "description": "Concurrent different terminal events cannot rewrite the first committed terminal state.",
+      "given": { "runId": "run-fixture-4", "revision": 7, "concurrentCompletions": [{ "sequence": 8, "kind": "succeeded" }, { "sequence": 8, "kind": "failed" }] },
+      "expected": { "winner": "first_committed", "terminalWriteCount": 1, "loserCode": "run_already_terminal", "eventAppendCount": 1 }
+    },
+    {
+      "id": "d2.state.identical-terminal-replay",
+      "description": "An identical terminal replay returns the stored response without another transition.",
+      "given": { "runId": "run-fixture-5", "fence": 3, "sequence": 9, "kind": "cancelled", "canonicalDigestMatches": true },
+      "expected": { "result": "stored_terminal_replayed", "state": "cancelled", "terminalWriteCount": 1, "eventAppendCount": 1 }
+    }
+  ]
+}

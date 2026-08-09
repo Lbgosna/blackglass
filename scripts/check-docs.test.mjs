@@ -1,17 +1,29 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { checkD1Fixtures, checkDocumentation, localMarkdownTargets } from "./check-docs.mjs";
+import {
+  checkD1Fixtures,
+  checkD2Fixtures,
+  checkDocumentation,
+  localMarkdownTargets,
+} from "./check-docs.mjs";
 
 const fixtureKinds = new Map([
   ["normalization.json", "normalization"],
   ["scope-comparison.json", "scope-comparison"],
   ["resolution-snapshot.json", "resolution-snapshot"],
   ["warning-flow.json", "warning-flow"],
+]);
+const d2FixtureKinds = new Map([
+  ["state-machine.json", "state-machine"],
+  ["idempotency-concurrency.json", "idempotency-concurrency"],
+  ["runner-identity.json", "runner-identity"],
+  ["lease-events.json", "lease-events"],
+  ["process-supervision.json", "process-supervision"],
 ]);
 const requiredMalformedTargetCases = [
   {
@@ -58,6 +70,17 @@ const requiredPositiveTargetCases = [
   },
 ];
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+async function copyD2FixtureSuite(root) {
+  const fixtureDirectory = path.join(root, "docs", "architecture", "fixtures", "d2");
+  await mkdir(path.dirname(fixtureDirectory), { recursive: true });
+  await cp(
+    path.join(repositoryRoot, "docs", "architecture", "fixtures", "d2"),
+    fixtureDirectory,
+    { recursive: true },
+  );
+  return fixtureDirectory;
+}
 
 function materializeInputTemplate(template) {
   if (Array.isArray(template.labels)) {
@@ -440,4 +463,122 @@ test("encodes exact D1 accepted and just-over boundary vectors", async () => {
   assert.equal(scopeCases.get("d1.scope.port-upper-bound-accepted").given.ranges[0].to, 65535);
   assert.equal(scopeCases.get("d1.scope.port-zero-rejected").given.ranges[0].from, 0);
   assert.equal(scopeCases.get("d1.scope.port-65536-rejected").given.ranges[0].to, 65536);
+});
+
+test("accepts the complete pinned d2-v1 fixture suite", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  await copyD2FixtureSuite(root);
+
+  assert.deepEqual(await checkD2Fixtures(root), []);
+  assert.deepEqual(await checkDocumentation(root), []);
+});
+
+test("requires the D2 fixture suite when the accepted ADR marker exists", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const architectureDirectory = path.join(root, "docs", "architecture");
+  await mkdir(architectureDirectory, { recursive: true });
+  await writeFile(
+    path.join(architectureDirectory, "0002-actions-runs-runner-trust.md"),
+    "# ADR-0002\n\nStatus: accepted\n",
+    "utf8",
+  );
+
+  assert.deepEqual(await checkDocumentation(root), [
+    "docs/architecture/fixtures/d2: missing D2 fixture directory",
+  ]);
+});
+
+test("reports D2 version, profile, kind, shape, duplicate IDs, and unexpected cases", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD2FixtureSuite(root);
+  const statePath = path.join(fixtureDirectory, "state-machine.json");
+  const stateFixture = JSON.parse(await readFile(statePath, "utf8"));
+  stateFixture.fixtureVersion = 2;
+  stateFixture.profile = "d2-v2";
+  stateFixture.kind = "other";
+  stateFixture.cases[1].id = stateFixture.cases[0].id;
+  stateFixture.cases.push({
+    id: "d2.state.unpinned-case",
+    description: "Synthetic unpinned case.",
+    given: { accepted: true },
+    expected: { accepted: true },
+  });
+  await writeFile(statePath, `${JSON.stringify(stateFixture, null, 2)}\n`, "utf8");
+
+  const errors = await checkD2Fixtures(root);
+  assert.ok(errors.some((error) => error.includes("fixtureVersion must be 1")));
+  assert.ok(errors.some((error) => error.includes("profile must be d2-v1")));
+  assert.ok(errors.some((error) => error.includes("kind must be state-machine")));
+  assert.ok(errors.some((error) => error.includes("duplicates d2.state.action-transition-matrix")));
+  assert.ok(errors.some((error) => error.includes("is not a required d2-v1 case")));
+  assert.ok(errors.some((error) => error.includes("missing required D2 case d2.state.run-transition-matrix")));
+});
+
+test("pins every D2 case critical input field", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD2FixtureSuite(root);
+
+  for (const fileName of d2FixtureKinds.keys()) {
+    const fixturePath = path.join(fixtureDirectory, fileName);
+    const validFixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    for (const [index, fixtureCase] of validFixture.cases.entries()) {
+      const mutatedFixture = structuredClone(validFixture);
+      mutatedFixture.cases[index].given.validatorMutation = true;
+      await writeFile(fixturePath, `${JSON.stringify(mutatedFixture, null, 2)}\n`, "utf8");
+
+      const errors = await checkD2Fixtures(root);
+      assert.ok(
+        errors.some((error) =>
+          error.includes(`${fixtureCase.id} critical given fields or exact outcome changed`),
+        ),
+        `${fixtureCase.id} input mutation was not rejected`,
+      );
+    }
+    await writeFile(fixturePath, `${JSON.stringify(validFixture, null, 2)}\n`, "utf8");
+  }
+});
+
+test("pins every D2 case exact outcome", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD2FixtureSuite(root);
+
+  for (const fileName of d2FixtureKinds.keys()) {
+    const fixturePath = path.join(fixtureDirectory, fileName);
+    const validFixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    for (const [index, fixtureCase] of validFixture.cases.entries()) {
+      const mutatedFixture = structuredClone(validFixture);
+      const outcomeName = Object.hasOwn(fixtureCase, "expected") ? "expected" : "error";
+      mutatedFixture.cases[index][outcomeName].validatorMutation = true;
+      await writeFile(fixturePath, `${JSON.stringify(mutatedFixture, null, 2)}\n`, "utf8");
+
+      const errors = await checkD2Fixtures(root);
+      assert.ok(
+        errors.some((error) =>
+          error.includes(`${fixtureCase.id} critical given fields or exact outcome changed`),
+        ),
+        `${fixtureCase.id} outcome mutation was not rejected`,
+      );
+    }
+    await writeFile(fixturePath, `${JSON.stringify(validFixture, null, 2)}\n`, "utf8");
+  }
+});
+
+test("reports malformed, missing, misplaced, and unexpected D2 fixtures", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD2FixtureSuite(root);
+  await writeFile(path.join(fixtureDirectory, "state-machine.json"), "{\n", "utf8");
+  await writeFile(
+    path.join(fixtureDirectory, "unexpected.json"),
+    '{"fixtureVersion":1}\n',
+    "utf8",
+  );
+
+  const errors = await checkD2Fixtures(root);
+  assert.ok(errors.some((error) => error.includes("unexpected.json: unexpected D2 fixture file")));
+  assert.ok(errors.some((error) => error.includes("state-machine.json: invalid JSON")));
+  assert.ok(
+    errors.some((error) =>
+      error.includes("missing required D2 case d2.state.action-transition-matrix"),
+    ),
+  );
 });
