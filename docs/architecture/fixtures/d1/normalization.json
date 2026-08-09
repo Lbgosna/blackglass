@@ -1,0 +1,339 @@
+{
+  "fixtureVersion": 1,
+  "normalizationProfile": "d1-v1",
+  "kind": "normalization",
+  "cases": [
+    {
+      "id": "d1.normalization.ipv4-trims-ascii-whitespace",
+      "description": "Surrounding ASCII whitespace is removed before strict IPv4 parsing.",
+      "given": { "input": "  192.0.2.7\n" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "ip",
+          "family": 4,
+          "address": "192.0.2.7",
+          "zone": null
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.ipv4-leading-zero-rejected",
+      "description": "A nonzero IPv4 component cannot have a leading zero.",
+      "given": { "input": "192.0.2.007" },
+      "error": { "code": "invalid_ipv4" }
+    },
+    {
+      "id": "d1.normalization.ipv4-short-form-rejected",
+      "description": "IPv4 requires exactly four decimal components.",
+      "given": { "input": "192.0.2" },
+      "error": { "code": "ambiguous_numeric_host" }
+    },
+    {
+      "id": "d1.normalization.ipv4-sign-rejected",
+      "description": "Signed IPv4 components are invalid.",
+      "given": { "input": "+192.0.2.7" },
+      "error": { "code": "invalid_ipv4" }
+    },
+    {
+      "id": "d1.normalization.ipv4-hex-rejected",
+      "description": "Hexadecimal-looking IPv4 input is invalid.",
+      "given": { "input": "0xc0.0x00.0x02.0x07" },
+      "error": { "code": "invalid_ipv4" }
+    },
+    {
+      "id": "d1.normalization.ipv4-internal-whitespace-rejected",
+      "description": "Internal whitespace is not accepted by the IPv4 grammar.",
+      "given": { "input": "192.0. 2.7" },
+      "error": { "code": "invalid_ipv4" }
+    },
+    {
+      "id": "d1.normalization.ipv4-out-of-range-rejected",
+      "description": "Every IPv4 component must be at most 255.",
+      "given": { "input": "192.0.2.256" },
+      "error": { "code": "invalid_ipv4" }
+    },
+    {
+      "id": "d1.normalization.ipv6-rfc5952",
+      "description": "IPv6 uses lowercase RFC 5952 compression.",
+      "given": { "input": "2001:0DB8:0000:0000:0000:0000:0000:0007" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "ip",
+          "family": 6,
+          "address": "2001:db8::7",
+          "zone": null
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.mapped-ipv6-hex-spelling",
+      "description": "An IPv4-mapped IPv6 hexadecimal spelling becomes IPv4 identity.",
+      "given": { "input": "0:0:0:0:0:ffff:c000:0207" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "ip",
+          "family": 4,
+          "address": "192.0.2.7",
+          "zone": null
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.mapped-ipv6-dotted-spelling",
+      "description": "An IPv4-mapped IPv6 dotted spelling becomes the same IPv4 identity.",
+      "given": { "input": "::ffff:192.0.2.7" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "ip",
+          "family": 4,
+          "address": "192.0.2.7",
+          "zone": null
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.mapped-ipv6-cidr-rejected",
+      "description": "Mapped IPv6 CIDR input cannot create a second scope identity.",
+      "given": { "input": "::ffff:192.0.2.0/120" },
+      "error": { "code": "mapped_ipv6_cidr_unsupported" }
+    },
+    {
+      "id": "d1.normalization.bare-link-local-zone",
+      "description": "A bare link-local IPv6 target preserves a case-sensitive zone separately.",
+      "given": { "input": "fe80:0:0:0:0:0:0:7%Eth0" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "ip",
+          "family": 6,
+          "address": "fe80::7",
+          "zone": "Eth0"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.url-link-local-zone",
+      "description": "An RFC 6874 URL zone is decoded once and restored with percent-25 serialization.",
+      "given": { "input": "https://[fe80::7%25Eth0]/status" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "url",
+          "url": "https://[fe80::7%25Eth0]/status",
+          "origin": "https://[fe80::7%25Eth0]:443",
+          "host": { "address": "fe80::7", "zone": "Eth0" },
+          "effectivePort": 443,
+          "pathAndQuery": "/status"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.url-zone-decode-once-rejection",
+      "description": "A double-encoded URL zone is not decoded twice.",
+      "given": { "input": "https://[fe80::7%2525Eth0]/" },
+      "error": { "code": "invalid_zone_encoding" }
+    },
+    {
+      "id": "d1.normalization.zone-non-link-local-rejected",
+      "description": "A zone is invalid outside fe80::/10.",
+      "given": { "input": "2001:db8::7%Eth0" },
+      "error": { "code": "zone_requires_link_local" }
+    },
+    {
+      "id": "d1.normalization.zone-character-rejected",
+      "description": "A zone may contain only the d1-v1 ASCII unreserved set.",
+      "given": { "input": "fe80::7%eth0!" },
+      "error": { "code": "invalid_zone" }
+    },
+    {
+      "id": "d1.normalization.zone-too-long-rejected",
+      "description": "A zone is at most 15 characters.",
+      "given": { "input": "fe80::7%abcdefghijklmnop" },
+      "error": { "code": "invalid_zone" }
+    },
+    {
+      "id": "d1.normalization.idna-bucher-profile",
+      "description": "UTS 46 mapping precedes validation and one final ASCII dot is removed.",
+      "given": { "input": "BÜCHER.Example." },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "hostname",
+          "hostname": "xn--bcher-kva.example"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.idna-nontransitional-sharp-s",
+      "description": "The non-transitional profile preserves sharp-s through IDNA ASCII output.",
+      "given": { "input": "faß.test" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "hostname",
+          "hostname": "xn--fa-hia.test"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.trailing-two-dots-rejected",
+      "description": "Removing exactly one final dot leaves an empty label when two are supplied.",
+      "given": { "input": "host.test.." },
+      "error": { "code": "invalid_hostname_label" }
+    },
+    {
+      "id": "d1.normalization.single-label-lab-host",
+      "description": "A valid single-label lab hostname is accepted.",
+      "given": { "input": "TARGET-LAB" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "hostname",
+          "hostname": "target-lab"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.hostname-underscore-rejected",
+      "description": "STD3 hostname labels reject underscores.",
+      "given": { "input": "bad_name.test" },
+      "error": { "code": "invalid_hostname_label" }
+    },
+    {
+      "id": "d1.normalization.hostname-wildcard-rejected",
+      "description": "Wildcard target input is invalid.",
+      "given": { "input": "*.target.test" },
+      "error": { "code": "wildcard_unsupported" }
+    },
+    {
+      "id": "d1.normalization.hostname-empty-idna-rejected",
+      "description": "An empty hostname remaining after dot removal is invalid.",
+      "given": { "input": "." },
+      "error": { "code": "invalid_hostname" }
+    },
+    {
+      "id": "d1.normalization.ipv4-cidr-masks-host-bits",
+      "description": "CIDR output uses the network address and records host-bit masking.",
+      "given": { "input": "192.0.2.129/25" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "cidr",
+          "family": 4,
+          "network": "192.0.2.128",
+          "prefixLength": 25,
+          "hostBitsMasked": true
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.ipv6-cidr-masks-host-bits",
+      "description": "IPv6 CIDR output masks host bits without expansion.",
+      "given": { "input": "2001:db8:7::1/48" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "cidr",
+          "family": 6,
+          "network": "2001:db8:7::",
+          "prefixLength": 48,
+          "hostBitsMasked": true
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.http-default-port",
+      "description": "HTTP default port 80 is removed and an empty path becomes slash.",
+      "given": { "input": "http://TARGET.TEST:80" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "url",
+          "url": "http://target.test/",
+          "origin": "http://target.test:80",
+          "host": { "hostname": "target.test" },
+          "effectivePort": 80,
+          "pathAndQuery": "/"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.https-default-port",
+      "description": "HTTPS default port 443 is removed from serialization.",
+      "given": { "input": "https://target.test:443/path?q=one" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "url",
+          "url": "https://target.test/path?q=one",
+          "origin": "https://target.test:443",
+          "host": { "hostname": "target.test" },
+          "effectivePort": 443,
+          "pathAndQuery": "/path?q=one"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.url-nondefault-port",
+      "description": "A non-default URL port remains in serialization and origin identity.",
+      "given": { "input": "https://target.test:8443/a/../status?ready=yes" },
+      "expected": {
+        "canonicalTarget": {
+          "normalizationProfile": "d1-v1",
+          "kind": "url",
+          "url": "https://target.test:8443/status?ready=yes",
+          "origin": "https://target.test:8443",
+          "host": { "hostname": "target.test" },
+          "effectivePort": 8443,
+          "pathAndQuery": "/status?ready=yes"
+        }
+      }
+    },
+    {
+      "id": "d1.normalization.url-userinfo-rejected",
+      "description": "URL userinfo is invalid even when the remainder is representable.",
+      "given": { "input": "https://user@target.test/" },
+      "error": { "code": "url_userinfo_unsupported" }
+    },
+    {
+      "id": "d1.normalization.url-fragment-rejected",
+      "description": "A nonempty URL fragment is invalid.",
+      "given": { "input": "https://target.test/#section" },
+      "error": { "code": "url_fragment_unsupported" }
+    },
+    {
+      "id": "d1.normalization.url-empty-fragment-rejected",
+      "description": "An empty fragment delimiter is also invalid.",
+      "given": { "input": "https://target.test/#" },
+      "error": { "code": "url_fragment_unsupported" }
+    },
+    {
+      "id": "d1.normalization.unsupported-scheme-rejected",
+      "description": "An explicit unsupported scheme is not guessed as a hostname.",
+      "given": { "input": "ftp://target.test/" },
+      "error": { "code": "unsupported_url_scheme" }
+    },
+    {
+      "id": "d1.normalization.empty-input-rejected",
+      "description": "Input containing only surrounding ASCII whitespace is empty.",
+      "given": { "input": " \t\n" },
+      "error": { "code": "empty_target" }
+    },
+    {
+      "id": "d1.normalization.control-byte-rejected",
+      "description": "A control byte is invalid target input.",
+      "given": { "input": "target.test\u0000ignored" },
+      "error": { "code": "control_byte" }
+    },
+    {
+      "id": "d1.normalization.utf8-byte-limit-rejected",
+      "description": "The 4096-byte limit applies before grammar classification.",
+      "given": { "inputTemplate": { "repeat": "a", "count": 4097 } },
+      "error": { "code": "target_too_long", "maximumUtf8Bytes": 4096 }
+    }
+  ]
+}

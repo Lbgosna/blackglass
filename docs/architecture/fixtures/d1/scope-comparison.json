@@ -1,0 +1,478 @@
+{
+  "fixtureVersion": 1,
+  "normalizationProfile": "d1-v1",
+  "kind": "scope-comparison",
+  "cases": [
+    {
+      "id": "d1.scope.null-revision-disables-warning",
+      "description": "No active scope revision does not behave like an empty allow list.",
+      "given": {
+        "scopeRevisionId": null,
+        "rules": [],
+        "actionTargets": [{ "kind": "hostname", "hostname": "outside.test" }]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": [] }
+    },
+    {
+      "id": "d1.scope.active-empty-revision-is-outside",
+      "description": "An active revision with no rules marks every destination outside scope.",
+      "given": {
+        "scopeRevisionId": "scope-revision-empty",
+        "rules": [],
+        "actionTargets": [{ "kind": "hostname", "hostname": "outside.test" }]
+      },
+      "expected": {
+        "outsideScope": true,
+        "outsideTargets": [{ "kind": "hostname", "hostname": "outside.test" }]
+      }
+    },
+    {
+      "id": "d1.scope.exact-ipv4-match",
+      "description": "A canonical IPv4 identity matches an exact IPv4 rule.",
+      "given": {
+        "scopeRevisionId": "scope-revision-ip",
+        "rules": [{ "id": "rule-ip", "kind": "ip", "address": "192.0.2.7", "zone": null }],
+        "actionTargets": [{ "kind": "ip", "address": "192.0.2.7", "zone": null }]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": ["rule-ip"] }
+    },
+    {
+      "id": "d1.scope.exact-zone-is-case-sensitive",
+      "description": "An exact link-local rule includes the case-sensitive zone identity.",
+      "given": {
+        "scopeRevisionId": "scope-revision-zone",
+        "rules": [{ "id": "rule-zone", "kind": "ip", "address": "fe80::7", "zone": "Eth0" }],
+        "actionTargets": [{ "kind": "ip", "address": "fe80::7", "zone": "eth0" }]
+      },
+      "expected": {
+        "outsideScope": true,
+        "outsideTargets": [{ "kind": "ip", "address": "fe80::7", "zone": "eth0" }]
+      }
+    },
+    {
+      "id": "d1.scope.cidr-ignores-zone-bits-match",
+      "description": "CIDR membership uses address bits while the target keeps its zone.",
+      "given": {
+        "scopeRevisionId": "scope-revision-link-local",
+        "rules": [{ "id": "rule-link-local", "kind": "cidr", "network": "fe80::", "prefixLength": 10 }],
+        "actionTargets": [{ "kind": "ip", "address": "fe80::7", "zone": "Eth0" }]
+      },
+      "expected": {
+        "outsideScope": false,
+        "matchedRuleIds": ["rule-link-local"],
+        "snapshotTarget": { "kind": "ip", "address": "fe80::7", "zone": "Eth0" }
+      }
+    },
+    {
+      "id": "d1.scope.domain-apex-included",
+      "description": "A domain rule includes its apex regardless of subdomain policy.",
+      "given": {
+        "scopeRevisionId": "scope-revision-domain",
+        "rules": [
+          {
+            "id": "rule-domain",
+            "kind": "domain",
+            "hostname": "target.test",
+            "includeSubdomains": false
+          }
+        ],
+        "actionTargets": [{ "kind": "hostname", "hostname": "target.test" }]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": ["rule-domain"] }
+    },
+    {
+      "id": "d1.scope.subdomain-disabled",
+      "description": "A descendant does not match when includeSubdomains is false.",
+      "given": {
+        "scopeRevisionId": "scope-revision-domain",
+        "rules": [
+          {
+            "id": "rule-domain",
+            "kind": "domain",
+            "hostname": "target.test",
+            "includeSubdomains": false
+          }
+        ],
+        "actionTargets": [{ "kind": "hostname", "hostname": "api.target.test" }]
+      },
+      "expected": {
+        "outsideScope": true,
+        "outsideTargets": [{ "kind": "hostname", "hostname": "api.target.test" }]
+      }
+    },
+    {
+      "id": "d1.scope.subdomain-label-boundary-match",
+      "description": "A descendant matches only across a label boundary.",
+      "given": {
+        "scopeRevisionId": "scope-revision-domain",
+        "rules": [
+          {
+            "id": "rule-domain",
+            "kind": "domain",
+            "hostname": "target.test",
+            "includeSubdomains": true
+          }
+        ],
+        "actionTargets": [{ "kind": "hostname", "hostname": "api.target.test" }]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": ["rule-domain"] }
+    },
+    {
+      "id": "d1.scope.subdomain-suffix-without-boundary-rejected",
+      "description": "A hostname ending in the same bytes without a label boundary does not match.",
+      "given": {
+        "scopeRevisionId": "scope-revision-domain",
+        "rules": [
+          {
+            "id": "rule-domain",
+            "kind": "domain",
+            "hostname": "target.test",
+            "includeSubdomains": true
+          }
+        ],
+        "actionTargets": [{ "kind": "hostname", "hostname": "nottarget.test" }]
+      },
+      "expected": {
+        "outsideScope": true,
+        "outsideTargets": [{ "kind": "hostname", "hostname": "nottarget.test" }]
+      }
+    },
+    {
+      "id": "d1.scope.port-ranges-sort-and-merge",
+      "description": "Port ranges are sorted and adjacent or overlapping ranges are merged.",
+      "given": {
+        "ranges": [
+          { "from": 443, "to": 445 },
+          { "from": 80, "to": 80 },
+          { "from": 81, "to": 82 },
+          { "from": 444, "to": 450 }
+        ]
+      },
+      "expected": {
+        "normalizedRanges": [
+          { "from": 80, "to": 82 },
+          { "from": 443, "to": 450 }
+        ]
+      }
+    },
+    {
+      "id": "d1.scope.multi-port-all-covered",
+      "description": "A port-restricted rule matches when every declared action port is covered.",
+      "given": {
+        "scopeRevisionId": "scope-revision-ports",
+        "rules": [
+          {
+            "id": "rule-ports",
+            "kind": "domain",
+            "hostname": "target.test",
+            "includeSubdomains": false,
+            "portRanges": [
+              { "from": 80, "to": 82 },
+              { "from": 443, "to": 443 }
+            ]
+          }
+        ],
+        "actionTargets": [
+          { "kind": "hostname", "hostname": "target.test", "declaredPorts": [80, 82, 443] }
+        ]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": ["rule-ports"] }
+    },
+    {
+      "id": "d1.scope.multi-port-one-uncovered",
+      "description": "One uncovered declared action port makes the target outside a restricted rule.",
+      "given": {
+        "scopeRevisionId": "scope-revision-ports",
+        "rules": [
+          {
+            "id": "rule-ports",
+            "kind": "domain",
+            "hostname": "target.test",
+            "includeSubdomains": false,
+            "portRanges": [{ "from": 80, "to": 82 }]
+          }
+        ],
+        "actionTargets": [
+          { "kind": "hostname", "hostname": "target.test", "declaredPorts": [80, 443] }
+        ]
+      },
+      "expected": {
+        "outsideScope": true,
+        "uncoveredPorts": [443]
+      }
+    },
+    {
+      "id": "d1.scope.unspecified-port-does-not-match-restriction",
+      "description": "Unspecified action ports are not bounded by a port-restricted rule.",
+      "given": {
+        "scopeRevisionId": "scope-revision-ports",
+        "rules": [
+          {
+            "id": "rule-ports",
+            "kind": "domain",
+            "hostname": "target.test",
+            "includeSubdomains": false,
+            "portRanges": [{ "from": 443, "to": 443 }]
+          }
+        ],
+        "actionTargets": [
+          { "kind": "hostname", "hostname": "target.test", "declaredPorts": null }
+        ]
+      },
+      "expected": { "outsideScope": true, "reason": "ports_unspecified" }
+    },
+    {
+      "id": "d1.scope.url-origin-default-port-match",
+      "description": "An omitted HTTPS port compares by effective port 443.",
+      "given": {
+        "scopeRevisionId": "scope-revision-origin",
+        "rules": [
+          {
+            "id": "rule-origin",
+            "kind": "url-origin",
+            "scheme": "https",
+            "host": "target.test",
+            "effectivePort": 443
+          }
+        ],
+        "actionTargets": [
+          {
+            "kind": "url",
+            "url": "https://target.test/path?q=one",
+            "scheme": "https",
+            "host": "target.test",
+            "effectivePort": 443
+          }
+        ]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": ["rule-origin"] }
+    },
+    {
+      "id": "d1.scope.url-path-query-do-not-affect-origin",
+      "description": "Different path and query values keep the same URL-origin scope identity.",
+      "given": {
+        "scopeRevisionId": "scope-revision-origin",
+        "rules": [
+          {
+            "id": "rule-origin",
+            "kind": "url-origin",
+            "scheme": "https",
+            "host": "target.test",
+            "effectivePort": 8443
+          }
+        ],
+        "actionTargets": [
+          {
+            "kind": "url",
+            "url": "https://target.test:8443/other?value=two",
+            "scheme": "https",
+            "host": "target.test",
+            "effectivePort": 8443
+          }
+        ]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": ["rule-origin"] }
+    },
+    {
+      "id": "d1.scope.url-scheme-is-part-of-origin",
+      "description": "HTTP does not match an otherwise equal HTTPS origin.",
+      "given": {
+        "scopeRevisionId": "scope-revision-origin",
+        "rules": [
+          {
+            "id": "rule-origin",
+            "kind": "url-origin",
+            "scheme": "https",
+            "host": "target.test",
+            "effectivePort": 443
+          }
+        ],
+        "actionTargets": [
+          {
+            "kind": "url",
+            "url": "http://target.test/",
+            "scheme": "http",
+            "host": "target.test",
+            "effectivePort": 80
+          }
+        ]
+      },
+      "expected": { "outsideScope": true, "reason": "origin_mismatch" }
+    },
+    {
+      "id": "d1.scope.derived-address-covered-for-same-host-action",
+      "description": "A domain rule covers an address resolved for that hostname in the same action.",
+      "given": {
+        "scopeRevisionId": "scope-revision-derived",
+        "rules": [
+          {
+            "id": "rule-domain",
+            "kind": "domain",
+            "hostname": "app.target.test",
+            "includeSubdomains": false
+          }
+        ],
+        "actionTargets": [
+          {
+            "kind": "resolved-address",
+            "address": "192.0.2.40",
+            "derivedForHostname": "app.target.test",
+            "actionId": "action-current"
+          }
+        ]
+      },
+      "expected": { "outsideScope": false, "matchedRuleIds": ["rule-domain"] }
+    },
+    {
+      "id": "d1.scope.shared-address-does-not-transfer-host-membership",
+      "description": "A shared address resolved for an unrelated hostname receives no domain-rule coverage.",
+      "given": {
+        "scopeRevisionId": "scope-revision-shared",
+        "rules": [
+          {
+            "id": "rule-domain",
+            "kind": "domain",
+            "hostname": "app.target.test",
+            "includeSubdomains": false
+          }
+        ],
+        "actionTargets": [
+          {
+            "kind": "resolved-address",
+            "address": "192.0.2.40",
+            "derivedForHostname": "other.test",
+            "actionId": "action-current"
+          }
+        ]
+      },
+      "expected": {
+        "outsideScope": true,
+        "outsideTargets": [
+          {
+            "kind": "resolved-address",
+            "address": "192.0.2.40",
+            "derivedForHostname": "other.test"
+          }
+        ]
+      }
+    },
+    {
+      "id": "d1.scope.derived-address-does-not-persist-to-future-action",
+      "description": "A prior action's derived address is not a saved exact-IP rule for future actions.",
+      "given": {
+        "scopeRevisionId": "scope-revision-derived",
+        "rules": [
+          {
+            "id": "rule-domain",
+            "kind": "domain",
+            "hostname": "app.target.test",
+            "includeSubdomains": false
+          }
+        ],
+        "priorDerivedAddress": {
+          "address": "192.0.2.40",
+          "derivedForHostname": "app.target.test",
+          "actionId": "action-prior"
+        },
+        "actionTargets": [
+          { "kind": "ip", "address": "192.0.2.40", "zone": null, "actionId": "action-current" }
+        ]
+      },
+      "expected": { "outsideScope": true, "reason": "no_exact_ip_rule" }
+    },
+    {
+      "id": "d1.scope.redirect-origin-isolated",
+      "description": "A redirect destination is compared as its own origin even on a shared address.",
+      "given": {
+        "scopeRevisionId": "scope-revision-redirect",
+        "rules": [
+          {
+            "id": "rule-origin",
+            "kind": "url-origin",
+            "scheme": "https",
+            "host": "app.target.test",
+            "effectivePort": 443
+          }
+        ],
+        "redirectDestination": {
+          "url": "https://other.test/next",
+          "scheme": "https",
+          "host": "other.test",
+          "effectivePort": 443,
+          "resolvedAddress": "192.0.2.40"
+        },
+        "sourceResolvedAddress": "192.0.2.40"
+      },
+      "expected": { "outsideScope": true, "reason": "redirect_origin_outside_scope" }
+    },
+    {
+      "id": "d1.scope.cardinality-deduplicates-and-excludes-ports",
+      "description": "Cardinality counts canonical host identities once and does not multiply by ports.",
+      "given": {
+        "canonicalTargetSets": [
+          { "representation": "2001:db8::/116", "concreteHosts": 4096 },
+          { "representation": "2001:db8::7", "duplicateOfSetIndex": 0 }
+        ],
+        "declaredPorts": [80, 443, 8443]
+      },
+      "expected": {
+        "estimatedConcreteTargets": 4096,
+        "countSaturated": false,
+        "largeTargetWarning": false
+      }
+    },
+    {
+      "id": "d1.scope.cardinality-saturates-at-4097",
+      "description": "Counting stops at 4097 as soon as the warning threshold is exceeded.",
+      "given": {
+        "canonicalTargetSets": [
+          { "representation": "2001:db8::/115", "concreteHosts": 8192 }
+        ]
+      },
+      "expected": {
+        "estimatedConcreteTargets": 4097,
+        "countSaturated": true,
+        "largeTargetWarning": true
+      }
+    },
+    {
+      "id": "d1.scope.ipv6-cardinality-does-not-expand",
+      "description": "A huge IPv6 range is classified with integer arithmetic and remains compact.",
+      "given": {
+        "canonicalTargetSets": [
+          { "representation": "2001:db8::/32", "addressFamily": 6, "expansionMode": "compact" }
+        ]
+      },
+      "expected": {
+        "estimatedConcreteTargets": 4097,
+        "countSaturated": true,
+        "largeTargetWarning": true,
+        "expandedTargets": false
+      }
+    },
+    {
+      "id": "d1.scope.large-range-streams-when-required",
+      "description": "A representable action may stream expansion after the warning without a policy cap.",
+      "given": {
+        "canonicalTargetSets": [
+          { "representation": "2001:db8::/115", "addressFamily": 6 }
+        ],
+        "installedActionSupportsCompactRange": false,
+        "installedActionSupportsStreamingExpansion": true
+      },
+      "expected": {
+        "estimatedConcreteTargets": 4097,
+        "countSaturated": true,
+        "largeTargetWarning": true,
+        "executionRepresentation": "streamed_expansion",
+        "policyHardCap": false
+      }
+    },
+    {
+      "id": "d1.scope.invalid-port-range-rejected",
+      "description": "Port restrictions stay within inclusive range 1 through 65535.",
+      "given": { "ranges": [{ "from": 0, "to": 443 }] },
+      "error": { "code": "invalid_port_range" }
+    }
+  ]
+}

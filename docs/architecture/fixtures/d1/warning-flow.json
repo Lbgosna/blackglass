@@ -1,0 +1,362 @@
+{
+  "fixtureVersion": 1,
+  "normalizationProfile": "d1-v1",
+  "kind": "warning-flow",
+  "cases": [
+    {
+      "id": "d1.warning.no-reasons-queues-without-interaction",
+      "description": "A representable action without warning reasons queues directly.",
+      "given": {
+        "actionId": "action-no-warning",
+        "actionState": "planning",
+        "knownReasonCodes": [],
+        "engagementAutoContinue": false
+      },
+      "expected": {
+        "actionState": "queued",
+        "warningInteractions": 0,
+        "warningAcknowledgment": null
+      }
+    },
+    {
+      "id": "d1.warning.prerun-reasons-combine-once",
+      "description": "All reasons known before queueing produce one interaction.",
+      "given": {
+        "actionId": "action-combined",
+        "actionState": "planning",
+        "knownReasonCodes": ["outside_scope", "large_target_set", "risk_tier_t2"],
+        "engagementAutoContinue": false
+      },
+      "expected": {
+        "queued": false,
+        "warningInteractions": 1,
+        "warningCard": {
+          "reasonCodes": ["outside_scope", "large_target_set", "risk_tier_t2"],
+          "primaryAction": "continue",
+          "addScopeAvailable": true,
+          "cancelAvailable": true
+        }
+      }
+    },
+    {
+      "id": "d1.warning.continue-records-and-queues",
+      "description": "Continue acknowledges the exact snapshot and does not change saved scope.",
+      "given": {
+        "actionId": "action-continue",
+        "warningInteractionOpen": true,
+        "snapshotHash": "sha256:fixture-snapshot-continue",
+        "scopeRevisionId": "scope-revision-7",
+        "knownReasonCodes": ["outside_scope"],
+        "event": { "type": "continue", "at": "2026-08-09T12:10:00.000Z" }
+      },
+      "expected": {
+        "actionState": "queued",
+        "warningInteractions": 1,
+        "scopeRevisionChanged": false,
+        "acknowledgment": {
+          "actionId": "action-continue",
+          "snapshotHash": "sha256:fixture-snapshot-continue",
+          "scopeRevisionId": "scope-revision-7",
+          "reasonCodes": ["outside_scope"],
+          "source": "operator_continue",
+          "acknowledgedAt": "2026-08-09T12:10:00.000Z",
+          "coveredDestinations": []
+        }
+      }
+    },
+    {
+      "id": "d1.warning.add-scope-rechecks-without-second-prompt",
+      "description": "Add to scope commits, rechecks once, binds the post-recheck snapshot, and queues.",
+      "given": {
+        "actionId": "action-add-scope",
+        "warningInteractionOpen": true,
+        "snapshotHash": "sha256:fixture-snapshot-before-scope",
+        "scopeRevisionId": "scope-revision-7",
+        "knownReasonCodes": ["outside_scope", "large_target_set"],
+        "event": {
+          "type": "add_scope_and_run",
+          "newScopeRevisionId": "scope-revision-8",
+          "postRecheckSnapshotHash": "sha256:fixture-snapshot-after-scope",
+          "postRecheckReasonCodes": ["large_target_set"],
+          "at": "2026-08-09T12:11:00.000Z"
+        }
+      },
+      "expected": {
+        "actionState": "queued",
+        "scopeRevisionCommitted": "scope-revision-8",
+        "scopeRechecks": 1,
+        "warningInteractions": 1,
+        "secondPrompt": false,
+        "acknowledgment": {
+          "actionId": "action-add-scope",
+          "snapshotHash": "sha256:fixture-snapshot-after-scope",
+          "scopeRevisionId": "scope-revision-8",
+          "reasonCodes": ["large_target_set"],
+          "source": "add_scope_and_run",
+          "acknowledgedAt": "2026-08-09T12:11:00.000Z",
+          "coveredDestinations": []
+        }
+      }
+    },
+    {
+      "id": "d1.warning.prerun-auto-continue",
+      "description": "Engagement policy records the same facts and queues without UI interruption.",
+      "given": {
+        "actionId": "action-auto-prerun",
+        "actionState": "planning",
+        "snapshotHash": "sha256:fixture-snapshot-auto-prerun",
+        "scopeRevisionId": "scope-revision-7",
+        "knownReasonCodes": ["outside_scope"],
+        "engagementAutoContinue": true,
+        "at": "2026-08-09T12:12:00.000Z"
+      },
+      "expected": {
+        "actionState": "queued",
+        "warningInteractions": 0,
+        "acknowledgment": {
+          "actionId": "action-auto-prerun",
+          "snapshotHash": "sha256:fixture-snapshot-auto-prerun",
+          "scopeRevisionId": "scope-revision-7",
+          "reasonCodes": ["outside_scope"],
+          "source": "engagement_policy",
+          "acknowledgedAt": "2026-08-09T12:12:00.000Z",
+          "coveredDestinations": []
+        }
+      }
+    },
+    {
+      "id": "d1.warning.first-late-reason-pauses-once",
+      "description": "The first late outside-scope destination consumes the one interaction when no acknowledgment exists.",
+      "given": {
+        "actionId": "action-late",
+        "actionState": "running",
+        "warningAcknowledgment": null,
+        "engagementAutoContinue": false,
+        "event": {
+          "type": "redirect_destination_discovered",
+          "destination": {
+            "origin": "https://other.test:443",
+            "resolvedAddress": "192.0.2.41"
+          },
+          "scopeMatch": false
+        }
+      },
+      "expected": {
+        "actionState": "paused_for_warning",
+        "warningInteractions": 1,
+        "warningCard": {
+          "reasonCodes": ["outside_scope"],
+          "primaryAction": "continue",
+          "cancelAvailable": true
+        }
+      }
+    },
+    {
+      "id": "d1.warning.ui-loss-while-paused-is-no-op",
+      "description": "Closing or losing the warning UI does not acknowledge or change execution state.",
+      "given": {
+        "actionId": "action-ui-loss",
+        "actionState": "paused_for_warning",
+        "warningAcknowledgment": null,
+        "event": { "type": "ui_disconnected" }
+      },
+      "expected": {
+        "actionState": "paused_for_warning",
+        "warningAcknowledgment": null,
+        "queued": false,
+        "resumed": false,
+        "cancelled": false
+      }
+    },
+    {
+      "id": "d1.warning.waiting-while-paused-has-no-timeout",
+      "description": "Elapsed time does not implicitly accept, resume, queue, or cancel a warning.",
+      "given": {
+        "actionId": "action-no-timeout",
+        "actionState": "paused_for_warning",
+        "warningAcknowledgment": null,
+        "event": { "type": "time_elapsed", "durationSeconds": 86400 }
+      },
+      "expected": {
+        "actionState": "paused_for_warning",
+        "warningAcknowledgment": null,
+        "timeoutScheduled": false
+      }
+    },
+    {
+      "id": "d1.warning.late-continue-resumes",
+      "description": "Explicit Continue resumes execution after a late warning.",
+      "given": {
+        "actionId": "action-late-continue",
+        "actionState": "paused_for_warning",
+        "snapshotHash": "sha256:fixture-snapshot-late-continue",
+        "scopeRevisionId": "scope-revision-7",
+        "pendingReasonCodes": ["outside_scope"],
+        "pendingDestination": {
+          "origin": "https://other.test:443",
+          "resolvedAddress": "192.0.2.41"
+        },
+        "event": { "type": "continue", "at": "2026-08-09T12:13:00.000Z" }
+      },
+      "expected": {
+        "actionState": "running",
+        "warningInteractions": 1,
+        "acknowledgment": {
+          "source": "operator_continue",
+          "snapshotHash": "sha256:fixture-snapshot-late-continue",
+          "reasonCodes": ["outside_scope"],
+          "knownAdditions": [
+            { "origin": "https://other.test:443", "resolvedAddress": "192.0.2.41" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d1.warning.late-cancel-cancels",
+      "description": "Explicit Cancel terminates a late paused action without acknowledging it.",
+      "given": {
+        "actionId": "action-late-cancel",
+        "actionState": "paused_for_warning",
+        "warningAcknowledgment": null,
+        "event": { "type": "cancel" }
+      },
+      "expected": {
+        "actionState": "cancelled",
+        "warningAcknowledgment": null,
+        "resumed": false
+      }
+    },
+    {
+      "id": "d1.warning.late-auto-continue-does-not-pause",
+      "description": "A first late reason under engagement policy records facts and keeps running.",
+      "given": {
+        "actionId": "action-auto-late",
+        "actionState": "running",
+        "snapshotHash": "sha256:fixture-snapshot-auto-late",
+        "scopeRevisionId": "scope-revision-7",
+        "warningAcknowledgment": null,
+        "engagementAutoContinue": true,
+        "event": {
+          "type": "dns_destination_discovered",
+          "destination": { "hostname": "other.test", "address": "192.0.2.41" },
+          "scopeMatch": false,
+          "at": "2026-08-09T12:14:00.000Z"
+        }
+      },
+      "expected": {
+        "actionState": "running",
+        "warningInteractions": 0,
+        "acknowledgment": {
+          "source": "engagement_policy",
+          "snapshotHash": "sha256:fixture-snapshot-auto-late",
+          "reasonCodes": ["outside_scope"],
+          "knownAdditions": [{ "hostname": "other.test", "address": "192.0.2.41" }]
+        }
+      }
+    },
+    {
+      "id": "d1.warning.later-destination-appends-after-acknowledgment",
+      "description": "Later reasons and destinations append to the record without another pause.",
+      "given": {
+        "actionId": "action-covered-late",
+        "actionState": "running",
+        "warningAcknowledgment": {
+          "source": "operator_continue",
+          "snapshotHash": "sha256:fixture-snapshot-covered-late",
+          "reasonCodes": ["outside_scope"],
+          "coveredDestinations": []
+        },
+        "event": {
+          "type": "redirect_destination_discovered",
+          "destination": {
+            "origin": "https://third.test:443",
+            "resolvedAddress": "192.0.2.42"
+          },
+          "scopeMatch": false
+        }
+      },
+      "expected": {
+        "actionState": "running",
+        "warningInteractions": 0,
+        "snapshotMutated": false,
+        "coveredDestinationAppended": {
+          "origin": "https://third.test:443",
+          "resolvedAddress": "192.0.2.42"
+        },
+        "eventEvidenceAppended": true
+      }
+    },
+    {
+      "id": "d1.warning.retry-reuses-action-warning-budget",
+      "description": "A retry run under the action reuses its snapshot and acknowledgment without a prompt.",
+      "given": {
+        "actionId": "action-retry-warning",
+        "priorRunId": "run-1",
+        "newRunId": "run-2",
+        "snapshotHash": "sha256:fixture-snapshot-retry-warning",
+        "warningAcknowledgmentId": "warning-ack-retry",
+        "event": { "type": "retry" }
+      },
+      "expected": {
+        "actionId": "action-retry-warning",
+        "snapshotHash": "sha256:fixture-snapshot-retry-warning",
+        "warningAcknowledgmentId": "warning-ack-retry",
+        "warningInteractions": 0,
+        "newWarningBudget": false
+      }
+    },
+    {
+      "id": "d1.warning.unrepresentable-expansion-is-not-overridable",
+      "description": "A technically unrepresentable set fails before queueing and is not a policy warning.",
+      "given": {
+        "actionId": "action-capability-error",
+        "actionState": "planning",
+        "targetRepresentation": "2001:db8::/32",
+        "installedActionSupportsCompactRange": false,
+        "installedActionSupportsStreamingExpansion": false
+      },
+      "error": {
+        "code": "target_set_unrepresentable",
+        "actionState": "capability_error",
+        "warningInteraction": false,
+        "continueAvailable": false
+      }
+    },
+    {
+      "id": "d1.warning.minimum-durable-record",
+      "description": "The durable record binds exact action context and append-only covered destinations.",
+      "given": {
+        "actionId": "action-record",
+        "targetSnapshotId": "target-snapshot-record",
+        "targetSnapshotDigest": "sha256:fixture-target-snapshot-record",
+        "snapshotHash": "sha256:fixture-action-context-record",
+        "scopeRevisionId": null,
+        "knownReasonCodes": ["large_target_set"],
+        "knownAdditions": [{ "estimatedConcreteTargets": 4097 }],
+        "source": "operator_continue",
+        "acknowledgedAt": "2026-08-09T12:15:00.000Z",
+        "laterDestination": {
+          "origin": "https://other.test:443",
+          "resolvedAddress": "192.0.2.41",
+          "reasonCodes": ["outside_scope"]
+        }
+      },
+      "expected": {
+        "durableFields": [
+          "actionId",
+          "targetSnapshotId",
+          "targetSnapshotDigest",
+          "snapshotHash",
+          "scopeRevisionId",
+          "reasonCodes",
+          "knownAdditions",
+          "source",
+          "acknowledgedAt",
+          "coveredDestinations"
+        ],
+        "authorizationAttestation": false,
+        "accountsRequired": false
+      }
+    }
+  ]
+}

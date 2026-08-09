@@ -1,0 +1,275 @@
+{
+  "fixtureVersion": 1,
+  "normalizationProfile": "d1-v1",
+  "kind": "resolution-snapshot",
+  "cases": [
+    {
+      "id": "d1.resolution.records-complete-answer-evidence",
+      "description": "A planning resolution records query, CNAME chain, mode, answers, families, TTLs, and timestamp.",
+      "given": {
+        "canonicalQueryName": "app.target.test",
+        "resolverResult": {
+          "resolverMode": "system",
+          "cnameChain": ["edge.target.test"],
+          "answers": [
+            { "address": "192.0.2.40", "family": 4, "ttlSeconds": 60 },
+            { "address": "2001:db8::40", "family": 6, "ttlSeconds": 45 }
+          ],
+          "resolvedAt": "2026-08-09T12:00:00.000Z"
+        }
+      },
+      "expected": {
+        "resolutionSnapshot": {
+          "canonicalQueryName": "app.target.test",
+          "resolverMode": "system",
+          "cnameChain": ["edge.target.test"],
+          "answers": [
+            { "address": "192.0.2.40", "family": 4, "ttlSeconds": 60 },
+            { "address": "2001:db8::40", "family": 6, "ttlSeconds": 45 }
+          ],
+          "resolvedAt": "2026-08-09T12:00:00.000Z"
+        }
+      }
+    },
+    {
+      "id": "d1.resolution.ttl-may-be-unavailable",
+      "description": "A resolver answer remains evidence when its TTL is unavailable.",
+      "given": {
+        "canonicalQueryName": "target.test",
+        "resolverResult": {
+          "resolverMode": "system",
+          "cnameChain": [],
+          "answers": [{ "address": "192.0.2.7", "family": 4, "ttlSeconds": null }],
+          "resolvedAt": "2026-08-09T12:00:00.000Z"
+        }
+      },
+      "expected": {
+        "resolutionSnapshot": {
+          "canonicalQueryName": "target.test",
+          "resolverMode": "system",
+          "cnameChain": [],
+          "answers": [{ "address": "192.0.2.7", "family": 4, "ttlSeconds": null }],
+          "resolvedAt": "2026-08-09T12:00:00.000Z"
+        }
+      }
+    },
+    {
+      "id": "d1.resolution.required-address-failure-is-capability-error",
+      "description": "An action that requires an address cannot queue without one.",
+      "given": {
+        "canonicalQueryName": "missing.test",
+        "actionRequiresConcreteAddresses": true,
+        "resolverResult": {
+          "resolverMode": "system",
+          "cnameChain": [],
+          "answers": [],
+          "resolvedAt": "2026-08-09T12:00:00.000Z"
+        }
+      },
+      "error": {
+        "code": "required_resolution_unavailable",
+        "actionState": "capability_error",
+        "warningInteraction": false,
+        "continueAvailable": false
+      }
+    },
+    {
+      "id": "d1.snapshot.freezes-planning-context",
+      "description": "The immutable action snapshot contains canonical targets, options, resolutions, scope, and warning state.",
+      "given": {
+        "actionId": "action-freeze",
+        "canonicalTargets": [
+          {
+            "normalizationProfile": "d1-v1",
+            "kind": "hostname",
+            "hostname": "app.target.test"
+          }
+        ],
+        "typedOptions": { "ports": [80, 443] },
+        "resolutionSnapshots": [
+          {
+            "canonicalQueryName": "app.target.test",
+            "resolverMode": "system",
+            "cnameChain": [],
+            "answers": [{ "address": "192.0.2.40", "family": 4, "ttlSeconds": 60 }],
+            "resolvedAt": "2026-08-09T12:00:00.000Z"
+          }
+        ],
+        "scopeRevisionId": "scope-revision-7",
+        "warningState": { "reasonCodes": [], "acknowledgment": null }
+      },
+      "expected": {
+        "snapshotImmutable": true,
+        "pluginReceivesSnapshot": true,
+        "snapshotHashCovers": [
+          "actionId",
+          "canonicalTargets",
+          "typedOptions",
+          "resolutionSnapshots",
+          "scopeRevisionId",
+          "warningState"
+        ]
+      }
+    },
+    {
+      "id": "d1.snapshot.http-connects-to-frozen-address",
+      "description": "A later DNS change cannot replace the frozen HTTP destination.",
+      "given": {
+        "origin": "https://app.target.test:443",
+        "frozenAddresses": ["192.0.2.40"],
+        "laterResolverAnswers": ["192.0.2.41"]
+      },
+      "expected": {
+        "connectionAddresses": ["192.0.2.40"],
+        "hostHeader": "app.target.test",
+        "sniName": "app.target.test",
+        "snapshotMutated": false
+      }
+    },
+    {
+      "id": "d1.snapshot.retry-reuses-snapshot-and-acknowledgment",
+      "description": "Retry is a new run attempt under the action and reuses the prior frozen context.",
+      "given": {
+        "actionId": "action-retry",
+        "priorRunId": "run-1",
+        "snapshotHash": "sha256:fixture-snapshot-retry",
+        "warningAcknowledgmentId": "warning-ack-retry",
+        "operation": "retry"
+      },
+      "expected": {
+        "newRunId": true,
+        "sameActionId": true,
+        "snapshotHash": "sha256:fixture-snapshot-retry",
+        "warningAcknowledgmentId": "warning-ack-retry",
+        "resolutionRefreshed": false
+      }
+    },
+    {
+      "id": "d1.snapshot.target-edit-creates-new-action",
+      "description": "Editing a target cannot mutate the prior action snapshot.",
+      "given": {
+        "actionId": "action-original",
+        "operation": "edit_target",
+        "newTarget": "other.test"
+      },
+      "expected": {
+        "newActionId": true,
+        "newSnapshot": true,
+        "priorSnapshotMutated": false,
+        "warningBudgetResetForNewAction": true
+      }
+    },
+    {
+      "id": "d1.snapshot.resolution-refresh-creates-new-action",
+      "description": "Refreshing DNS creates a new action instead of changing the old evidence.",
+      "given": {
+        "actionId": "action-original",
+        "operation": "refresh_resolution",
+        "refreshedAnswers": ["192.0.2.41"]
+      },
+      "expected": {
+        "newActionId": true,
+        "newSnapshot": true,
+        "priorSnapshotMutated": false,
+        "warningBudgetResetForNewAction": true
+      }
+    },
+    {
+      "id": "d1.redirect.records-hop-evidence",
+      "description": "Every redirect hop retains raw and canonical destination evidence.",
+      "given": {
+        "sourceUrl": "https://app.target.test/start",
+        "rawLocation": "https://other.test:8443/next?q=one",
+        "destinationResolution": ["192.0.2.41"],
+        "resolvedAddressUsed": "192.0.2.41"
+      },
+      "expected": {
+        "redirectHop": {
+          "sourceUrl": "https://app.target.test/start",
+          "rawLocation": "https://other.test:8443/next?q=one",
+          "canonicalDestination": "https://other.test:8443/next?q=one",
+          "scheme": "https",
+          "host": "other.test",
+          "effectivePort": 8443,
+          "resolvedAddressUsed": "192.0.2.41"
+        }
+      }
+    },
+    {
+      "id": "d1.redirect.each-origin-has-frozen-address-set",
+      "description": "A redirect origin connects only to its own action-scoped frozen addresses.",
+      "given": {
+        "origins": [
+          {
+            "origin": "https://app.target.test:443",
+            "frozenAddresses": ["192.0.2.40"]
+          },
+          {
+            "origin": "https://other.test:443",
+            "frozenAddresses": ["192.0.2.41"]
+          }
+        ],
+        "redirectDestination": "https://other.test/next"
+      },
+      "expected": {
+        "connectionAddresses": ["192.0.2.41"],
+        "hostHeader": "other.test",
+        "sniName": "other.test"
+      }
+    },
+    {
+      "id": "d1.redirect.shared-address-keeps-origin-isolation",
+      "description": "A shared address does not transfer source-origin scope or identity to a redirect host.",
+      "given": {
+        "origins": [
+          {
+            "origin": "https://app.target.test:443",
+            "frozenAddresses": ["192.0.2.40"],
+            "scopeMatch": true
+          },
+          {
+            "origin": "https://other.test:443",
+            "frozenAddresses": ["192.0.2.40"],
+            "scopeMatch": false
+          }
+        ]
+      },
+      "expected": {
+        "redirectOriginScopeMatch": false,
+        "connectionAddresses": ["192.0.2.40"],
+        "hostHeader": "other.test",
+        "sniName": "other.test"
+      }
+    },
+    {
+      "id": "d1.snapshot.late-destination-appends-without-mutation",
+      "description": "A destination discovered during execution is appended outside the immutable snapshot.",
+      "given": {
+        "snapshotHash": "sha256:fixture-snapshot-late",
+        "lateDestination": {
+          "kind": "redirect-origin",
+          "origin": "https://other.test:443",
+          "resolvedAddress": "192.0.2.41"
+        }
+      },
+      "expected": {
+        "snapshotHash": "sha256:fixture-snapshot-late",
+        "snapshotMutated": false,
+        "coveredDestinationAppended": true,
+        "eventEvidenceAppended": true
+      }
+    },
+    {
+      "id": "d1.snapshot.zone-retained-for-cidr-derived-destination",
+      "description": "CIDR comparison may ignore a zone but the action snapshot retains it.",
+      "given": {
+        "scopeRule": { "kind": "cidr", "network": "fe80::", "prefixLength": 10 },
+        "target": { "kind": "ip", "address": "fe80::7", "zone": "Eth0" }
+      },
+      "expected": {
+        "scopeMatch": true,
+        "snapshotTarget": { "kind": "ip", "address": "fe80::7", "zone": "Eth0" }
+      }
+    }
+  ]
+}
