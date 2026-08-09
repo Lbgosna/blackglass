@@ -145,6 +145,110 @@ input {
   transition-duration: 0s !important;
 }
 
+.appearance-preview[data-preview-theme="light"] {
+  --preview-workspace: oklch(0.96 0.008 150);
+  --preview-sidebar: oklch(0.9 0.025 168);
+  --preview-sidebar-line: oklch(0.66 0.035 168);
+  --preview-surface: oklch(1 0 0);
+  --preview-border: oklch(0.82 0.02 155);
+  --preview-copy: oklch(0.66 0.025 155);
+  --preview-heading: oklch(0.3 0.025 155);
+  --preview-primary: oklch(0.55 0.18 145);
+  --preview-status: oklch(0.5 0.15 145);
+}
+
+.appearance-preview[data-preview-theme="dark"] {
+  --preview-workspace: oklch(0.14 0.014 155);
+  --preview-sidebar: oklch(0.12 0.025 168);
+  --preview-sidebar-line: oklch(0.42 0.035 168);
+  --preview-surface: oklch(0.2 0.02 155);
+  --preview-border: oklch(0.34 0.025 155);
+  --preview-copy: oklch(0.58 0.025 155);
+  --preview-heading: oklch(0.84 0.018 150);
+  --preview-primary: oklch(0.78 0.21 145);
+  --preview-status: oklch(0.74 0.17 145);
+}
+
+.appearance-preview[data-preview-theme="system"] {
+  --preview-workspace: linear-gradient(
+    to right,
+    oklch(0.96 0.008 150) 50%,
+    oklch(0.14 0.014 155) 50%
+  );
+  --preview-sidebar: linear-gradient(
+    to right,
+    oklch(0.9 0.025 168) 50%,
+    oklch(0.12 0.025 168) 50%
+  );
+  --preview-sidebar-line: linear-gradient(
+    to right,
+    oklch(0.66 0.035 168) 50%,
+    oklch(0.42 0.035 168) 50%
+  );
+  --preview-surface: linear-gradient(to right, white 50%, oklch(0.2 0.02 155) 50%);
+  --preview-border: oklch(0.48 0.02 155);
+  --preview-copy: linear-gradient(
+    to right,
+    oklch(0.66 0.025 155) 50%,
+    oklch(0.58 0.025 155) 50%
+  );
+  --preview-heading: linear-gradient(
+    to right,
+    oklch(0.3 0.025 155) 50%,
+    oklch(0.84 0.018 150) 50%
+  );
+  --preview-primary: linear-gradient(
+    to right,
+    oklch(0.55 0.18 145) 50%,
+    oklch(0.78 0.21 145) 50%
+  );
+  --preview-status: linear-gradient(
+    to right,
+    oklch(0.5 0.15 145) 50%,
+    oklch(0.74 0.17 145) 50%
+  );
+}
+
+.appearance-preview {
+  background: var(--preview-workspace);
+  border-color: var(--preview-border);
+}
+
+.appearance-preview-sidebar {
+  background: var(--preview-sidebar);
+  border-color: var(--preview-border);
+}
+
+.appearance-preview-brand,
+.appearance-preview-action {
+  background: var(--preview-primary);
+}
+
+.appearance-preview-sidebar-line {
+  background: var(--preview-sidebar-line);
+}
+
+.appearance-preview-workspace {
+  background: var(--preview-workspace);
+}
+
+.appearance-preview-heading {
+  background: var(--preview-heading);
+}
+
+.appearance-preview-surface {
+  background: var(--preview-surface);
+  border-color: var(--preview-border);
+}
+
+.appearance-preview-copy {
+  background: var(--preview-copy);
+}
+
+.appearance-preview-status > span {
+  background: var(--preview-status);
+}
+
 .sidebar-row-actions {
   opacity: 1;
 }
