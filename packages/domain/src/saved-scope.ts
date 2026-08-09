@@ -5,6 +5,7 @@ import {
   type CanonicalIpTarget,
   type CanonicalTarget,
   type CanonicalUrlHost,
+  type CanonicalUrlTarget,
   type ConcreteTargetCardinalityInput,
   type ExecutionCapabilityInput,
   type ExecutionCapabilityResult,
@@ -21,6 +22,8 @@ import {
   type ScopeRuleNormalizationResult,
   type ScopeSubjectComparisonFact,
 } from "@blackglass/contracts";
+
+import { normalizeTarget } from "./normalize-target.js";
 
 const MINIMUM_PORT = 1;
 const MAXIMUM_PORT = 65_535;
@@ -133,6 +136,20 @@ function hostEquals(left: CanonicalUrlHost, right: CanonicalUrlHost): boolean {
     );
   }
   return left.address === right.address && left.zone === right.zone;
+}
+
+function canonicalUrlIsCoherent(target: CanonicalUrlTarget): boolean {
+  const normalized = normalizeTarget(target.url);
+  return (
+    normalized.ok &&
+    normalized.target.kind === "url" &&
+    normalized.target.normalizationProfile === target.normalizationProfile &&
+    normalized.target.url === target.url &&
+    normalized.target.origin === target.origin &&
+    hostEquals(normalized.target.host, target.host) &&
+    normalized.target.effectivePort === target.effectivePort &&
+    normalized.target.pathAndQuery === target.pathAndQuery
+  );
 }
 
 function ipv4ToBigInt(address: string): bigint {
@@ -430,6 +447,15 @@ export function compareSavedScope(
   if (!parsed.success) {
     return { ok: false, error: { code: "invalid_scope_input" } };
   }
+  if (
+    parsed.data.subjects.some(
+      (subject) =>
+        subject.target.kind === "url" &&
+        !canonicalUrlIsCoherent(subject.target),
+    )
+  ) {
+    return { ok: false, error: { code: "invalid_scope_input" } };
+  }
   const normalizedRules = normalizeScopeRules(parsed.data.rules);
   if (!normalizedRules.ok) {
     return normalizedRules;
@@ -475,13 +501,7 @@ interface AddressInterval {
   to: bigint;
 }
 
-function targetInterval(
-  target: CanonicalIpTarget | CanonicalCidrTarget,
-): AddressInterval {
-  if (target.kind === "ip") {
-    const value = addressToBigInt(target);
-    return { family: target.family, from: value, to: value };
-  }
+function cidrInterval(target: CanonicalCidrTarget): AddressInterval {
   const bits = addressBits(target);
   const from = target.family === 4
     ? ipv4ToBigInt(target.network)
@@ -496,48 +516,79 @@ function targetInterval(
 export function estimateConcreteTargetCardinality(
   input: ConcreteTargetCardinalityInput,
 ): SaturatedCardinality {
-  const intervals = input.targets.map(targetInterval).sort((left, right) => {
-    if (left.family !== right.family) {
-      return left.family - right.family;
-    }
-    if (left.from !== right.from) {
-      return left.from < right.from ? -1 : 1;
-    }
-    return left.to === right.to ? 0 : left.to < right.to ? -1 : 1;
-  });
+  const intervals = input.targets
+    .filter((target): target is CanonicalCidrTarget => target.kind === "cidr")
+    .map(cidrInterval)
+    .sort((left, right) => {
+      if (left.family !== right.family) {
+        return left.family - right.family;
+      }
+      if (left.from !== right.from) {
+        return left.from < right.from ? -1 : 1;
+      }
+      return left.to === right.to ? 0 : left.to < right.to ? -1 : 1;
+    });
 
-  let count = 0n;
-  let current: AddressInterval | null = null;
+  const merged: AddressInterval[] = [];
   for (const interval of intervals) {
+    const current = merged.at(-1);
     if (
-      current !== null &&
+      current !== undefined &&
       current.family === interval.family &&
       interval.from <= current.to + 1n
     ) {
       current.to = current.to > interval.to ? current.to : interval.to;
       continue;
     }
-    if (current !== null) {
-      count += current.to - current.from + 1n;
-      if (count >= CARDINALITY_SENTINEL) {
-        return {
-          estimatedConcreteTargets: 4_097,
-          countSaturated: true,
-          largeTargetWarning: true,
-        };
-      }
-    }
-    current = { ...interval };
-  }
-  if (current !== null) {
-    count += current.to - current.from + 1n;
+    merged.push({ ...interval });
   }
 
-  const saturated = count >= CARDINALITY_SENTINEL;
+  let count = 0n;
+  for (const interval of merged) {
+    count += interval.to - interval.from + 1n;
+    if (count >= CARDINALITY_SENTINEL) {
+      return {
+        estimatedConcreteTargets: 4_097,
+        countSaturated: true,
+        largeTargetWarning: true,
+      };
+    }
+  }
+
+  const exactIdentities = new Set<string>();
+  for (const target of input.targets) {
+    if (target.kind !== "ip") {
+      continue;
+    }
+    const address = addressToBigInt(target);
+    const coveredByCidr = merged.some(
+      (interval) =>
+        interval.family === target.family &&
+        interval.from <= address &&
+        address <= interval.to,
+    );
+    if (coveredByCidr) {
+      continue;
+    }
+    const identity = `${target.family}:${target.address}%${target.zone ?? ""}`;
+    if (exactIdentities.has(identity)) {
+      continue;
+    }
+    exactIdentities.add(identity);
+    count += 1n;
+    if (count >= CARDINALITY_SENTINEL) {
+      return {
+        estimatedConcreteTargets: 4_097,
+        countSaturated: true,
+        largeTargetWarning: true,
+      };
+    }
+  }
+
   return {
-    estimatedConcreteTargets: saturated ? 4_097 : Number(count),
-    countSaturated: saturated,
-    largeTargetWarning: saturated,
+    estimatedConcreteTargets: Number(count),
+    countSaturated: false,
+    largeTargetWarning: false,
   };
 }
 

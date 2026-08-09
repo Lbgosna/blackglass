@@ -493,6 +493,68 @@ describe("saved scope adversarial behavior", () => {
     expect(SavedScopeComparisonResultSchema.safeParse(result).success).toBe(true);
   });
 
+  it("rejects every contradictory canonical URL field before comparison", () => {
+    const target = canonicalUrl("https://target.test/path?q=one");
+    const rule: SavedScopeRule = {
+      id: "rule-origin",
+      kind: "url-origin",
+      origin: originFromUrl(target),
+    };
+    const contradictions: CanonicalUrlTarget[] = [
+      { ...target, url: "https://other.test/path?q=one" },
+      { ...target, origin: "https://other.test:443" },
+      { ...target, host: { hostname: "other.test" } },
+      { ...target, effectivePort: 8_443 },
+      { ...target, pathAndQuery: "/other?q=one" },
+    ];
+
+    for (const contradictoryTarget of contradictions) {
+      const result = compareSavedScope(
+        comparisonWith([rule], [
+          {
+            target: contradictoryTarget,
+            declaredPorts: null,
+            provenance: { kind: "direct" },
+          },
+        ]),
+      );
+      expect(result).toEqual({
+        ok: false,
+        error: { code: "invalid_scope_input" },
+      });
+      expect(JSON.stringify(result)).not.toContain("other.test");
+    }
+  });
+
+  it("accepts a coherent canonical URL and compares its origin", () => {
+    const target = canonicalUrl("https://target.test/path?q=one");
+    const result = compareSavedScope(
+      comparisonWith(
+        [
+          {
+            id: "rule-origin",
+            kind: "url-origin",
+            origin: originFromUrl(target),
+          },
+        ],
+        [
+          {
+            target,
+            declaredPorts: null,
+            provenance: { kind: "direct" },
+          },
+        ],
+      ),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      comparison: {
+        outsideScope: false,
+        matchedRuleIds: ["rule-origin"],
+      },
+    });
+  });
+
   it("retains rule/input order while normalizing ranges", () => {
     const target = canonicalHostname("target.test");
     const result = normalizeScopeRules([
@@ -563,6 +625,51 @@ describe("saved scope adversarial behavior", () => {
 });
 
 describe("saturated cardinality and capability", () => {
+  it("counts distinct case-sensitive IPv6 zones and deduplicates exact identities", () => {
+    expect(
+      estimateConcreteTargetCardinality({
+        targets: [
+          canonicalIp("fe80::7", "Eth0"),
+          canonicalIp("fe80::7", "Eth0"),
+          canonicalIp("fe80::7", "eth0"),
+        ],
+      }),
+    ).toEqual({
+      estimatedConcreteTargets: 2,
+      countSaturated: false,
+      largeTargetWarning: false,
+    });
+
+    const distinctZones = Array.from({ length: 4_097 }, (_, index) =>
+      canonicalIp("fe80::7", `z${index}`),
+    );
+    expect(
+      estimateConcreteTargetCardinality({ targets: distinctZones }),
+    ).toEqual({
+      estimatedConcreteTargets: 4_097,
+      countSaturated: true,
+      largeTargetWarning: true,
+    });
+  });
+
+  it("treats zoned exact addresses inside CIDRs as zone-insensitive members", () => {
+    expect(
+      estimateConcreteTargetCardinality({
+        targets: [
+          canonicalCidr("fe80::7", 128),
+          canonicalIp("fe80::7", "Eth0"),
+          canonicalIp("fe80::7", "eth0"),
+          canonicalIp("fe80::8", "Eth0"),
+          canonicalIp("fe80::8", "eth0"),
+        ],
+      }),
+    ).toEqual({
+      estimatedConcreteTargets: 3,
+      countSaturated: false,
+      largeTargetWarning: false,
+    });
+  });
+
   it.each([
     ["192.0.0.0/20", "192.0.0.0/32", 4_096, false],
     ["192.0.0.0/20", "192.0.16.0/32", 4_097, true],
