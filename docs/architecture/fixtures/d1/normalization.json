@@ -68,6 +68,12 @@
       }
     },
     {
+      "id": "d1.normalization.invalid-ipv6-triple-colon",
+      "description": "IPv6-looking input with invalid triple-colon syntax fails terminally.",
+      "given": { "input": "2001:db8:::1" },
+      "error": { "code": "invalid_ipv6" }
+    },
+    {
       "id": "d1.normalization.mapped-ipv6-hex-spelling",
       "description": "An IPv4-mapped IPv6 hexadecimal spelling becomes IPv4 identity.",
       "given": { "input": "0:0:0:0:0:ffff:c000:0207" },
@@ -316,6 +322,12 @@
       }
     },
     {
+      "id": "d1.normalization.invalid-ipv4-cidr-prefix",
+      "description": "An IPv4 CIDR prefix above 32 fails terminally.",
+      "given": { "input": "192.0.2.1/33" },
+      "error": { "code": "invalid_cidr" }
+    },
+    {
       "id": "d1.normalization.ipv6-cidr-masks-host-bits",
       "description": "IPv6 CIDR output masks host bits without expansion.",
       "given": { "input": "2001:db8:7::1/48" },
@@ -329,6 +341,12 @@
           "hostBitsMasked": true
         }
       }
+    },
+    {
+      "id": "d1.normalization.invalid-ipv6-cidr-prefix",
+      "description": "An IPv6 CIDR prefix above 128 fails terminally.",
+      "given": { "input": "2001:db8::1/129" },
+      "error": { "code": "invalid_cidr" }
     },
     {
       "id": "d1.normalization.http-default-port",
@@ -383,6 +401,18 @@
       "description": "URL userinfo is invalid even when the remainder is representable.",
       "given": { "input": "https://user@target.test/" },
       "error": { "code": "url_userinfo_unsupported" }
+    },
+    {
+      "id": "d1.normalization.invalid-url-unclosed-ipv6-host",
+      "description": "An explicit HTTPS URL with an unclosed IPv6 host fails terminally.",
+      "given": { "input": "https://[2001:db8::1" },
+      "error": { "code": "invalid_url" }
+    },
+    {
+      "id": "d1.normalization.invalid-url-port-out-of-range",
+      "description": "An explicit HTTPS URL with a port above 65535 fails terminally.",
+      "given": { "input": "https://example.test:65536/" },
+      "error": { "code": "invalid_url" }
     },
     {
       "id": "d1.normalization.url-fragment-rejected",

@@ -13,6 +13,33 @@ const fixtureKinds = new Map([
   ["resolution-snapshot.json", "resolution-snapshot"],
   ["warning-flow.json", "warning-flow"],
 ]);
+const requiredMalformedTargetCases = [
+  {
+    id: "d1.normalization.invalid-url-unclosed-ipv6-host",
+    given: { input: "https://[2001:db8::1" },
+    error: { code: "invalid_url" },
+  },
+  {
+    id: "d1.normalization.invalid-url-port-out-of-range",
+    given: { input: "https://example.test:65536/" },
+    error: { code: "invalid_url" },
+  },
+  {
+    id: "d1.normalization.invalid-ipv6-triple-colon",
+    given: { input: "2001:db8:::1" },
+    error: { code: "invalid_ipv6" },
+  },
+  {
+    id: "d1.normalization.invalid-ipv4-cidr-prefix",
+    given: { input: "192.0.2.1/33" },
+    error: { code: "invalid_cidr" },
+  },
+  {
+    id: "d1.normalization.invalid-ipv6-cidr-prefix",
+    given: { input: "2001:db8::1/129" },
+    error: { code: "invalid_cidr" },
+  },
+];
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function materializeInputTemplate(template) {
@@ -47,6 +74,12 @@ async function writeFixtureSuite(root) {
               given: { target: `target-${caseNumber}.test`, address: `192.0.2.${caseNumber}` },
               expected: { accepted: true },
             },
+            ...(kind === "normalization"
+              ? requiredMalformedTargetCases.map((fixtureCase) => ({
+                  ...fixtureCase,
+                  description: "Required synthetic malformed target case.",
+                }))
+              : []),
           ],
         },
         null,
@@ -132,6 +165,57 @@ test("reports fixture version, shape, and duplicate case IDs", async () => {
   assert.ok(errors.some((error) => error.includes("fixtureVersion must be 1")));
   assert.ok(errors.some((error) => error.includes("duplicates d1.test.case-1")));
   assert.ok(errors.some((error) => error.includes("exactly one of expected or error")));
+});
+
+test("requires exact malformed target vectors and error codes", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const normalizationPath = path.join(fixtureDirectory, "normalization.json");
+  const validFixture = JSON.parse(await readFile(normalizationPath, "utf8"));
+
+  for (const requiredCase of requiredMalformedTargetCases) {
+    const missingFixture = structuredClone(validFixture);
+    missingFixture.cases = missingFixture.cases.filter(
+      (fixtureCase) => fixtureCase.id !== requiredCase.id,
+    );
+    await writeFile(normalizationPath, `${JSON.stringify(missingFixture, null, 2)}\n`, "utf8");
+    let errors = await checkD1Fixtures(root);
+    assert.ok(
+      errors.some((error) =>
+        error.includes(`missing required malformed target case ${requiredCase.id}`),
+      ),
+    );
+
+    const changedInputFixture = structuredClone(validFixture);
+    changedInputFixture.cases.find(
+      (fixtureCase) => fixtureCase.id === requiredCase.id,
+    ).given.input = `${requiredCase.given.input} `;
+    await writeFile(
+      normalizationPath,
+      `${JSON.stringify(changedInputFixture, null, 2)}\n`,
+      "utf8",
+    );
+    errors = await checkD1Fixtures(root);
+    assert.ok(
+      errors.some((error) => error.includes(`${requiredCase.id}.given.input must be`)),
+    );
+
+    const changedCodeFixture = structuredClone(validFixture);
+    changedCodeFixture.cases.find(
+      (fixtureCase) => fixtureCase.id === requiredCase.id,
+    ).error.code = "invalid_target";
+    await writeFile(
+      normalizationPath,
+      `${JSON.stringify(changedCodeFixture, null, 2)}\n`,
+      "utf8",
+    );
+    errors = await checkD1Fixtures(root);
+    assert.ok(
+      errors.some((error) =>
+        error.includes(`${requiredCase.id}.error.code must be ${requiredCase.error.code}`),
+      ),
+    );
+  }
 });
 
 test("reports malformed JSON and a missing required fixture", async () => {
