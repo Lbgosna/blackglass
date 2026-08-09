@@ -12,6 +12,33 @@ const d1FixtureFiles = new Map([
   ["resolution-snapshot.json", "resolution-snapshot"],
   ["warning-flow.json", "warning-flow"],
 ]);
+const requiredD1MalformedTargetCases = [
+  {
+    id: "d1.normalization.invalid-url-unclosed-ipv6-host",
+    input: "https://[2001:db8::1",
+    code: "invalid_url",
+  },
+  {
+    id: "d1.normalization.invalid-url-port-out-of-range",
+    input: "https://example.test:65536/",
+    code: "invalid_url",
+  },
+  {
+    id: "d1.normalization.invalid-ipv6-triple-colon",
+    input: "2001:db8:::1",
+    code: "invalid_ipv6",
+  },
+  {
+    id: "d1.normalization.invalid-ipv4-cidr-prefix",
+    input: "192.0.2.1/33",
+    code: "invalid_cidr",
+  },
+  {
+    id: "d1.normalization.invalid-ipv6-cidr-prefix",
+    input: "2001:db8::1/129",
+    code: "invalid_cidr",
+  },
+];
 const forbiddenFixtureValue =
   /(?:-----BEGIN [A-Z ]+PRIVATE KEY-----|\bbearer\s+\S+|\bsk-[a-z0-9_-]{12,}|\bghp_[a-z0-9]{20,}|\bgithub_pat_[a-z0-9_]{20,}|\bxoxb-[a-z0-9-]{20,})/i;
 const ipv4Like = /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
@@ -230,6 +257,33 @@ function fixtureContentErrors(value, location, key = "") {
   return errors;
 }
 
+function requiredMalformedTargetErrors(fixtureCases, relativePath) {
+  const errors = [];
+  const casesById = new Map(
+    fixtureCases
+      .filter((fixtureCase) => isRecord(fixtureCase) && typeof fixtureCase.id === "string")
+      .map((fixtureCase) => [fixtureCase.id, fixtureCase]),
+  );
+
+  for (const requiredCase of requiredD1MalformedTargetCases) {
+    const fixtureCase = casesById.get(requiredCase.id);
+    if (!fixtureCase) {
+      errors.push(`${relativePath}: missing required malformed target case ${requiredCase.id}`);
+      continue;
+    }
+    if (fixtureCase.given?.input !== requiredCase.input) {
+      errors.push(
+        `${relativePath}: ${requiredCase.id}.given.input must be ${JSON.stringify(requiredCase.input)}`,
+      );
+    }
+    if (fixtureCase.error?.code !== requiredCase.code) {
+      errors.push(`${relativePath}: ${requiredCase.id}.error.code must be ${requiredCase.code}`);
+    }
+  }
+
+  return errors;
+}
+
 export async function checkD1Fixtures(repositoryRoot) {
   const fixtureDirectory = path.join(repositoryRoot, "docs", "architecture", "fixtures", "d1");
   const errors = [];
@@ -322,6 +376,10 @@ export async function checkD1Fixtures(repositoryRoot) {
       }
 
       errors.push(...fixtureContentErrors(fixtureCase, caseLocation));
+    }
+
+    if (expectedKind === "normalization") {
+      errors.push(...requiredMalformedTargetErrors(fixture.cases, relativePath));
     }
   }
 

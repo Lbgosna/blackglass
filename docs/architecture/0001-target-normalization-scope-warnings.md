@@ -31,7 +31,13 @@ Classification order is:
 3. IP address;
 4. hostname or domain.
 
-An explicit unsupported scheme is rejected. The control plane does not reinterpret it as a hostname.
+Classification is terminal. Once explicit HTTP(S), CIDR-looking, numeric/IP-looking, or hostname syntax selects a grammar, failure in that grammar does not fall through to another grammar. An explicit unsupported scheme is rejected and is not reinterpreted as a hostname.
+
+Malformed selected syntax uses these stable errors:
+
+- `invalid_url` for malformed explicit HTTP or HTTPS syntax;
+- `invalid_ipv6` for IPv6-looking input with invalid IPv6 syntax;
+- `invalid_cidr` for CIDR-looking input with an invalid address or prefix.
 
 ### Host and address normalization
 
