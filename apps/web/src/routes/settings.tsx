@@ -81,7 +81,7 @@ function ThemeControl() {
       <legend className="mb-3 text-xs font-bold tracking-widest text-muted-foreground uppercase">
         Theme
       </legend>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="appearance-theme-options grid gap-3">
         {themeOptions.map((option) => {
           const selected = preference === option.value;
           const descriptionId = `theme-${option.value}-description`;
@@ -113,16 +113,16 @@ function ThemeControl() {
                       "flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-black",
                       selected
                         ? "border-primary bg-primary text-primary-foreground"
-                        : "border-input bg-card text-transparent",
+                        : "border-input bg-card",
                     )}
                   >
-                    ✓
+                    {selected ? "✓" : null}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
+                    <span className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
                       <span className="text-sm font-bold">{option.label}</span>
                       {selected ? (
-                        <span className="text-[10px] font-extrabold tracking-wider text-primary uppercase">
+                        <span className="text-[10px] font-extrabold tracking-wider text-foreground uppercase">
                           Selected
                         </span>
                       ) : null}
@@ -164,7 +164,7 @@ function SettingsPage() {
 
         <section
           aria-labelledby="appearance-heading"
-          className="rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6"
+          className="appearance-settings rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6"
         >
           <h2 id="appearance-heading" className="m-0 text-lg font-bold">
             Appearance

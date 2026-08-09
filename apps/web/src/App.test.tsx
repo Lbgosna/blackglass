@@ -809,15 +809,50 @@ describe("App theme preference", () => {
       for (const other of ["Light", "Dark", "System"].filter(
         (candidate) => candidate !== preference,
       )) {
-        expect(
-          screen
-            .getByRole("radio", { name: other })
-            .closest("label")
-            ?.querySelector("[data-selected]")
-            ?.getAttribute("data-selected"),
-        ).toBe("false");
+        const otherCard = screen
+          .getByRole("radio", { name: other })
+          .closest("label")
+          ?.querySelector("[data-selected]");
+        expect(otherCard?.getAttribute("data-selected")).toBe("false");
+        expect(otherCard?.textContent).not.toContain("✓");
       }
     }
+  });
+
+  it("leaves radio arrow navigation and Tab exit to native browser behavior", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    await renderApp("/settings");
+
+    const system = screen.getByRole("radio", { name: "System" }) as HTMLInputElement;
+    const light = screen.getByRole("radio", { name: "Light" }) as HTMLInputElement;
+    system.focus();
+
+    const arrowRight = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowRight",
+    });
+    expect(system.dispatchEvent(arrowRight)).toBe(true);
+    expect(arrowRight.defaultPrevented).toBe(false);
+    // jsdom does not run the radio group's ArrowRight default action. Native click still proves
+    // that browser-managed activation changes the checked member and application preference.
+    light.click();
+    expect(light.checked).toBe(true);
+    expect(system.checked).toBe(false);
+    expect(document.documentElement.dataset.themePreference).toBe("light");
+
+    light.focus();
+    const tab = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Tab",
+    });
+    expect(light.dispatchEvent(tab)).toBe(true);
+    expect(tab.defaultPrevented).toBe(false);
+    // jsdom also omits sequential Tab movement; verify the following browser tab stop accepts focus.
+    const nextTabStop = screen.getByRole("separator", { name: "Resize console" });
+    nextTabStop.focus();
+    expect(document.activeElement).toBe(nextTabStop);
   });
 
   it("reports the live resolved appearance on the System preview", async () => {

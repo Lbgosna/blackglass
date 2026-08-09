@@ -145,6 +145,20 @@ input {
   transition-duration: 0s !important;
 }
 
+.appearance-settings {
+  container-type: inline-size;
+}
+
+.appearance-theme-options {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 32.5rem) {
+  .appearance-theme-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .appearance-preview[data-preview-theme="light"] {
   --preview-workspace: oklch(0.96 0.008 150);
   --preview-sidebar: oklch(0.9 0.025 168);
