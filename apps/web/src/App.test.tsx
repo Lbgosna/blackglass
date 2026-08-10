@@ -794,24 +794,79 @@ describe("App theme preference", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("shows a distinct pill for every selected theme preference", async () => {
+  it("shows a text, icon, border, and native checked state for every selection", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
     await renderApp("/settings");
 
     for (const preference of ["Light", "Dark", "System"]) {
-      fireEvent.click(screen.getByRole("radio", { name: preference }));
-      expect((screen.getByRole("radio", { name: preference }) as HTMLInputElement).checked).toBe(
-        true,
-      );
-      expect(screen.getByText(preference, { selector: "span" }).className).toContain(
-        "bg-card",
-      );
+      const radio = screen.getByRole("radio", { name: preference }) as HTMLInputElement;
+      fireEvent.click(radio);
+      expect(radio.checked).toBe(true);
+      const selectedCard = radio.closest("label")?.querySelector("[data-selected]");
+      expect(selectedCard?.getAttribute("data-selected")).toBe("true");
+      expect(selectedCard?.textContent).toContain("Selected");
+      expect(selectedCard?.textContent).toContain("✓");
       for (const other of ["Light", "Dark", "System"].filter(
         (candidate) => candidate !== preference,
       )) {
-        expect(screen.getByText(other, { selector: "span" }).className).not.toContain("bg-card");
+        const otherCard = screen
+          .getByRole("radio", { name: other })
+          .closest("label")
+          ?.querySelector("[data-selected]");
+        expect(otherCard?.getAttribute("data-selected")).toBe("false");
+        expect(otherCard?.textContent).not.toContain("✓");
       }
     }
+  });
+
+  it("leaves radio arrow navigation and Tab exit to native browser behavior", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    await renderApp("/settings");
+
+    const system = screen.getByRole("radio", { name: "System" }) as HTMLInputElement;
+    const light = screen.getByRole("radio", { name: "Light" }) as HTMLInputElement;
+    system.focus();
+
+    const arrowRight = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowRight",
+    });
+    expect(system.dispatchEvent(arrowRight)).toBe(true);
+    expect(arrowRight.defaultPrevented).toBe(false);
+    // jsdom does not run the radio group's ArrowRight default action. Native click still proves
+    // that browser-managed activation changes the checked member and application preference.
+    light.click();
+    expect(light.checked).toBe(true);
+    expect(system.checked).toBe(false);
+    expect(document.documentElement.dataset.themePreference).toBe("light");
+
+    light.focus();
+    const tab = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Tab",
+    });
+    expect(light.dispatchEvent(tab)).toBe(true);
+    expect(tab.defaultPrevented).toBe(false);
+    // jsdom also omits sequential Tab movement; verify the following browser tab stop accepts focus.
+    const nextTabStop = screen.getByRole("separator", { name: "Resize console" });
+    nextTabStop.focus();
+    expect(document.activeElement).toBe(nextTabStop);
+  });
+
+  it("reports the live resolved appearance on the System preview", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    await renderApp("/settings");
+
+    expect(screen.getByText("Currently light")).toBeTruthy();
+    act(() => media.dispatch(true));
+    expect(screen.getByText("Currently dark")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Light" }));
+    act(() => media.dispatch(false));
+    expect(screen.getByText("Currently light")).toBeTruthy();
+    expect(document.documentElement.dataset.theme).toBe("light");
   });
 
   it("updates the whole app theme and preserves it across navigation without remounting the shell", async () => {
@@ -942,9 +997,15 @@ describe("Application routes", () => {
 
     expect(screen.getAllByRole("region", { name: "Appearance" })).toHaveLength(1);
     expect(screen.getAllByRole("group", { name: "Theme" })).toHaveLength(1);
-    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    const radios = screen.getAllByRole("radio") as HTMLInputElement[];
+    expect(radios).toHaveLength(3);
     for (const label of ["Light", "Dark", "System"]) {
-      expect(screen.getByText(label, { selector: "span" }).className).toContain("min-h-11");
+      const radio = screen.getByRole("radio", { name: label }) as HTMLInputElement;
+      expect(radio.type).toBe("radio");
+      expect(radio.name).toBe("theme");
+      expect(radio.closest("label")?.className).toContain("min-h-11");
+      radio.focus();
+      expect(document.activeElement).toBe(radio);
     }
     expect(screen.getByText("Choose a light or dark theme, or follow your system setting.")).toBeTruthy();
   });
