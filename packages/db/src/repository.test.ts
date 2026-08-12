@@ -102,7 +102,7 @@ describe("engagement persistence", () => {
       fixture.database.sqlite
         .prepare("select count(*) as count from __drizzle_migrations")
         .get(),
-    ).toEqual({ count: 2 });
+    ).toEqual({ count: 3 });
   });
 
   it("creates, lists, archives, and reopens with optimistic revisions", () => {

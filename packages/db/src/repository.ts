@@ -13,6 +13,8 @@ import {
   type EngagementStatus,
   type EngagementWithActiveScope,
   type CanonicalUrlHost,
+  type PersistedAction,
+  type RetryActionContext,
   type ScopeRevision,
   type SavedScopeRule,
 } from "@blackglass/contracts";
@@ -21,6 +23,18 @@ import { and, asc, eq, max } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 import type * as schema from "./schema.js";
+import {
+  activatePersistedAction,
+  addScopeAndRunPersistedAction,
+  cancelPersistedAction,
+  continuePersistedAction,
+  continuePersistedLateWarning,
+  getPersistedAction,
+  getPersistedRetryContext,
+  persistPlannedAction,
+  recordPersistedLateWarning,
+  type ActionPersistenceContext,
+} from "./action.js";
 import {
   engagementActiveScopes,
   engagements,
@@ -38,9 +52,19 @@ export type RepositoryError =
   | { code: "revision_conflict"; currentRevision: number }
   | { code: "storage_busy" };
 
-export type RepositoryResult<T> =
+export type ActionRepositoryError =
+  | RepositoryError
+  | { code: "action_already_queued" }
+  | { code: "action_not_found" }
+  | { code: "capability_error_not_overridable" }
+  | { code: "invalid_action_transition" }
+  | { code: "invalid_run_transition" }
+  | { code: "run_not_retryable" }
+  | { code: "snapshot_binding_mismatch" };
+
+export type RepositoryResult<T, E = RepositoryError> =
   | { ok: true; value: T }
-  | { ok: false; error: RepositoryError };
+  | { ok: false; error: E };
 
 export interface RepositoryProviders {
   createId?: () => string;
@@ -68,9 +92,30 @@ export interface EngagementWriteTransaction {
     autoContinueWarnings: boolean,
   ): RepositoryResult<Engagement>;
   appendScopeRevision(input: unknown): RepositoryResult<ScopeRevision>;
+  persistPlannedAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  continueAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  addScopeAndRunAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  activateAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  cancelAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  recordLateWarning(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  continueLateWarning(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
 }
 
-function failed<T>(error: RepositoryError): RepositoryResult<T> {
+function failed<T, E = RepositoryError>(error: E): RepositoryResult<T, E> {
   return { ok: false, error };
 }
 
@@ -416,6 +461,56 @@ class TransactionRepository implements EngagementWriteTransaction {
         .get()?.id ?? null
     );
   }
+
+  private actionContext(): ActionPersistenceContext {
+    return {
+      client: this.client,
+      createId: this.createId,
+      now: this.now,
+    };
+  }
+
+  persistPlannedAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return persistPlannedAction(this.actionContext(), input);
+  }
+
+  continueAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return continuePersistedAction(this.actionContext(), input);
+  }
+
+  addScopeAndRunAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return addScopeAndRunPersistedAction(this.actionContext(), input);
+  }
+
+  activateAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return activatePersistedAction(this.actionContext(), input);
+  }
+
+  cancelAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return cancelPersistedAction(this.actionContext(), input);
+  }
+
+  recordLateWarning(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return recordPersistedLateWarning(this.actionContext(), input);
+  }
+
+  continueLateWarning(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return continuePersistedLateWarning(this.actionContext(), input);
+  }
 }
 
 export class EngagementRepository {
@@ -430,17 +525,19 @@ export class EngagementRepository {
     this.now = providers.now ?? (() => new Date());
   }
 
-  private runMutation<T>(
-    mutation: (repository: EngagementWriteTransaction) => RepositoryResult<T>,
+  private runMutation<T, E = RepositoryError>(
+    mutation: (
+      repository: EngagementWriteTransaction,
+    ) => RepositoryResult<T, E>,
     transaction?: EngagementWriteTransaction,
-  ): RepositoryResult<T> {
+  ): RepositoryResult<T, E> {
     if (transaction !== undefined) return mutation(transaction);
     try {
       return this.withWriteTx(mutation);
     } catch (error) {
       return failed({
         code: isStorageBusy(error) ? "storage_busy" : "invalid_persisted_data",
-      });
+      } as E);
     }
   }
 
@@ -610,6 +707,102 @@ export class EngagementRepository {
         values.push(parsed.value);
       }
       return { ok: true, value: values };
+    } catch (error) {
+      return failed({
+        code: isStorageBusy(error) ? "storage_busy" : "invalid_persisted_data",
+      });
+    }
+  }
+
+  persistPlannedAction(
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.persistPlannedAction(input),
+      transaction,
+    );
+  }
+
+  continueAction(
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.continueAction(input),
+      transaction,
+    );
+  }
+
+  addScopeAndRunAction(
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.addScopeAndRunAction(input),
+      transaction,
+    );
+  }
+
+  activateAction(
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.activateAction(input),
+      transaction,
+    );
+  }
+
+  cancelAction(
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.cancelAction(input),
+      transaction,
+    );
+  }
+
+  recordLateWarning(
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.recordLateWarning(input),
+      transaction,
+    );
+  }
+
+  continueLateWarning(
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.continueLateWarning(input),
+      transaction,
+    );
+  }
+
+  getAction(
+    engagementId: string,
+    actionId: string,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    try {
+      return getPersistedAction(this.db, engagementId, actionId);
+    } catch (error) {
+      return failed({
+        code: isStorageBusy(error) ? "storage_busy" : "invalid_persisted_data",
+      });
+    }
+  }
+
+  retryActionContext(
+    engagementId: string,
+    actionId: string,
+  ): RepositoryResult<RetryActionContext, ActionRepositoryError> {
+    try {
+      return getPersistedRetryContext(this.db, engagementId, actionId);
     } catch (error) {
       return failed({
         code: isStorageBusy(error) ? "storage_busy" : "invalid_persisted_data",

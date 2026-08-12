@@ -17,6 +17,7 @@ const fixtureKinds = new Map([
   ["scope-comparison.json", "scope-comparison"],
   ["resolution-snapshot.json", "resolution-snapshot"],
   ["warning-flow.json", "warning-flow"],
+  ["snapshot-canonicalization.json", "snapshot-canonicalization"],
 ]);
 const d2FixtureKinds = new Map([
   ["canonical-request.json", "canonical-request"],
@@ -100,6 +101,20 @@ async function writeFixtureSuite(root) {
 
   let caseNumber = 0;
   for (const [fileName, kind] of fixtureKinds) {
+    if (kind === "snapshot-canonicalization") {
+      await cp(
+        path.join(
+          repositoryRoot,
+          "docs",
+          "architecture",
+          "fixtures",
+          "d1",
+          "snapshot-canonicalization.json",
+        ),
+        path.join(fixtureDirectory, fileName),
+      );
+      continue;
+    }
     caseNumber += 1;
     await writeFile(
       path.join(fixtureDirectory, fileName),
@@ -311,6 +326,52 @@ test("requires the exact positive zone-leading-25 target vector", async () => {
       error.includes(
         `${requiredCase.id}.expected.canonicalTarget must preserve zone 25Eth0`,
       ),
+    ),
+  );
+});
+
+test("pins every action-snapshot-json-v1 critical input and exact outcome", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await writeFixtureSuite(root);
+  const fixturePath = path.join(fixtureDirectory, "snapshot-canonicalization.json");
+  const validFixture = JSON.parse(await readFile(fixturePath, "utf8"));
+
+  for (const [index, fixtureCase] of validFixture.cases.entries()) {
+    const mutatedInput = structuredClone(validFixture);
+    mutatedInput.cases[index].given.validatorMutation = true;
+    await writeFile(fixturePath, `${JSON.stringify(mutatedInput, null, 2)}\n`, "utf8");
+    let errors = await checkD1Fixtures(root);
+    assert.ok(
+      errors.some((error) =>
+        error.includes(`${fixtureCase.id} critical given fields or exact outcome changed`),
+      ),
+      `${fixtureCase.id} input mutation was not rejected`,
+    );
+
+    const mutatedOutcome = structuredClone(validFixture);
+    mutatedOutcome.cases[index].expected.validatorMutation = true;
+    await writeFile(fixturePath, `${JSON.stringify(mutatedOutcome, null, 2)}\n`, "utf8");
+    errors = await checkD1Fixtures(root);
+    assert.ok(
+      errors.some((error) =>
+        error.includes(`${fixtureCase.id} critical given fields or exact outcome changed`),
+      ),
+      `${fixtureCase.id} outcome mutation was not rejected`,
+    );
+  }
+
+  const extraCase = structuredClone(validFixture);
+  extraCase.cases.push({
+    id: "d1.snapshot-canonical.unpinned-case",
+    description: "Synthetic unpinned case.",
+    given: { accepted: true },
+    expected: { accepted: true },
+  });
+  await writeFile(fixturePath, `${JSON.stringify(extraCase, null, 2)}\n`, "utf8");
+  const extraErrors = await checkD1Fixtures(root);
+  assert.ok(
+    extraErrors.some((error) =>
+      error.includes("d1.snapshot-canonical.unpinned-case is not a required action-snapshot-json-v1 case"),
     ),
   );
 });

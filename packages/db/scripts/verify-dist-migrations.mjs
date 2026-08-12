@@ -18,7 +18,14 @@ try {
       )
       .pluck()
       .all();
-    if (!tables.includes("engagements") || !tables.includes("scope_revisions")) {
+    if (
+      !tables.includes("engagements") ||
+      !tables.includes("scope_revisions") ||
+      !tables.includes("actions") ||
+      !tables.includes("action_snapshots") ||
+      !tables.includes("action_warning_acknowledgments") ||
+      !tables.includes("action_covered_destinations")
+    ) {
       throw new Error("Built package did not resolve or apply its migrations.");
     }
   } finally {

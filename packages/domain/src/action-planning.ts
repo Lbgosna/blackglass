@@ -157,7 +157,7 @@ function warningOriginIsCanonical(origin: string): boolean {
   );
 }
 
-function warningAdditionIsCanonical(
+export function warningAdditionIsCanonical(
   addition: WarningContextAddition,
 ): boolean {
   if ("estimatedConcreteTargets" in addition) {
@@ -190,7 +190,7 @@ function resolutionIsCanonical(
   );
 }
 
-function snapshotIsCanonical(snapshot: ActionSnapshot): boolean {
+export function snapshotIsCanonical(snapshot: ActionSnapshot): boolean {
   return (
     snapshot.canonicalTargets.every(targetIsCanonical) &&
     snapshot.concreteDestinations.every(targetIsCanonical) &&

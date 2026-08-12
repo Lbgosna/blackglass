@@ -15,6 +15,13 @@
       "when": 1786552115437,
       "tag": "0001_operator_command_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786558393349,
+      "tag": "0002_action_persistence",
+      "breakpoints": true
     }
   ]
 }

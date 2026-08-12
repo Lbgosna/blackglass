@@ -15,8 +15,8 @@ export const ACTION_ORCHESTRATION_PROFILE = "d2-v1" as const;
 const IdentifierSchema = z.string().min(1).max(255);
 const TimestampSchema = z.iso.datetime({ offset: true });
 
-// D1 fixtures intentionally pin only this opaque textual binding shape. Digest
-// derivation stays outside this contract until canonical serialization is accepted.
+// Domain and D1 warning-flow fixtures keep this opaque textual binding shape.
+// Persisted bindings must be action-snapshot-json-v1 SHA-256 digests.
 export const ActionSnapshotBindingSchema = z
   .string()
   .min("sha256:x".length)
