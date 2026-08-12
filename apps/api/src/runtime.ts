@@ -1,5 +1,6 @@
 import {
   EngagementRepository,
+  OperatorCommandRepository,
   openEngagementDatabase,
   type EngagementDatabase,
 } from "@blackglass/db";
@@ -29,8 +30,12 @@ export async function buildStorageBackedApp(
   await bootstrapStorage(dataDirectory);
   const database = openDatabase({ dataDirectory });
   try {
+    const engagementRepository = new EngagementRepository(database.db);
     const app = createApp({
-      engagementRepository: new EngagementRepository(database.db),
+      engagementRepository,
+      operatorCommandRepository: new OperatorCommandRepository(
+        engagementRepository,
+      ),
       async getDevelopmentStorageReadiness() {
         await checkDevelopmentStorage(dataDirectory);
         return "ready" as const;

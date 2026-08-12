@@ -41,6 +41,8 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+export const JsonValueSchema: z.ZodType<JsonValue> = z.json();
+
 export type CanonicalJsonErrorCode =
   | "canonical_depth_exceeded"
   | "canonical_size_exceeded"
