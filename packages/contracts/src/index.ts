@@ -1,4 +1,5 @@
 export { HealthResponseSchema, type HealthResponse } from "./health.js";
+export * from "./action-planning.js";
 export {
   ReadinessSchema,
   SYSTEM_STATUS_VERSION,
