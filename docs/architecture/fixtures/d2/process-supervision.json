@@ -118,6 +118,12 @@
       "error": { "code": "resource_limit_out_of_range", "effectiveValue": null, "clamped": false, "leaseAllowed": false }
     },
     {
+      "id": "d2.process.host-without-delegated-cgroup-rejected",
+      "description": "A host without delegated cgroup v2 cannot lease even controls enforceable outside a cgroup.",
+      "given": { "delegatedCgroupV2": false, "processGroupAvailable": true, "wallTimerAvailable": true, "boundedOutputAvailable": true },
+      "error": { "code": "runner_capability_unavailable", "missingCapability": "delegated_cgroup_v2", "leaseAllowed": false, "degradedModeSupported": false }
+    },
+    {
       "id": "d2.process.resource-unlimited-supported",
       "description": "Operator-selected null explicitly maps supported controls to unlimited.",
       "given": { "delegatedCgroupV2": true, "operatorSelected": { "wallDurationMs": null, "memoryBytes": null, "processCount": null, "cpuMillicores": null, "fileSizeBytes": null, "openFiles": null } },

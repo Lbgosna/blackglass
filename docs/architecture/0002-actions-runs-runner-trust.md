@@ -70,13 +70,13 @@ An action contract that can discover a new DNS or redirect destination during ex
 
 Continue against `active_paused_for_warning` binds one acknowledgment to the Action, immutable queued snapshot, and exact pending event context, moves the Action back to `active`, and creates one durable fenced resume directive. The runner deduplicates directives by ID and acknowledges delivery; polling returns the directive until that acknowledgment. The adapter connects only after observing it. Engagement auto-continue performs the acknowledgment and returns `continue` in the original event transaction, so no pause occurs. If any acknowledgment already exists, later destinations append to its covered context and evidence without a pause. None of these paths changes saved scope or the queued snapshot.
 
-Cancel while `active_paused_for_warning` moves the Run `running -> cancel_requested` but leaves the Action paused until cleanup is truthful. Verified cleanup completes Run and Action as `cancelled`; cleanup failure or lease expiry completes them as `failed` with the applicable reason and preserves the pending evidence. A paused lease still requires heartbeats. An expired or superseded fence, wrong sequence, or non-running Run cannot append a pending destination, pause the Action, acknowledge a warning, or create a directive.
+Cancel while `active_paused_for_warning` moves the Run `running -> cancel_requested` but leaves the Action paused until cleanup is truthful. Verified cleanup completes Run and Action as `cancelled`; cleanup failure or lease expiry completes them as `failed` with the applicable reason and preserves the pending evidence. A paused lease still requires heartbeats. An expired or superseded fence, wrong sequence, or non-running Run cannot append a pending destination, pause the Action, acknowledge a warning, or create a directive. A fresh Continue after cancellation wins returns `invalid_run_transition`. An exact stored Continue replay returns only its stored response and never reapplies a directive or supersedes the later cancellation.
 
 The runner commits `started` before spawning. Before launch it fsyncs a journal intent containing the Linux boot ID, Run and lease IDs, fence, a random 128-bit Run marker, and the unique delegated cgroup path. Immediately after spawn it adds the child PID, process-group ID, `/proc/<pid>/stat` start-time field, executable digest, and argv digest and fsyncs again. A spawn failure completes the already-running Run as `failed`. This narrow ordering prevents an expired `leased` Run from knowingly representing a started process; service-level `KillMode=control-group` cleanup covers a crash between spawn and the second journal sync.
 
 ### Idempotency and optimistic concurrency
 
-Every command key is 16 through 128 printable ASCII characters and is scoped to authenticated actor identity, route, and operation. The control plane stores the key, canonical request SHA-256 digest, response status/body, and created time in the same transaction as the mutation. Records are retained for 30 days and never evicted while the referenced nonterminal Action or Run exists.
+Every command key is 22 through 128 printable ASCII characters and is scoped to authenticated actor identity, route, and operation. The control plane stores the key, canonical request SHA-256 digest, response status/body, and created time in the same transaction as the mutation. Records are retained for 30 days and never evicted while the referenced nonterminal Action or Run exists.
 
 The caller generates a fresh cryptographically random key with at least 128 bits for each intended mutation and reuses only that key when retrying the same mutation. It never derives a key from a Run ID, fence, event sequence, timestamp, or another resetting counter. The runner persists the key and canonical request digest in its fsynced outbox before transmission and removes them only after a definitive response; an operator client retains them with its pending command until resolution. The route scope is the concrete canonical route including resource IDs. A random collision fails closed as `idempotency_conflict` rather than applying another request.
 
@@ -87,7 +87,7 @@ Validation order is security-significant. The endpoint authenticates the present
 | Mutation | Required identity and compare condition |
 | --- | --- |
 | create/plan Action | operator key; active scope revision and canonical planning input are in the digest |
-| Continue | operator key; Action `expectedRevision`, snapshot version and digest, plus pending event ID when actively paused |
+| Continue | operator key; Action `expectedRevision`, snapshot version and digest, plus pending event ID and current Run state `running` when actively paused |
 | Add to scope & run | operator key; Action and Engagement expected revisions plus proposed rules |
 | retry | operator key; Action expected revision and terminal Run ID |
 | cancel | operator key; Action and current Run expected revisions |
@@ -137,7 +137,7 @@ Leases, fences, event sequences, terminal state, and idempotency records survive
 
 Restart cleanup never trusts a numeric PID or process-group ID alone. The journal's boot ID must equal `/proc/sys/kernel/random/boot_id`; the live process start-time field must equal the journalled value; the process must be in the exact journalled cgroup; and that unique cgroup basename must contain the journalled 128-bit Run marker. Only after all four checks may the runner signal the cgroup/process group. A boot mismatch marks the journal stale and removes it without signalling. A missing process or identity, start-time, cgroup, or marker mismatch never signals the numeric ID, records `restart_identity_mismatch`, quarantines the journal and working directory for owner inspection, and reports the Run failed. This prevents reboot-stale journals and PID/PGID reuse from killing unrelated processes without relying on unsupported custom files in cgroupfs.
 
-Runner event sequences begin at 1 for each fence and must be contiguous across event batches and completion. An accepted event, including completion, gets a persistent SQLite integer `eventId` in the same transaction as any projection, observation uniqueness record, or terminal transition. Replaying the same fence, sequence, and canonical event digest returns its prior event ID. A different digest conflicts with `event_replay_conflict`; a gap returns `event_sequence_gap`. D3 will define artifact publication, but its eventual identity must be unique by Run, fence, sequence, and declared artifact slot so replay cannot duplicate it.
+Runner event sequences begin at 1 for each fence and must be contiguous across event batches and completion. An accepted event, including completion, gets a persistent SQLite integer `eventId` in the same transaction as any projection, observation uniqueness record, or terminal transition. Replaying the same fence, sequence, and canonical event digest returns its prior event ID. A different digest conflicts with `event_replay_conflict`, except that a different completion after the Run became terminal returns `run_already_terminal`; a gap returns `event_sequence_gap`. D3 will define artifact publication, but its eventual identity must be unique by Run, fence, sequence, and declared artifact slot so replay cannot duplicate it.
 
 SSE IDs are decimal `eventId` values, strictly increasing within a stream query. Clients resume with `Last-Event-ID`; the server returns events with larger IDs and never synthesizes a duplicate. Delivery rows are retained for 7 days and at least the newest 100,000 events per engagement; durable Run terminal data is not deleted with them. A cursor older than the retained lower bound receives HTTP 410 `sse_cursor_expired` with `earliestEventId` and a versioned snapshot URL. A future cursor returns 409 `sse_cursor_ahead`. Reconnect without a cursor starts after the endpoint's current snapshot watermark.
 
@@ -161,13 +161,15 @@ The supported-host capability matrix is:
 
 | Control | Ubuntu 22.04/24.04 or Kali, systemd service with delegated cgroup v2 | No delegated cgroup v2 |
 | --- | --- | --- |
-| wall duration | enforced by runner timer; finite or unlimited | same |
-| stdout/stderr bytes | enforced by runner; finite only | same |
+| wall duration | enforced by runner timer; finite or unlimited | host unsupported; no leases |
+| stdout/stderr bytes | enforced by runner; finite only | host unsupported; no leases |
 | process-group cancel | required | host unsupported; no leases |
-| memory bytes | cgroup `memory.max`; finite or unlimited | finite request rejected |
-| process count | cgroup `pids.max`; finite or unlimited | finite request rejected |
-| CPU rate | cgroup `cpu.max`; finite or unlimited | finite request rejected |
-| file size and open files | finite values unsupported in v0.1; unlimited only | same |
+| memory bytes | cgroup `memory.max`; finite or unlimited | host unsupported; no leases |
+| process count | cgroup `pids.max`; finite or unlimited | host unsupported; no leases |
+| CPU rate | cgroup `cpu.max`; finite or unlimited | host unsupported; no leases |
+| file size and open files | finite values unsupported in v0.1; unlimited only | host unsupported; no leases |
+
+Delegated cgroup v2 is an admission requirement because process-group signalling alone cannot prove cleanup after descendants change sessions. Planning and doctor may still return a more specific `resource_control_unsupported` diagnostic for a requested control, but the runner never leases work on a host that fails this admission check.
 
 The concrete limit profile is:
 
@@ -184,7 +186,7 @@ Limits are frozen in the queued Action snapshot. A detected host bound lower tha
 
 Redaction consumes raw bytes before framing, truncation, transport buffering, logging, or D3 staging. Each stdout and stderr stream owns a stateful streaming matcher that preserves partial candidates across arbitrary read boundaries. Exact declared sensitive byte strings use deterministic leftmost-longest byte matching; common ASCII header and flag names are case-insensitive. After a common credential prefix matches, the matcher preserves the prefix, emits `[REDACTED]`, and discards only the value. For an unquoted value, the first ASCII space, tab, CR, LF, or NUL terminates the value and is emitted byte-exact; CRLF therefore preserves both bytes. Quoted forms preserve both quote bytes and replace only their contents. EOF terminates an unquoted or unterminated quoted value safely: the marker remains, no discarded bytes are restored, and a missing closing quote remains missing. A field longer than 64 KiB is still discarded and records `redaction_field_oversize` once. Exact configured match values are limited to 64 KiB, and the matcher withholds at most the longest such value or fixed prefix. It flushes a nonmatching final partial candidate verbatim at EOF. Nonmatching bytes, including invalid UTF-8, remain byte-exact. A complete final frame is redacted even without a newline. Chunking the same byte stream at any boundary produces identical output.
 
-After redaction, raw stdout and stderr are framed deterministically. A logical line over 64 KiB is split at exact 64 KiB byte boundaries into continuation frames; the final fragment carries the line terminator when present. No byte is dropped or treated as a failure merely because a line is long, while the combined retained-output bound still applies. Structured runner-control events are not raw lines and reject an encoded frame over 64 KiB with `event_frame_too_large` before append.
+After redaction, raw stdout and stderr are framed deterministically. A logical line over 64 KiB is split at exact 64 KiB byte boundaries into continuation frames; the final fragment carries the line terminator when present. No byte is dropped or treated as a failure merely because a line is long, while the combined retained-output bound still applies. Structured runner-control events are not raw lines. An encoded frame over 64 KiB is rejected before append and terminally fails the Run with `event_frame_too_large`, preserving previously accepted partial evidence.
 
 Truncation runs on the redacted byte stream, so a secret crossing a retention boundary can never leave a retained prefix. Metadata per stream records raw `inputBytesSeen`, `redactedBytesProduced`, `bytesRetained`, `bytesDropped`, `firstDroppedRedactedOffset`, and `truncated=true`; `bytesDropped` is `redactedBytesProduced - bytesRetained`. It does not turn a successful tool exit into failure, and partial evidence remains labelled. Runner-side structured metadata is bounded independently. Invalid UTF-8 is preserved as bytes for D3 and rendered with replacement only in text views.
 

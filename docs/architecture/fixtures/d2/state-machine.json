@@ -72,6 +72,12 @@
       "expected": { "actionState": "active_paused_for_warning", "runState": "cancel_requested", "cleanupRequired": true, "terminal": false, "acknowledgmentCount": 0, "resumeDirectiveCount": 0 }
     },
     {
+      "id": "d2.state.late-continue-after-cancel-rejected",
+      "description": "A fresh Continue cannot acknowledge or resume after cancellation has won the revision race.",
+      "given": { "actionId": "action-fixture-14", "actionState": "active_paused_for_warning", "runId": "run-fixture-27", "runState": "cancel_requested", "freshContinueCommand": true, "pendingEventId": 67, "expectedRevision": 8 },
+      "error": { "httpStatus": 409, "code": "invalid_run_transition", "actionState": "active_paused_for_warning", "runState": "cancel_requested", "acknowledgmentCount": 0, "resumeDirectiveCount": 0, "cancellationSuperseded": false }
+    },
+    {
       "id": "d2.state.late-cancel-cleanup-completes",
       "description": "A paused cancellation becomes terminal only after fenced cleanup verification.",
       "given": { "actionId": "action-fixture-14", "actionState": "active_paused_for_warning", "runId": "run-fixture-27", "runState": "cancel_requested", "fence": 20, "sequence": 9, "cleanupVerified": true, "pendingEventId": 67 },
