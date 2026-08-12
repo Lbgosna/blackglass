@@ -444,6 +444,32 @@ describe("engagement persistence", () => {
     expect(repository.listEngagements()).toEqual(expected);
   });
 
+  it("reports a cross-engagement active-scope pointer as invalid persisted data", () => {
+    const { database, repository } = createFixture();
+    const first = createEngagement(repository, "First lab");
+    const second = createEngagement(repository, "Second lab");
+    const scope = repository.appendScopeRevision({
+      engagementId: second.id,
+      expectedRevision: second.revision,
+      rules: [],
+    });
+    if (!scope.ok) throw new Error(`Fixture failed: ${scope.error.code}`);
+    database.sqlite.pragma("foreign_keys = OFF");
+    database.sqlite
+      .prepare(
+        "insert into engagement_active_scopes (engagement_id, scope_revision_id) values (?, ?)",
+      )
+      .run(first.id, scope.value.id);
+    database.sqlite.pragma("foreign_keys = ON");
+
+    const expected = {
+      ok: false as const,
+      error: { code: "invalid_persisted_data" as const },
+    };
+    expect(repository.getEngagement(first.id)).toEqual(expected);
+    expect(repository.listEngagements()).toEqual(expected);
+  });
+
   it("rejects malformed JSON at the boundary and reports shape-invalid stored JSON safely", () => {
     const { database, repository } = createFixture();
     const engagement = createEngagement(repository);

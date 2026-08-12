@@ -1,0 +1,64 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  EngagementDetailResponseSchema,
+  EngagementIdParamsSchema,
+  EngagementListResponseSchema,
+  EngagementQueryErrorSchema,
+  ScopeRevisionListResponseSchema,
+} from "./engagement-api.js";
+
+const engagement = {
+  contractVersion: 1,
+  id: "10000000-0000-4000-8000-000000000001",
+  revision: 1,
+  name: "Target lab",
+  kind: "lab",
+  status: "active",
+  description: null,
+  authorizationContext: null,
+  autoContinueWarnings: false,
+  activeScopeRevisionId: null,
+  createdAt: "2026-08-12T12:00:00.000Z",
+  updatedAt: "2026-08-12T12:00:00.000Z",
+} as const;
+
+describe("engagement query API contracts", () => {
+  it("composes bare list and detail responses from engagement contracts", () => {
+    expect(EngagementListResponseSchema.parse([engagement])).toEqual([engagement]);
+    expect(
+      EngagementDetailResponseSchema.parse({
+        engagement,
+        activeScopeRevision: null,
+      }),
+    ).toEqual({ engagement, activeScopeRevision: null });
+    expect(ScopeRevisionListResponseSchema.parse([])).toEqual([]);
+  });
+
+  it("accepts only a strict UUIDv4 engagement path parameter", () => {
+    expect(
+      EngagementIdParamsSchema.safeParse({ engagementId: engagement.id }).success,
+    ).toBe(true);
+    expect(
+      EngagementIdParamsSchema.safeParse({ engagementId: "not-an-id" }).success,
+    ).toBe(false);
+    expect(
+      EngagementIdParamsSchema.safeParse({
+        engagementId: engagement.id,
+        extra: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects reflective or unknown error fields", () => {
+    expect(EngagementQueryErrorSchema.parse({ code: "storage_busy" })).toEqual({
+      code: "storage_busy",
+    });
+    expect(
+      EngagementQueryErrorSchema.safeParse({
+        code: "invalid_persisted_data",
+        path: "/private/data",
+      }).success,
+    ).toBe(false);
+  });
+});

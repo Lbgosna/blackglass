@@ -583,6 +583,7 @@ export class EngagementRepository {
           engagement: engagements,
           activeScopeRevisionId: engagementActiveScopes.scopeRevisionId,
           joinedScopeRevisionId: scopeRevisions.id,
+          joinedScopeEngagementId: scopeRevisions.engagementId,
         })
         .from(engagements)
         .leftJoin(
@@ -599,7 +600,8 @@ export class EngagementRepository {
       for (const row of rows) {
         if (
           row.activeScopeRevisionId !== null &&
-          row.activeScopeRevisionId !== row.joinedScopeRevisionId
+          (row.activeScopeRevisionId !== row.joinedScopeRevisionId ||
+            row.joinedScopeEngagementId !== row.engagement.id)
         ) {
           return failed({ code: "invalid_persisted_data" });
         }

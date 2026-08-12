@@ -7,6 +7,12 @@
   "engines": {
     "node": ">=24 <25"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
   "scripts": {
     "build": "node scripts/run-workspace-script.mjs build",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm test && pnpm run build",
