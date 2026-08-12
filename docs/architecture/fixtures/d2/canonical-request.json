@@ -1,0 +1,76 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d2-v1",
+  "kind": "canonical-request",
+  "cases": [
+    {
+      "id": "d2.canonical.create-engagement",
+      "description": "A local create command binds the actor, route, operation, parsed fields, and explicit nulls.",
+      "given": {
+        "value": {
+          "route": "/api/v1/engagements",
+          "query": {},
+          "path": {},
+          "operation": "create",
+          "canonicalizationProfile": "command-json-v1",
+          "body": {
+            "name": "Target lab",
+            "kind": "lab",
+            "description": null,
+            "authorizationContext": null,
+            "autoContinueWarnings": false
+          },
+          "actorId": "local-operator-v1"
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"actorId\":\"local-operator-v1\",\"body\":{\"authorizationContext\":null,\"autoContinueWarnings\":false,\"description\":null,\"kind\":\"lab\",\"name\":\"Target lab\"},\"canonicalizationProfile\":\"command-json-v1\",\"operation\":\"create\",\"path\":{},\"query\":{},\"route\":\"/api/v1/engagements\"}",
+        "digest": "sha256:b8a1a7e36d9307ad76be0324867dc33bed145bd6553a5782ce594e4c1a29a8cf"
+      }
+    },
+    {
+      "id": "d2.canonical.archive-engagement",
+      "description": "A concrete resource route and expected revision are bound without UUID rewriting.",
+      "given": {
+        "value": {
+          "actorId": "local-operator-v1",
+          "body": { "expectedRevision": 2 },
+          "canonicalizationProfile": "command-json-v1",
+          "operation": "archive",
+          "path": { "engagementId": "10000000-0000-4000-8000-000000000001" },
+          "query": {},
+          "route": "/api/v1/engagements/10000000-0000-4000-8000-000000000001/archive"
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"actorId\":\"local-operator-v1\",\"body\":{\"expectedRevision\":2},\"canonicalizationProfile\":\"command-json-v1\",\"operation\":\"archive\",\"path\":{\"engagementId\":\"10000000-0000-4000-8000-000000000001\"},\"query\":{},\"route\":\"/api/v1/engagements/10000000-0000-4000-8000-000000000001/archive\"}",
+        "digest": "sha256:feec69a7f5b9df69d050b575483197bd744a5e260bba4e2adecfce1f454819db"
+      }
+    },
+    {
+      "id": "d2.canonical.object-and-array-order",
+      "description": "Object insertion order is erased while array order and Unicode remain exact.",
+      "given": {
+        "value": {
+          "z": 1,
+          "array": [3, null, "x"],
+          "nested": { "z": "line\n😀", "a": false },
+          "a": 2
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"a\":2,\"array\":[3,null,\"x\"],\"nested\":{\"a\":false,\"z\":\"line\\n😀\"},\"z\":1}",
+        "digest": "sha256:abda4ebee98e02b99044b7dd69af0061285cf0988254c94e5b3431360c25a656"
+      }
+    },
+    {
+      "id": "d2.canonical.number-spelling",
+      "description": "Finite numbers use ECMAScript JSON spelling and negative zero becomes zero.",
+      "given": { "value": [0, 0, 1, 1.5, 1e+30, 0.000001, 1e-7] },
+      "expected": {
+        "canonicalJson": "[0,0,1,1.5,1e+30,0.000001,1e-7]",
+        "digest": "sha256:0a3e57a7768e377a37045e4f97ef9a87e9f6d5296bddfeb166f0a43bf4a6cf75"
+      }
+    }
+  ]
+}

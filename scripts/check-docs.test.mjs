@@ -19,6 +19,7 @@ const fixtureKinds = new Map([
   ["warning-flow.json", "warning-flow"],
 ]);
 const d2FixtureKinds = new Map([
+  ["canonical-request.json", "canonical-request"],
   ["state-machine.json", "state-machine"],
   ["idempotency-concurrency.json", "idempotency-concurrency"],
   ["runner-identity.json", "runner-identity"],
