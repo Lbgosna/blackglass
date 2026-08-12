@@ -1,14 +1,19 @@
-import type {
-  ActionPlanningAggregate,
-  ActionPlanningResult,
-  ActionSnapshot,
-  ResolutionSnapshot,
-  WarningContextAddition,
-  WarningReasonCode,
+import {
+  WarningContextAdditionSchema,
+  WarningReasonCodeSchema,
+  type ActionPlanningAggregate,
+  type ActionPlanningResult,
+  type ActionSnapshot,
+  type ResolutionSnapshot,
+  type WarningContextAddition,
+  type WarningReasonCode,
 } from "@blackglass/contracts";
 import { describe, expect, it } from "vitest";
 
 import resolutionFixtureData from "../../../docs/architecture/fixtures/d1/resolution-snapshot.json" with {
+  type: "json",
+};
+import stateMachineFixtureData from "../../../docs/architecture/fixtures/d2/state-machine.json" with {
   type: "json",
 };
 import warningFixtureData from "../../../docs/architecture/fixtures/d1/warning-flow.json" with {
@@ -86,8 +91,16 @@ interface FreezeSnapshotFixtureCase {
   };
 }
 
+interface D2ActionFixtureCase {
+  id: string;
+  given: Record<string, unknown>;
+  expected?: Record<string, unknown>;
+  error?: { code: string };
+}
+
 const warningCases = warningFixtureData.cases as WarningFixtureCase[];
 const resolutionCases = resolutionFixtureData.cases as ResolutionFixtureCase[];
+const d2ActionCases = stateMachineFixtureData.cases as D2ActionFixtureCase[];
 const defaultTime = "2026-08-09T12:00:00.000Z";
 
 function warningCase(id: string): WarningFixtureCase {
@@ -104,6 +117,42 @@ function resolutionCase(id: string): ResolutionFixtureCase {
     throw new Error(`Missing resolution fixture: ${id}`);
   }
   return testCase;
+}
+
+function d2Case(id: string): D2ActionFixtureCase {
+  const testCase = d2ActionCases.find((candidate) => candidate.id === id);
+  if (testCase === undefined) throw new Error(`Missing D2 fixture: ${id}`);
+  return testCase;
+}
+
+function d2String(fields: Record<string, unknown>, key: string): string {
+  const value = fields[key];
+  if (typeof value !== "string") throw new Error(`D2 field ${key} is not a string`);
+  return value;
+}
+
+function d2Number(fields: Record<string, unknown>, key: string): number {
+  const value = fields[key];
+  if (typeof value !== "number") throw new Error(`D2 field ${key} is not a number`);
+  return value;
+}
+
+function d2Addition(
+  fields: Record<string, unknown>,
+  key: string,
+): WarningContextAddition {
+  const parsed = WarningContextAdditionSchema.safeParse(fields[key]);
+  if (!parsed.success) throw new Error(`D2 field ${key} is not a warning addition`);
+  return parsed.data;
+}
+
+function d2Reasons(
+  fields: Record<string, unknown>,
+  key: string,
+): WarningReasonCode[] {
+  const value = fields[key];
+  if (!Array.isArray(value)) throw new Error(`D2 field ${key} is not an array`);
+  return value.map((candidate) => WarningReasonCodeSchema.parse(candidate));
 }
 
 function snapshot(options: {
@@ -872,6 +921,283 @@ describe("capability, retry, immutability, and adversarial boundaries", () => {
     ).toEqual({
       ok: false,
       error: { code: "invalid_action_planning_input" },
+    });
+  });
+});
+
+
+describe("applicable D2 Action state fixtures", () => {
+  it("executes warning routing and late-warning Action fixtures", () => {
+    const routing = d2Case("d2.state.d1-warning-and-capability-routing");
+    const routingExpected = routing.expected ?? {};
+    const warnedSnapshot = snapshot({
+      actionId: "action-d2-routing",
+      reasons: ["outside_scope"],
+    });
+    const preRunPaused = plan(warnedSnapshot);
+    const preRunContinued = actionFrom(
+      continueAction({
+        action: preRunPaused,
+        snapshotVersion: 1,
+        snapshotBinding: warnedSnapshot.binding,
+        occurredAt: defaultTime,
+      }),
+    );
+    expect(preRunPaused.state).toBe(routingExpected["preRunWarningState"]);
+    expect(preRunContinued.state).toBe(routingExpected["preRunContinuedState"]);
+
+    const pauseFixture = d2Case("d2.state.late-warning-pauses-before-connect");
+    const pauseExpected = pauseFixture.expected ?? {};
+    const lateSnapshot = snapshot({
+      actionId: d2String(pauseFixture.given, "actionId"),
+      binding: d2String(pauseFixture.given, "snapshotDigest"),
+    });
+    const active = activate(plan(lateSnapshot));
+    const paused = lateWarning(
+      active,
+      d2Addition(pauseFixture.given, "pendingDestination"),
+      {
+        reasonCodes: d2Reasons(pauseFixture.given, "reasonCodes"),
+        pendingEventId: d2Number(pauseExpected, "pendingEventId"),
+      },
+    );
+    expect(paused).toMatchObject({
+      state: pauseExpected["actionState"],
+      runState: pauseExpected["runState"],
+      warningInteractions: pauseExpected["warningInteractions"],
+      pendingWarning: { pendingEventId: pauseExpected["pendingEventId"] },
+    });
+
+    const continueFixture = d2Case(
+      "d2.state.late-continue-binds-context-and-resumes",
+    );
+    const continueExpected = continueFixture.expected ?? {};
+    const continueSnapshot = snapshot({
+      actionId: d2String(continueFixture.given, "actionId"),
+      binding: d2String(continueFixture.given, "snapshotDigest"),
+      scopeRevisionId: d2String(continueFixture.given, "scopeRevisionId"),
+    });
+    const continuePendingId = d2Number(continueFixture.given, "pendingEventId");
+    const pendingAddition = d2Addition(
+      continueFixture.given,
+      "pendingDestination",
+    );
+    const continuePaused = lateWarning(
+      activate(plan(continueSnapshot)),
+      pendingAddition,
+      {
+        reasonCodes: d2Reasons(continueFixture.given, "reasonCodes"),
+        pendingEventId: continuePendingId,
+      },
+    );
+    const resumed = actionFrom(
+      continueLateWarning({
+        action: continuePaused,
+        snapshotVersion: 1,
+        snapshotBinding: continueSnapshot.binding,
+        pendingEventId: continuePendingId,
+        occurredAt: defaultTime,
+      }),
+    );
+    expect(resumed).toMatchObject({
+      state: continueExpected["actionState"],
+      runState: continueExpected["runState"],
+      resumeRequested: true,
+      warningAcknowledgment: {
+        pendingEventId: continuePendingId,
+        knownAdditions: [pendingAddition],
+        source: "operator_continue",
+      },
+    });
+
+    const autoFixture = d2Case("d2.state.late-auto-continue-never-pauses");
+    const autoExpected = autoFixture.expected ?? {};
+    const auto = lateWarning(
+      activate(
+        plan(snapshot({ actionId: d2String(autoFixture.given, "actionId") })),
+      ),
+      d2Addition(autoFixture.given, "pendingDestination"),
+      {
+        reasonCodes: d2Reasons(autoFixture.given, "reasonCodes"),
+        autoContinue: true,
+      },
+    );
+    expect(auto).toMatchObject({
+      state: autoExpected["actionState"],
+      runState: autoExpected["runState"],
+      warningInteractions: autoExpected["warningInteractions"],
+      warningAcknowledgment: {
+        source: autoExpected["acknowledgmentSource"],
+      },
+    });
+
+    const coveredFixture = d2Case(
+      "d2.state.late-covered-destination-appends-without-pause",
+    );
+    const coveredExpected = coveredFixture.expected ?? {};
+    const coveredSnapshot = snapshot({
+      actionId: d2String(coveredFixture.given, "actionId"),
+      reasons: ["outside_scope"],
+    });
+    const acknowledged = actionFrom(
+      continueAction({
+        action: plan(coveredSnapshot),
+        snapshotVersion: 1,
+        snapshotBinding: coveredSnapshot.binding,
+        occurredAt: defaultTime,
+      }),
+    );
+    const coveredAddition = d2Addition(
+      coveredFixture.given,
+      "pendingDestination",
+    );
+    const covered = lateWarning(activate(acknowledged), coveredAddition);
+    expect(covered).toMatchObject({
+      state: coveredExpected["actionState"],
+      runState: coveredExpected["runState"],
+      coveredDestinations: [coveredAddition],
+      warningAcknowledgment: { coveredDestinations: [coveredAddition] },
+    });
+
+    const cancelFixture = d2Case("d2.state.late-cancel-awaits-cleanup");
+    const cancelExpected = cancelFixture.expected ?? {};
+    const cancelSnapshot = snapshot({
+      actionId: d2String(cancelFixture.given, "actionId"),
+    });
+    const cancelPaused = lateWarning(
+      activate(plan(cancelSnapshot)),
+      { hostname: "other.test", address: "192.0.2.67" },
+      { pendingEventId: 67 },
+    );
+    const cancelled = actionFrom(cancelAction({ action: cancelPaused }));
+    expect(cancelled).toMatchObject({
+      state: cancelExpected["actionState"],
+      runState: cancelExpected["runState"],
+      cleanupRequired: cancelExpected["cleanupRequired"],
+      warningAcknowledgment: null,
+    });
+
+    const rejectFixture = d2Case(
+      "d2.state.late-continue-after-cancel-rejected",
+    );
+    expect(
+      continueLateWarning({
+        action: cancelled,
+        snapshotVersion: 1,
+        snapshotBinding: cancelSnapshot.binding,
+        pendingEventId: d2Number(rejectFixture.given, "pendingEventId"),
+        occurredAt: defaultTime,
+      }),
+    ).toEqual({ ok: false, error: { code: rejectFixture.error?.code } });
+
+    const capability = actionFrom(
+      planAction({
+        snapshot: snapshot({ actionId: "action-d2-capability" }),
+        engagementAutoContinue: false,
+        representable: false,
+        capabilityErrorCode: "target_set_unrepresentable",
+        occurredAt: defaultTime,
+      }),
+    );
+    expect(capability.state).toBe(routingExpected["unrepresentableState"]);
+  });
+
+  it("executes append-only planning and retry Action fixtures", () => {
+    const addFixture = d2Case("d2.state.add-scope-appends-planning-version");
+    const addExpected = addFixture.expected ?? {};
+    const before = snapshot({
+      actionId: d2String(addFixture.given, "actionId"),
+      reasons: ["outside_scope"],
+    });
+    const after = snapshot({
+      actionId: before.actionId,
+      binding: d2String(addFixture.given, "postRecheckDigest"),
+      version: 2,
+    });
+    const appended = actionFrom(
+      addScopeAndRun({
+        action: plan(before),
+        recheckedSnapshot: after,
+        occurredAt: defaultTime,
+      }),
+    );
+    expect(appended.snapshots.map(({ version }) => version)).toEqual(
+      addExpected["versionsAfter"],
+    );
+    expect(appended.snapshots[0]).toEqual(before);
+    expect(appended).toMatchObject({
+      queuedSnapshotVersion: addExpected["queuedSnapshotVersion"],
+      warningAcknowledgment: { source: addExpected["warningSource"] },
+    });
+
+    const finalFixture = d2Case("d2.state.queued-snapshot-is-final");
+    const queued = appended;
+    const queuedBefore = structuredClone(queued);
+    expect(
+      addScopeAndRun({
+        action: queued,
+        recheckedSnapshot: snapshot({
+          actionId: queued.actionId,
+          version: d2Number(finalFixture.given, "attemptedVersion"),
+        }),
+        occurredAt: defaultTime,
+      }),
+    ).toEqual({ ok: false, error: { code: finalFixture.error?.code } });
+    expect(queued).toEqual(queuedBefore);
+
+    const retryFixture = d2Case("d2.state.retry-preserves-action-identity");
+    const retryExpected = retryFixture.expected ?? {};
+    const retryActionId = d2String(retryFixture.given, "actionId");
+    const retryFirstSnapshot = snapshot({ actionId: retryActionId });
+    const retrySecondSnapshot = snapshot({
+      actionId: retryActionId,
+      version: d2Number(retryFixture.given, "queuedSnapshotVersion"),
+    });
+    const retryAction: ActionPlanningAggregate = {
+      ...plan(retryFirstSnapshot),
+      snapshots: [retryFirstSnapshot, retrySecondSnapshot],
+      queuedSnapshotVersion: retrySecondSnapshot.version,
+      state: "failed",
+    };
+    const retryBefore = structuredClone(retryAction);
+    const retry = retryActionContext({
+      action: retryAction,
+      warningAcknowledgmentId: d2String(
+        retryFixture.given,
+        "warningAcknowledgmentId",
+      ),
+    });
+    expect(retry).toMatchObject({
+      ok: true,
+      context: {
+        actionId: retryExpected["actionId"],
+        snapshotVersion: retryExpected["queuedSnapshotVersion"],
+        warningAcknowledgmentId: retryExpected["warningAcknowledgmentId"],
+        resolutionRefreshed: false,
+        newWarningBudget: false,
+      },
+    });
+    expect(retryAction).toEqual(retryBefore);
+
+    const successfulFixture = d2Case(
+      "d2.state.successful-run-retry-rejected",
+    );
+    const succeeded: ActionPlanningAggregate = {
+      ...plan(
+        snapshot({
+          actionId: d2String(successfulFixture.given, "actionId"),
+        }),
+      ),
+      state: "succeeded",
+    };
+    expect(
+      retryActionContext({
+        action: succeeded,
+        warningAcknowledgmentId: null,
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: successfulFixture.error?.code },
     });
   });
 });

@@ -155,6 +155,12 @@ describe("action planning contracts", () => {
     expect(
       ActionPlanningResultSchema.safeParse({
         ok: false,
+        error: { code: "run_not_retryable" },
+      }).success,
+    ).toBe(true);
+    expect(
+      ActionPlanningResultSchema.safeParse({
+        ok: false,
         error: { code: "invalid_action_transition", detail: "untrusted" },
       }).success,
     ).toBe(false);

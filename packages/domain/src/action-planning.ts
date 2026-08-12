@@ -395,7 +395,10 @@ export function addScopeAndRun(input: unknown): ActionPlanningResult {
   if (!actionIsCanonical(action) || !snapshotIsCanonical(recheckedSnapshot)) {
     return failure("invalid_action_planning_input");
   }
-  if (action.state !== "paused_for_warning" || action.queuedSnapshotVersion !== null) {
+  if (action.queuedSnapshotVersion !== null) {
+    return failure("action_already_queued");
+  }
+  if (action.state !== "paused_for_warning") {
     return failure("invalid_action_transition");
   }
   const latestVersion = Math.max(...action.snapshots.map(({ version }) => version));
@@ -616,6 +619,9 @@ export function retryActionContext(input: unknown): RetryActionContextResult {
   const { action, warningAcknowledgmentId } = parsed.data;
   if (!actionIsCanonical(action)) {
     return { ok: false, error: { code: "invalid_action_planning_input" } };
+  }
+  if (action.state === "succeeded") {
+    return { ok: false, error: { code: "run_not_retryable" } };
   }
   if (action.state !== "failed" && action.state !== "cancelled") {
     return { ok: false, error: { code: "invalid_action_transition" } };

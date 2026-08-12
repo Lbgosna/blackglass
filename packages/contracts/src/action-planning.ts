@@ -314,6 +314,7 @@ export const ActionPlanningErrorSchema = z.strictObject({
     "invalid_action_planning_input",
     "invalid_action_transition",
     "invalid_run_transition",
+    "run_not_retryable",
     "snapshot_binding_mismatch",
   ]),
 });
