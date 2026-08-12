@@ -6,8 +6,8 @@
     {
       "id": "d2.process.executable-version-pinned",
       "description": "A lease records and rechecks immutable executable identity before launch.",
-      "given": { "configuredPath": "/opt/blackglass/fixtures/fake-exec", "resolvedPath": "/opt/blackglass/fixtures/fake-exec", "regularFile": true, "symlink": false, "device": 2049, "inode": 7001, "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "observedVersion": "fixture-exec 1.0.0", "executableByRunner": true },
-      "expected": { "registered": true, "immutableVersion": 1, "launchRecheckRequired": true }
+      "given": { "configuredPath": "/opt/blackglass/fixtures/fake-exec", "resolvedPath": "/opt/blackglass/fixtures/fake-exec", "regularFile": true, "symlink": false, "ownerUid": 0, "mode": "0555", "parentOwnerUids": [0, 0, 0], "parentModes": ["0755", "0755", "0755"], "device": 2049, "inode": 7001, "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "observedVersion": "fixture-exec 1.0.0", "executableByRunner": true },
+      "expected": { "registered": true, "immutableVersion": 1, "launchRecheckRequired": true, "launchBinding": "execveat_verified_fd" }
     },
     {
       "id": "d2.process.missing-executable",
@@ -32,6 +32,24 @@
       "description": "A changed inode or digest disables the pinned registry version.",
       "given": { "registeredInode": 7001, "currentInode": 7002, "registeredDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "currentDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
       "error": { "code": "executable_identity_changed", "spawnCount": 0, "registryVersionDisabled": true }
+    },
+    {
+      "id": "d2.process.unsafe-executable-parent-rejected",
+      "description": "A group-writable executable parent cannot enter the registry.",
+      "given": { "configuredPath": "/opt/blackglass/fixtures/fake-exec", "ownerUid": 0, "mode": "0555", "parentOwnerUids": [0, 0, 0], "parentModes": ["0755", "0775", "0755"] },
+      "error": { "code": "executable_parent_unsafe", "registered": false, "spawnCount": 0 }
+    },
+    {
+      "id": "d2.process.same-inode-rewrite-denied",
+      "description": "The unprivileged process cannot rewrite the root-owned registered inode between verification and launch.",
+      "given": { "ownerUid": 0, "mode": "0555", "runnerUid": 991, "registeredInode": 7003, "rewriteAttemptByUid": 991 },
+      "expected": { "rewriteAllowed": false, "verifiedDigestChanged": false, "launchBinding": "execveat_verified_fd" }
+    },
+    {
+      "id": "d2.process.post-check-path-replacement-ignored",
+      "description": "A pathname replacement after verification cannot replace the already opened executable object.",
+      "given": { "verifiedFdInode": 7004, "verifiedFdDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "replacementPathInode": 7005, "replacementPathDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "replacementOccursAfterFdVerification": true },
+      "expected": { "pathResolvedAgain": false, "executedInode": 7004, "executedDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "replacementExecuted": false }
     },
     {
       "id": "d2.process.argv-metacharacters-are-literal",
@@ -88,6 +106,24 @@
       "expected": { "terminalState": "failed", "reason": "duration_exceeded", "partialEvidencePreserved": true }
     },
     {
+      "id": "d2.process.resource-defaults-and-ranges",
+      "description": "The d2-v1 finite defaults and host-bounded ranges are exact.",
+      "given": { "delegatedCgroupV2": true, "detectedHostMemoryBytes": 8589934592, "detectedLogicalCpuCount": 4 },
+      "expected": { "wallDurationMs": { "default": 1800000, "minimum": 1000, "maximum": 86400000 }, "memoryBytes": { "default": 536870912, "minimum": 16777216, "maximum": 8589934592 }, "processCount": { "default": 64, "minimum": 1, "maximum": 4096 }, "cpuMillicores": { "default": 1000, "minimum": 10, "maximum": 4000 } }
+    },
+    {
+      "id": "d2.process.resource-unlimited-supported",
+      "description": "Operator-selected null explicitly maps supported controls to unlimited.",
+      "given": { "delegatedCgroupV2": true, "operatorSelected": { "wallDurationMs": null, "memoryBytes": null, "processCount": null, "cpuMillicores": null, "fileSizeBytes": null, "openFiles": null } },
+      "expected": { "wallTimer": "disabled", "memoryMax": "max", "pidsMax": "max", "cpuMax": "max", "fileSize": "unlimited", "openFiles": "unlimited", "frozenInSnapshot": true }
+    },
+    {
+      "id": "d2.process.output-unlimited-rejected",
+      "description": "The bounded-output invariant rejects operator-selected unlimited output.",
+      "given": { "combinedRetainedOutputBytes": null },
+      "error": { "code": "resource_control_unsupported", "control": "combined_retained_output", "unlimitedSupported": false, "leaseAllowed": false }
+    },
+    {
       "id": "d2.process.unsupported-finite-resource-control",
       "description": "A finite limit cannot be silently ignored without delegated cgroup support.",
       "given": { "delegatedCgroupV2": false, "requestedControl": "memory_limit", "requestedValueBytes": 268435456 },
@@ -108,14 +144,50 @@
     {
       "id": "d2.process.output-truncation",
       "description": "Excess output is drained and counted without deadlocking the child.",
-      "given": { "combinedRetainedLimitBytes": 16777216, "stdout": { "bytesSeen": 17825792, "bytesRetained": 16777216 }, "stderr": { "bytesSeen": 1024, "bytesRetained": 0 } },
-      "expected": { "stdout": { "bytesSeen": 17825792, "bytesRetained": 16777216, "bytesDropped": 1048576, "firstDroppedOffset": 16777216, "truncated": true }, "stderr": { "bytesSeen": 1024, "bytesRetained": 0, "bytesDropped": 1024, "firstDroppedOffset": 0, "truncated": true }, "childPipeDrained": true, "exitStatusPreserved": true }
+      "given": { "combinedRetainedLimitBytes": 16777216, "stdout": { "inputBytesSeen": 17825792, "redactedBytesProduced": 17825792, "bytesRetained": 16777216 }, "stderr": { "inputBytesSeen": 1024, "redactedBytesProduced": 1024, "bytesRetained": 0 } },
+      "expected": { "stdout": { "inputBytesSeen": 17825792, "redactedBytesProduced": 17825792, "bytesRetained": 16777216, "bytesDropped": 1048576, "firstDroppedRedactedOffset": 16777216, "truncated": true }, "stderr": { "inputBytesSeen": 1024, "redactedBytesProduced": 1024, "bytesRetained": 0, "bytesDropped": 1024, "firstDroppedRedactedOffset": 0, "truncated": true }, "childPipeDrained": true, "exitStatusPreserved": true }
     },
     {
       "id": "d2.process.output-redaction-before-buffer",
       "description": "Synthetic credential markers are redacted before transport, logging, or evidence staging.",
       "given": { "chunks": ["Authorization: [fixture-credential]", "--password=[fixture-password]", "ordinary fixture output"], "declaredSensitiveArgIndexes": [2] },
       "expected": { "retainedChunks": ["Authorization: [REDACTED]", "--password=[REDACTED]", "ordinary fixture output"], "plaintextCredentialOccurrences": 0, "redactionBoundary": "before_transport_buffer" }
+    },
+    {
+      "id": "d2.process.redaction-every-chunk-boundary",
+      "description": "Every possible split of the same sensitive byte stream produces one identical redacted result.",
+      "given": { "input": "prefix--password=[fixture-value]suffix", "matchValue": "[fixture-value]", "splitOffsets": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38] },
+      "expected": { "outputForEverySplit": "prefix--password=[REDACTED]suffix", "distinctOutputs": 1, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-invalid-utf8-preserved",
+      "description": "Invalid UTF-8 surrounding a complete ASCII credential match remains byte-exact.",
+      "given": { "inputHex": "ff2d2d70617373776f72643d5b666978747572652d76616c75655dfe", "chunksHex": ["ff2d2d70617373776f", "72643d5b66697874757265", "2d76616c75655dfe"], "matchValueHex": "5b666978747572652d76616c75655d" },
+      "expected": { "outputHex": "ff2d2d70617373776f72643d5b52454441435445445dfe", "invalidUtf8BytesPreserved": [255, 254], "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-before-truncation-boundary",
+      "description": "A credential crossing the retained-output boundary is fully redacted before truncation.",
+      "given": { "input": "prefix--password=[fixture-value]suffix", "chunks": ["prefix--password=[fix", "ture-value]suffix"], "matchValue": "[fixture-value]", "retainedLimitBytes": 20 },
+      "expected": { "redactedStream": "prefix--password=[REDACTED]suffix", "retainedOutput": "prefix--password=[RE", "inputBytesSeen": 38, "redactedBytesProduced": 33, "bytesRetained": 20, "bytesDropped": 13, "firstDroppedRedactedOffset": 20, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-final-partial-frame",
+      "description": "A complete credential in a final unterminated frame is redacted and flushed at EOF.",
+      "given": { "chunks": ["status\n--pass", "word=[fixture-value]"], "matchValue": "[fixture-value]", "finalNewline": false },
+      "expected": { "output": "status\n--password=[REDACTED]", "finalFrameFlushed": true, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.restart-stale-journal-boot-mismatch",
+      "description": "A journal from another Linux boot never signals its recorded numeric process identity.",
+      "given": { "journalBootId": "boot-fixture-a", "currentBootId": "boot-fixture-b", "journalledProcessId": 4401, "numericProcessIdCurrentlyExists": true },
+      "expected": { "journalDisposition": "stale_removed", "signalCount": 0, "workingDirectoryQuarantined": false, "terminalState": "failed", "terminalReason": "runner_restarted" }
+    },
+    {
+      "id": "d2.process.restart-pid-reuse-mismatch",
+      "description": "A reused PID with a different start identity or marker is never signalled.",
+      "given": { "bootIdMatches": true, "journalledProcessId": 4402, "journalledProcessStartTime": 91001, "liveProcessStartTime": 92002, "journalledCgroupPath": "/sys/fs/cgroup/blackglass/run-fixture-24-marker-b2", "liveCgroupPath": "/sys/fs/cgroup/other-fixture", "runMarkerMatches": false },
+      "error": { "code": "restart_identity_mismatch", "signalCount": 0, "journalQuarantined": true, "workingDirectoryQuarantined": true, "terminalState": "failed" }
     },
     {
       "id": "d2.process.nmap-unprivileged-typed-argv",

@@ -48,8 +48,8 @@
     {
       "id": "d2.lease.runner-restart-fences-abandoned-work",
       "description": "A new runner session cleans journalled groups and cannot adopt an old lease.",
-      "given": { "oldSessionId": "session-fixture-3", "newSessionId": "session-fixture-4", "journalledProcessGroups": [4242], "oldFence": 6 },
-      "expected": { "cleanupRequired": true, "oldLeaseAdopted": false, "terminalReason": "runner_restarted", "newHandshakeRequired": true }
+      "given": { "oldSessionId": "session-fixture-3", "newSessionId": "session-fixture-4", "bootIdMatches": true, "journalledProcessId": 4242, "processStartTime": 90001, "liveProcessStartTime": 90001, "cgroupPath": "/sys/fs/cgroup/blackglass/run-fixture-23-marker-a1", "runMarkerMatches": true, "oldFence": 6 },
+      "expected": { "cleanupIdentityVerified": true, "processGroupSignalled": true, "cleanupRequired": true, "oldLeaseAdopted": false, "terminalReason": "runner_restarted", "newHandshakeRequired": true }
     },
     {
       "id": "d2.lease.stale-fence-rejected",

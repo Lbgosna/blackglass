@@ -40,6 +40,24 @@
       "expected": { "state": "cancelled", "terminalWriteCount": 1, "cancelEventCount": 1, "result": "stored_response_replayed" }
     },
     {
+      "id": "d2.idempotency.post-terminal-completion-replay",
+      "description": "An authenticated exact completion replay returns its stored result after the Run is terminal.",
+      "given": { "authenticated": true, "actorId": "runner-fixture-1", "route": "/api/v1/runner/runs/run-fixture-20/complete", "operation": "completion", "key": "fixture-key-0101", "storedDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "requestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "storedTupleFound": true, "runId": "run-fixture-20", "currentState": "succeeded", "leaseCurrent": false, "fence": 13, "sequence": 9 },
+      "expected": { "validationOrder": ["authenticate", "canonicalize_bounded_request", "lookup_stored_tuple", "replay"], "result": "stored_terminal_replayed", "leaseRevalidated": false, "terminalWriteCount": 1, "eventAppendCount": 1 }
+    },
+    {
+      "id": "d2.idempotency.expired-fence-event-replay",
+      "description": "An authenticated exact stored event replay succeeds after its lease expires.",
+      "given": { "authenticated": true, "actorId": "runner-fixture-1", "route": "/api/v1/runner/runs/run-fixture-21/events", "operation": "event_append", "key": "fixture-key-0102", "storedDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222", "requestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222", "storedTupleFound": true, "runId": "run-fixture-21", "leaseExpired": true, "fence": 14, "sequence": 3, "storedEventId": 51 },
+      "expected": { "result": "stored_event_replayed", "eventId": 51, "leaseRevalidated": false, "eventAppendCount": 1, "projectionWriteCount": 1 }
+    },
+    {
+      "id": "d2.idempotency.superseded-fence-event-replay",
+      "description": "An authenticated exact stored event replay succeeds after a newer fence is assigned.",
+      "given": { "authenticated": true, "actorId": "runner-fixture-1", "route": "/api/v1/runner/runs/run-fixture-22/events", "operation": "event_append", "key": "fixture-key-0103", "storedDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333", "requestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333", "storedTupleFound": true, "runId": "run-fixture-22", "presentedFence": 15, "currentFence": 16, "sequence": 4, "storedEventId": 52 },
+      "expected": { "result": "stored_event_replayed", "eventId": 52, "fenceRevalidated": false, "eventAppendCount": 1, "projectionWriteCount": 1 }
+    },
+    {
       "id": "d2.concurrency.revision-conflict",
       "description": "A stale revision loses without merging mutable state.",
       "given": { "resourceType": "Action", "resourceId": "action-fixture-10", "expectedRevision": 4, "currentRevision": 5 },
