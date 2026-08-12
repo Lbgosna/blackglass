@@ -55,6 +55,8 @@ Scope organizes target context. Every representable action remains runnable. An 
 
 Required before M3.
 
+Status: accepted in [ADR-0002](./0002-actions-runs-runner-trust.md).
+
 ### State and concurrency
 
 Decide:

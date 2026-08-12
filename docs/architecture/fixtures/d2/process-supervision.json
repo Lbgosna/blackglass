@@ -1,0 +1,247 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d2-v1",
+  "kind": "process-supervision",
+  "cases": [
+    {
+      "id": "d2.process.executable-version-pinned",
+      "description": "A lease records and rechecks immutable executable identity before launch.",
+      "given": { "configuredPath": "/opt/blackglass/fixtures/fake-exec", "resolvedPath": "/opt/blackglass/fixtures/fake-exec", "regularFile": true, "symlink": false, "ownerUid": 0, "mode": "0555", "parentOwnerUids": [0, 0, 0], "parentModes": ["0755", "0755", "0755"], "device": 2049, "inode": 7001, "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "observedVersion": "fixture-exec 1.0.0", "executableByRunner": true },
+      "expected": { "registered": true, "immutableVersion": 1, "launchRecheckRequired": true, "launchBinding": "execveat_verified_fd" }
+    },
+    {
+      "id": "d2.process.missing-executable",
+      "description": "A missing registry executable is a truthful capability error before spawn.",
+      "given": { "configuredPath": "/opt/blackglass/fixtures/missing-exec", "exists": false },
+      "error": { "code": "executable_missing", "spawnCount": 0 }
+    },
+    {
+      "id": "d2.process.relative-executable-rejected",
+      "description": "Executable registry paths must be absolute.",
+      "given": { "configuredPath": "fixtures/fake-exec", "regularFile": true },
+      "error": { "code": "executable_path_not_absolute", "registered": false }
+    },
+    {
+      "id": "d2.process.symlink-executable-rejected",
+      "description": "Registry inspection never follows a symlink executable.",
+      "given": { "configuredPath": "/opt/blackglass/fixtures/fake-link", "symlink": true, "linkDestination": "/opt/blackglass/fixtures/fake-exec" },
+      "error": { "code": "executable_symlink_rejected", "registered": false }
+    },
+    {
+      "id": "d2.process.executable-changed-before-launch",
+      "description": "A changed inode or digest disables the pinned registry version.",
+      "given": { "registeredInode": 7001, "currentInode": 7002, "registeredDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "currentDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
+      "error": { "code": "executable_identity_changed", "spawnCount": 0, "registryVersionDisabled": true }
+    },
+    {
+      "id": "d2.process.unsafe-executable-parent-rejected",
+      "description": "A group-writable executable parent cannot enter the registry.",
+      "given": { "configuredPath": "/opt/blackglass/fixtures/fake-exec", "ownerUid": 0, "mode": "0555", "parentOwnerUids": [0, 0, 0], "parentModes": ["0755", "0775", "0755"] },
+      "error": { "code": "executable_parent_unsafe", "registered": false, "spawnCount": 0 }
+    },
+    {
+      "id": "d2.process.same-inode-rewrite-denied",
+      "description": "The unprivileged process cannot rewrite the root-owned registered inode between verification and launch.",
+      "given": { "ownerUid": 0, "mode": "0555", "runnerUid": 991, "registeredInode": 7003, "rewriteAttemptByUid": 991 },
+      "expected": { "rewriteAllowed": false, "verifiedDigestChanged": false, "launchBinding": "execveat_verified_fd" }
+    },
+    {
+      "id": "d2.process.post-check-path-replacement-ignored",
+      "description": "A pathname replacement after verification cannot replace the already opened executable object.",
+      "given": { "verifiedFdInode": 7004, "verifiedFdDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "replacementPathInode": 7005, "replacementPathDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "replacementOccursAfterFdVerification": true },
+      "expected": { "pathResolvedAgain": false, "executedInode": 7004, "executedDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "replacementExecuted": false }
+    },
+    {
+      "id": "d2.process.argv-metacharacters-are-literal",
+      "description": "Shell metacharacters remain one literal argv value and never execute.",
+      "given": { "executable": "/opt/blackglass/fixtures/fake-exec", "argv": ["scan", "target.test;touch", "/tmp/fixture-owned"], "shell": false },
+      "expected": { "spawnExecutable": "/opt/blackglass/fixtures/fake-exec", "spawnArgv": ["scan", "target.test;touch", "/tmp/fixture-owned"], "sideEffectCreated": false }
+    },
+    {
+      "id": "d2.process.command-string-contract-rejected",
+      "description": "A command string or raw flags field is impossible in the process contract.",
+      "given": { "executable": "/opt/blackglass/fixtures/fake-exec", "command": "fake-exec target.test", "rawFlags": "--fixture" },
+      "error": { "code": "invalid_process_contract", "spawnCount": 0 }
+    },
+    {
+      "id": "d2.process.environment-denied",
+      "description": "Ambient and dangerous environment names are rejected.",
+      "given": { "requestedEnvironment": { "LD_PRELOAD": "/opt/blackglass/fixtures/fake-library", "HTTP_PROXY": "http://proxy.test", "UNDECLARED_FIXTURE": "value" }, "declaredNames": [] },
+      "error": { "code": "environment_variable_denied", "spawnCount": 0, "deniedNames": ["HTTP_PROXY", "LD_PRELOAD", "UNDECLARED_FIXTURE"] }
+    },
+    {
+      "id": "d2.process.minimal-environment",
+      "description": "The runner constructs a predictable environment instead of inheriting its service environment.",
+      "given": { "ambientInherited": false, "runDirectory": "/var/lib/blackglass-runner/runs/run-fixture-18" },
+      "expected": { "environment": { "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC", "PATH": "/usr/bin:/bin", "TMPDIR": "/var/lib/blackglass-runner/runs/run-fixture-18/tmp" } }
+    },
+    {
+      "id": "d2.process.cwd-escape-rejected",
+      "description": "Caller-controlled traversal cannot choose the working directory.",
+      "given": { "runnerRoot": "/var/lib/blackglass-runner/runs", "requestedCwd": "../outside", "generatedCwd": false },
+      "error": { "code": "working_directory_escape", "spawnCount": 0 }
+    },
+    {
+      "id": "d2.process.cancel-before-escalation",
+      "description": "A cooperative process group exits after SIGTERM without SIGKILL.",
+      "given": { "state": "cancel_requested", "processGroup": 4301, "termGraceMs": 5000, "killVerifyMs": 2000, "exitsAfterTermMs": 50 },
+      "expected": { "signals": ["SIGTERM"], "descendantsRemaining": 0, "terminalState": "cancelled" }
+    },
+    {
+      "id": "d2.process.cancel-escalates-and-cleans-descendants",
+      "description": "An uncooperative process and descendants receive bounded escalation.",
+      "given": { "state": "cancel_requested", "processGroup": 4302, "descendantCount": 3, "termGraceMs": 5000, "killVerifyMs": 2000, "exitsAfterTermMs": null },
+      "expected": { "signals": ["SIGTERM", "SIGKILL"], "descendantsRemaining": 0, "terminalState": "cancelled" }
+    },
+    {
+      "id": "d2.process.descendant-cleanup-failure",
+      "description": "Unverified cleanup fails the Run and stops new admission.",
+      "given": { "state": "cancel_requested", "processGroup": 4303, "descendantsAfterKill": 1, "killVerifyMs": 2000 },
+      "error": { "code": "process_cleanup_failed", "terminalState": "failed", "runnerHealthy": false, "newLeaseAllowed": false, "workingDirectoryQuarantined": true }
+    },
+    {
+      "id": "d2.process.duration-timeout",
+      "description": "A duration limit uses the same cleanup path but reports failure truthfully.",
+      "given": { "state": "running", "durationLimitMs": 60000, "elapsedMs": 60001, "cleanupVerified": true },
+      "expected": { "terminalState": "failed", "reason": "duration_exceeded", "partialEvidencePreserved": true }
+    },
+    {
+      "id": "d2.process.resource-defaults-and-ranges",
+      "description": "The d2-v1 finite defaults and host-bounded ranges are exact.",
+      "given": { "delegatedCgroupV2": true, "detectedHostMemoryBytes": 8589934592, "detectedLogicalCpuCount": 4 },
+      "expected": { "wallDurationMs": { "default": 1800000, "minimum": 1000, "maximum": 86400000 }, "memoryBytes": { "default": 536870912, "minimum": 16777216, "maximum": 8589934592 }, "processCount": { "default": 64, "minimum": 1, "maximum": 4096 }, "cpuMillicores": { "default": 1000, "minimum": 10, "maximum": 4000 } }
+    },
+    {
+      "id": "d2.process.resource-limit-out-of-range",
+      "description": "A finite control above the detected host bound fails planning instead of being clamped.",
+      "given": { "control": "memoryBytes", "requested": 17179869184, "detectedHostMaximum": 8589934592, "delegatedCgroupV2": true },
+      "error": { "code": "resource_limit_out_of_range", "effectiveValue": null, "clamped": false, "leaseAllowed": false }
+    },
+    {
+      "id": "d2.process.host-without-delegated-cgroup-rejected",
+      "description": "A host without delegated cgroup v2 cannot lease even controls enforceable outside a cgroup.",
+      "given": { "delegatedCgroupV2": false, "processGroupAvailable": true, "wallTimerAvailable": true, "boundedOutputAvailable": true },
+      "error": { "code": "runner_capability_unavailable", "missingCapability": "delegated_cgroup_v2", "leaseAllowed": false, "degradedModeSupported": false }
+    },
+    {
+      "id": "d2.process.resource-unlimited-supported",
+      "description": "Operator-selected null explicitly maps supported controls to unlimited.",
+      "given": { "delegatedCgroupV2": true, "operatorSelected": { "wallDurationMs": null, "memoryBytes": null, "processCount": null, "cpuMillicores": null, "fileSizeBytes": null, "openFiles": null } },
+      "expected": { "wallTimer": "disabled", "memoryMax": "max", "pidsMax": "max", "cpuMax": "max", "fileSize": "unlimited", "openFiles": "unlimited", "frozenInSnapshot": true }
+    },
+    {
+      "id": "d2.process.output-unlimited-rejected",
+      "description": "The bounded-output invariant rejects operator-selected unlimited output.",
+      "given": { "combinedRetainedOutputBytes": null },
+      "error": { "code": "resource_control_unsupported", "control": "combined_retained_output", "unlimitedSupported": false, "leaseAllowed": false }
+    },
+    {
+      "id": "d2.process.unsupported-finite-resource-control",
+      "description": "A finite limit cannot be silently ignored without delegated cgroup support.",
+      "given": { "delegatedCgroupV2": false, "requestedControl": "memory_limit", "requestedValueBytes": 268435456 },
+      "error": { "code": "resource_control_unsupported", "leaseAllowed": false, "limitReportedAsEnforced": false }
+    },
+    {
+      "id": "d2.process.unsupported-file-limit",
+      "description": "Finite file-size and open-file controls are explicitly unavailable in v0.1.",
+      "given": { "profile": "d2-v1", "requestedControls": { "fileSizeBytes": 1048576, "openFiles": 64 } },
+      "error": { "code": "resource_control_unsupported", "unsupported": ["file_size", "open_files"], "leaseAllowed": false }
+    },
+    {
+      "id": "d2.process.output-backpressure",
+      "description": "Unacknowledged output pauses reads at the high-water mark and uses bounded batches.",
+      "given": { "unacknowledgedBytes": 262144, "highWaterBytes": 262144, "batchBytes": 32768 },
+      "expected": { "pipeReadsPaused": true, "maximumBatchBytes": 32768, "memoryGrowthBounded": true }
+    },
+    {
+      "id": "d2.process.output-truncation",
+      "description": "Excess output is drained and counted without deadlocking the child.",
+      "given": { "combinedRetainedLimitBytes": 16777216, "stdout": { "inputBytesSeen": 17825792, "redactedBytesProduced": 17825792, "bytesRetained": 16777216 }, "stderr": { "inputBytesSeen": 1024, "redactedBytesProduced": 1024, "bytesRetained": 0 } },
+      "expected": { "stdout": { "inputBytesSeen": 17825792, "redactedBytesProduced": 17825792, "bytesRetained": 16777216, "bytesDropped": 1048576, "firstDroppedRedactedOffset": 16777216, "truncated": true }, "stderr": { "inputBytesSeen": 1024, "redactedBytesProduced": 1024, "bytesRetained": 0, "bytesDropped": 1024, "firstDroppedRedactedOffset": 0, "truncated": true }, "childPipeDrained": true, "exitStatusPreserved": true }
+    },
+    {
+      "id": "d2.process.output-redaction-before-buffer",
+      "description": "Synthetic credential markers are redacted before transport, logging, or evidence staging.",
+      "given": { "chunks": ["Authorization: [fixture-credential]", "--password=[fixture-password]", "ordinary fixture output"], "declaredSensitiveArgIndexes": [2] },
+      "expected": { "retainedChunks": ["Authorization: [REDACTED]", "--password=[REDACTED]", "ordinary fixture output"], "plaintextCredentialOccurrences": 0, "redactionBoundary": "before_transport_buffer" }
+    },
+    {
+      "id": "d2.process.redaction-every-chunk-boundary",
+      "description": "Every possible split of the same sensitive byte stream produces one identical redacted result.",
+      "given": { "input": "prefix--password=[fixture-value]suffix", "matchValue": "[fixture-value]", "splitOffsets": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38] },
+      "expected": { "outputForEverySplit": "prefix--password=[REDACTED]suffix", "distinctOutputs": 1, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-invalid-utf8-preserved",
+      "description": "Invalid UTF-8 surrounding a complete ASCII credential match remains byte-exact.",
+      "given": { "inputHex": "ff2d2d70617373776f72643d5b666978747572652d76616c75655dfe", "chunksHex": ["ff2d2d70617373776f", "72643d5b66697874757265", "2d76616c75655dfe"], "matchValueHex": "5b666978747572652d76616c75655d" },
+      "expected": { "outputHex": "ff2d2d70617373776f72643d5b52454441435445445dfe", "invalidUtf8BytesPreserved": [255, 254], "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-before-truncation-boundary",
+      "description": "A credential crossing the retained-output boundary is fully redacted before truncation.",
+      "given": { "input": "prefix--password=[fixture-value]suffix", "chunks": ["prefix--password=[fix", "ture-value]suffix"], "matchValue": "[fixture-value]", "retainedLimitBytes": 20 },
+      "expected": { "redactedStream": "prefix--password=[REDACTED]suffix", "retainedOutput": "prefix--password=[RE", "inputBytesSeen": 38, "redactedBytesProduced": 33, "bytesRetained": 20, "bytesDropped": 13, "firstDroppedRedactedOffset": 20, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-final-partial-frame",
+      "description": "A complete credential in a final unterminated frame is redacted and flushed at EOF.",
+      "given": { "chunks": ["status\n--pass", "word=[fixture-value]"], "matchValue": "[fixture-value]", "finalNewline": false },
+      "expected": { "output": "status\n--password=[REDACTED]", "finalFrameFlushed": true, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-prefix-delimiter-and-eof",
+      "description": "Common-prefix redaction preserves delimiters and quotes while discarding values through EOF.",
+      "given": { "chunks": ["Authorization: [fixture-value]\r", "\n--password=\"[fixture-value]\"\t--token=[fixture-value]"], "finalNewline": false },
+      "expected": { "output": "Authorization: [REDACTED]\r\n--password=\"[REDACTED]\"\t--token=[REDACTED]", "crlfPreserved": true, "quotesPreserved": true, "unterminatedValueDiscardedThroughEof": true, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-field-oversize",
+      "description": "A common-prefix value over 64 KiB remains discarded and records one bounded diagnostic.",
+      "given": { "prefix": "--password=", "valueTemplate": { "repeat": "x", "count": 65537 }, "terminatorHex": "0a", "chunks": 65 },
+      "expected": { "output": "--password=[REDACTED]\n", "diagnostic": "redaction_field_oversize", "diagnosticCount": 1, "discardedValueBytes": 65537, "plaintextValueBytesRetained": 0 }
+    },
+    {
+      "id": "d2.process.long-line-continuation-frames",
+      "description": "A redacted logical line over 64 KiB is split without loss before retained-output truncation.",
+      "given": { "redactedLineBytes": 131073, "lineTerminatorBytes": 1, "frameLimitBytes": 65536, "retainedOutputLimitBytes": 1048576 },
+      "expected": { "framePayloadBytes": [65536, 65536, 2], "continuationFlags": [true, true, false], "lineTerminatorInFinalFrame": true, "bytesDropped": 0, "runFailed": false }
+    },
+    {
+      "id": "d2.process.structured-frame-too-large",
+      "description": "A runner-control event larger than 64 KiB is rejected before append.",
+      "given": { "encodedFrameBytes": 65537, "frameLimitBytes": 65536, "frameKind": "runner_control_event" },
+      "error": { "code": "event_frame_too_large", "eventAppendCount": 0, "projectionWriteCount": 0, "runFailed": true }
+    },
+    {
+      "id": "d2.process.restart-stale-journal-boot-mismatch",
+      "description": "A journal from another Linux boot never signals its recorded numeric process identity.",
+      "given": { "journalBootId": "boot-fixture-a", "currentBootId": "boot-fixture-b", "journalledProcessId": 4401, "numericProcessIdCurrentlyExists": true },
+      "expected": { "journalDisposition": "stale_removed", "signalCount": 0, "workingDirectoryQuarantined": false, "terminalState": "failed", "terminalReason": "runner_restarted" }
+    },
+    {
+      "id": "d2.process.restart-pid-reuse-mismatch",
+      "description": "A reused PID with a different start identity or marker is never signalled.",
+      "given": { "bootIdMatches": true, "journalledProcessId": 4402, "journalledProcessStartTime": 91001, "liveProcessStartTime": 92002, "journalledCgroupPath": "/sys/fs/cgroup/blackglass/run-fixture-24-marker-b2", "liveCgroupPath": "/sys/fs/cgroup/other-fixture", "runMarkerMatches": false },
+      "error": { "code": "restart_identity_mismatch", "signalCount": 0, "journalQuarantined": true, "workingDirectoryQuarantined": true, "terminalState": "failed" }
+    },
+    {
+      "id": "d2.process.nmap-unprivileged-typed-argv",
+      "description": "The first Nmap profile deterministically builds unprivileged typed argv.",
+      "given": { "target": "192.0.2.10", "ports": [{ "from": 80, "to": 80 }, { "from": 443, "to": 443 }], "serviceDetection": true, "timingTemplate": "T4", "skipHostDiscovery": true, "versionIntensity": 7, "maximumRetries": 2, "xmlPath": "/var/lib/blackglass-runner/runs/run-fixture-19/nmap-xml" },
+      "expected": { "executableRegistryId": "nmap-fixture-v1", "argv": ["-sT", "-sV", "-T4", "-Pn", "--version-intensity", "7", "--max-retries", "2", "-p", "80,443", "-oX", "/var/lib/blackglass-runner/runs/run-fixture-19/nmap-xml", "192.0.2.10"], "shell": false, "rawSocketCapability": false }
+    },
+    {
+      "id": "d2.process.nmap-raw-flags-rejected",
+      "description": "Raw flags and caller-selected output paths are not representable.",
+      "given": { "target": "192.0.2.11", "rawFlags": ["--script", "fixture-script"], "outputPath": "/tmp/fixture-xml" },
+      "error": { "code": "invalid_nmap_action_contract", "spawnCount": 0 }
+    },
+    {
+      "id": "d2.process.nmap-privileged-mode-rejected",
+      "description": "Privileged scan modes cannot expand the baseline runner's authority.",
+      "given": { "target": "192.0.2.12", "requestedMode": "syn_scan", "runnerCapabilities": [] },
+      "error": { "code": "nmap_capability_unsupported", "spawnCount": 0, "sudoAttempted": false, "capabilityAdded": false }
+    }
+  ]
+}

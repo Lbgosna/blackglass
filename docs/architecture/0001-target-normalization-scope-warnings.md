@@ -111,10 +111,12 @@ An action has a lifetime budget of at most one warning interaction. Known pre-ru
 Continue is the primary path for every representable action. Its behavior is:
 
 - `Continue` records source `operator_continue` against the exact action and immutable snapshot hash, then queues or resumes without changing saved scope.
-- `Add to scope & run` explicitly commits a new immutable scope revision, rechecks the action exactly once, updates the same reason set, binds source `add_scope_and_run` to the post-recheck snapshot, and queues or resumes without a second prompt. The option is not required for execution.
+- Before queueing, `Add to scope & run` explicitly commits a new immutable scope revision, rechecks the action exactly once, updates the same reason set, binds source `add_scope_and_run` to the post-recheck snapshot, and queues without a second prompt. The option is not required for execution. A late execution warning offers Continue and Cancel; it cannot rewrite the already queued snapshot or its saved-scope context.
 - Engagement auto-continue records the same warning facts with source `engagement_policy` and queues or resumes without UI interruption.
 
-If no warning has been acknowledged and execution first discovers an outside-scope DNS or redirect destination, the action transitions to `paused_for_warning`. Closing the card, losing the UI, or waiting changes no state. There is no warning timeout. Explicit Continue resumes and explicit Cancel cancels.
+If no warning has been acknowledged and execution first discovers an outside-scope DNS or redirect destination, the destination and reason are durably recorded before any connection to it and the action transitions from `active` to `active_paused_for_warning`. The current Run remains `running` under its lease while the adapter cooperatively waits before connecting. Closing the card, losing the UI, or waiting changes no warning or lifecycle state. There is no warning timeout, and wall-duration accounting is suspended during this operator wait. Explicit Continue records the acknowledgment and resumes; explicit Cancel requests process cleanup and becomes terminal only after the runner reports its result.
+
+The planning state remains `paused_for_warning`; `active_paused_for_warning` is deliberately distinct so queue ownership, the immutable `queuedSnapshotVersion`, the live Run, and cleanup consequences remain truthful. D2 owns the exact Action/Run transitions, fencing, heartbeat, resume-directive, cancellation, and lease-expiry mechanics.
 
 If engagement auto-continue is active, a late condition records `engagement_policy` and continues without pausing. Once any acknowledgment exists, every later reason or destination appends to its warning record and evidence without another prompt or pause. The acknowledgment covers the full action across retry run attempts.
 
