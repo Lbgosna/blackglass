@@ -22,6 +22,12 @@
       "expected": { "acknowledgmentCount": 1, "queueCount": 1, "finalRevision": 5, "result": "stored_response_replayed" }
     },
     {
+      "id": "d2.idempotency.late-continue-replay",
+      "description": "An actively paused Continue replay binds one acknowledgment and one durable resume directive.",
+      "given": { "actionId": "action-fixture-11", "runId": "run-fixture-24", "actionState": "active_paused_for_warning", "key": "fixture-key-0007", "expectedRevision": 6, "queuedSnapshotVersion": 2, "snapshotDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444", "pendingEventId": 61, "replayCount": 3 },
+      "expected": { "acknowledgmentCount": 1, "resumeDirectiveCount": 1, "queueCount": 0, "finalActionState": "active", "finalRunState": "running", "result": "stored_response_replayed" }
+    },
+    {
       "id": "d2.idempotency.add-scope-transaction-replay",
       "description": "Scope revision, planning version, warning binding, and queueing commit atomically once.",
       "given": { "actionId": "action-fixture-7", "engagementId": "engagement-fixture-1", "key": "fixture-key-0004", "actionExpectedRevision": 2, "engagementExpectedRevision": 5, "replayCount": 2 },
@@ -74,6 +80,12 @@
       "description": "A mutation blocked beyond the timeout fails safely and remains replayable.",
       "given": { "blockedForMs": 5001, "busyTimeoutMs": 5000, "sameKeyCanReplay": true },
       "error": { "httpStatus": 503, "code": "storage_busy", "mutationCount": 0 }
+    },
+    {
+      "id": "d2.idempotency.runner-key-generation-and-outbox",
+      "description": "Runner mutation keys are random, domain-independent, and persisted with their request before transmission.",
+      "given": { "keyEntropyBits": 128, "keyLength": 22, "keyEncoding": "base64url", "derivedFromRunId": false, "derivedFromFence": false, "derivedFromEventSequence": false, "outboxFsyncedBeforeSend": true, "canonicalConcreteRoute": "/api/v1/runner/runs/run-fixture-31/events" },
+      "expected": { "accepted": true, "sameMutationRetryReusesKey": true, "differentMutationUsesFreshKey": true, "outboxRemovedAfterDefinitiveResponse": true, "collisionResult": "idempotency_conflict" }
     }
   ]
 }

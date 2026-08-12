@@ -34,6 +34,12 @@
       "expected": { "newLeaseId": "lease-fixture-4", "newFence": 4, "state": "leased", "priorLeaseCurrent": false }
     },
     {
+      "id": "d2.lease.fencing-exhausted-fails-before-lease",
+      "description": "The signed 64-bit fence cannot wrap or create a lease after its maximum value.",
+      "given": { "actionId": "action-fixture-18", "actionState": "queued", "runId": "run-fixture-33", "runState": "queued", "currentFence": "9223372036854775807", "leaseRequested": true },
+      "error": { "code": "fencing_exhausted", "actionState": "failed", "runState": "failed", "leaseCreated": false, "fenceWrapped": false, "terminalWriteCount": 1 }
+    },
+    {
       "id": "d2.lease.running-expiry-fails",
       "description": "A running action is not silently repeated after runner loss.",
       "given": { "runId": "run-fixture-11", "state": "running", "fence": 4, "expiredByMs": 1 },
@@ -64,6 +70,36 @@
       "error": { "httpStatus": 409, "code": "lease_expired", "eventAppendCount": 0, "stateChanged": false }
     },
     {
+      "id": "d2.lease.owner-mismatch-rejected",
+      "description": "Another runner identity or session cannot mutate a current lease.",
+      "given": { "runId": "run-fixture-34", "leaseId": "lease-fixture-12", "fence": 25, "currentRunnerId": "runner-fixture-1", "presentedRunnerId": "runner-fixture-2", "currentSessionId": "session-fixture-7", "presentedSessionId": "session-fixture-8", "sequence": 2 },
+      "error": { "httpStatus": 403, "code": "lease_owner_mismatch", "eventAppendCount": 0, "stateChanged": false, "presentedRunnerCleanupRequired": true }
+    },
+    {
+      "id": "d2.lease.partitioned-runner-self-fences",
+      "description": "An alive runner without an accepted renewal cleans its process tree by its conservative monotonic deadline.",
+      "given": { "runId": "run-fixture-35", "runState": "running", "leaseDurationSeconds": 30, "heartbeatRequestSentMonotonicMs": 10000, "renewalAccepted": false, "cleanupWindowSeconds": 7, "termGraceSeconds": 5, "killVerificationSeconds": 2 },
+      "expected": { "cleanupStartsMonotonicMs": 33000, "localFenceDeadlineMonotonicMs": 40000, "newConnectionsAfterCleanupStart": 0, "descendantsAtDeadline": 0, "serverCompletionAssumedAccepted": false }
+    },
+    {
+      "id": "d2.lease.cancel-requested-expiry-fails",
+      "description": "Lease loss during cancellation fails truthfully instead of claiming verified cleanup.",
+      "given": { "actionId": "action-fixture-19", "actionState": "active", "runId": "run-fixture-36", "runState": "cancel_requested", "fence": 26, "expiredByMs": 1, "cleanupVerified": false },
+      "expected": { "actionState": "failed", "runState": "failed", "reason": "runner_lost_during_cancel", "terminalClaim": "failed", "cancelledClaimed": false, "partialEvidencePreserved": true }
+    },
+    {
+      "id": "d2.lease.paused-running-expiry-fails",
+      "description": "An actively paused running lease still expires and fails without silently repeating work.",
+      "given": { "actionId": "action-fixture-16", "actionState": "active_paused_for_warning", "runId": "run-fixture-29", "runState": "running", "leaseId": "lease-fixture-9", "fence": 22, "expiredByMs": 1, "pendingEventId": 69 },
+      "expected": { "actionState": "failed", "runState": "failed", "reason": "runner_lost", "automaticallyRequeued": false, "pendingEvidencePreserved": true, "resumeDirectiveCreated": false }
+    },
+    {
+      "id": "d2.event.stale-late-destination-cannot-pause",
+      "description": "A late-destination event from a superseded fence cannot append pending evidence or pause the Action.",
+      "given": { "actionId": "action-fixture-17", "actionState": "active", "runId": "run-fixture-30", "runState": "running", "leaseId": "lease-fixture-10", "presentedFence": 22, "currentFence": 23, "sequence": 1, "eventType": "late_destination_pending", "pendingDestination": { "origin": "https://other.test:443", "resolvedAddress": "192.0.2.64" } },
+      "error": { "httpStatus": 409, "code": "stale_fence", "eventAppendCount": 0, "pendingEvidenceAppendCount": 0, "actionState": "active", "warningInteractions": 0, "resumeDirectiveCount": 0 }
+    },
+    {
       "id": "d2.event.identical-sequence-replay",
       "description": "An identical fenced event replay returns the previously assigned event ID.",
       "given": { "runId": "run-fixture-14", "fence": 9, "sequence": 2, "eventDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "replayDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
@@ -80,6 +116,12 @@
       "description": "Per-fence client event sequences are contiguous from one.",
       "given": { "runId": "run-fixture-16", "fence": 11, "lastAcceptedSequence": 2, "presentedSequence": 4 },
       "error": { "httpStatus": 409, "code": "event_sequence_gap", "expectedSequence": 3, "eventAppendCount": 0 }
+    },
+    {
+      "id": "d2.event.completion-shares-event-sequence",
+      "description": "Completion consumes the next sequence in the same per-fence stream as event batches.",
+      "given": { "runId": "run-fixture-37", "fence": 27, "acceptedEventSequences": [1, 2, 3], "completionSequence": 4, "heartbeatSequences": [1, 2, 3, 4, 5] },
+      "expected": { "completionAccepted": true, "completionEventId": 70, "nextEventSequence": 5, "heartbeatCounterAffected": false, "terminalWriteCount": 1 }
     },
     {
       "id": "d2.event.duplicate-completion-no-duplicates",

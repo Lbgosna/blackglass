@@ -129,11 +129,12 @@
       "description": "The first late outside-scope destination consumes the one interaction when no acknowledgment exists.",
       "given": {
         "actionId": "action-late",
-        "actionState": "running",
+        "actionState": "active",
+        "runState": "running",
         "warningAcknowledgment": null,
         "engagementAutoContinue": false,
         "event": {
-          "type": "redirect_destination_discovered",
+          "type": "late_destination_pending",
           "destination": {
             "origin": "https://other.test:443",
             "resolvedAddress": "192.0.2.41"
@@ -142,7 +143,10 @@
         }
       },
       "expected": {
-        "actionState": "paused_for_warning",
+        "actionState": "active_paused_for_warning",
+        "runState": "running",
+        "connectionAllowed": false,
+        "pendingEvidenceAppended": true,
         "warningInteractions": 1,
         "warningCard": {
           "reasonCodes": ["outside_scope"],
@@ -156,12 +160,14 @@
       "description": "Closing or losing the warning UI does not acknowledge or change execution state.",
       "given": {
         "actionId": "action-ui-loss",
-        "actionState": "paused_for_warning",
+        "actionState": "active_paused_for_warning",
+        "runState": "running",
         "warningAcknowledgment": null,
         "event": { "type": "ui_disconnected" }
       },
       "expected": {
-        "actionState": "paused_for_warning",
+        "actionState": "active_paused_for_warning",
+        "runState": "running",
         "warningAcknowledgment": null,
         "queued": false,
         "resumed": false,
@@ -173,14 +179,18 @@
       "description": "Elapsed time does not implicitly accept, resume, queue, or cancel a warning.",
       "given": {
         "actionId": "action-no-timeout",
-        "actionState": "paused_for_warning",
+        "actionState": "active_paused_for_warning",
+        "runState": "running",
         "warningAcknowledgment": null,
         "event": { "type": "time_elapsed", "durationSeconds": 86400 }
       },
       "expected": {
-        "actionState": "paused_for_warning",
+        "actionState": "active_paused_for_warning",
+        "runState": "running",
         "warningAcknowledgment": null,
-        "timeoutScheduled": false
+        "timeoutScheduled": false,
+        "wallDurationAccounting": "suspended",
+        "heartbeatsRequired": true
       }
     },
     {
@@ -188,7 +198,8 @@
       "description": "Explicit Continue resumes execution after a late warning.",
       "given": {
         "actionId": "action-late-continue",
-        "actionState": "paused_for_warning",
+        "actionState": "active_paused_for_warning",
+        "runState": "running",
         "snapshotHash": "sha256:fixture-snapshot-late-continue",
         "scopeRevisionId": "scope-revision-7",
         "pendingReasonCodes": ["outside_scope"],
@@ -199,9 +210,13 @@
         "event": { "type": "continue", "at": "2026-08-09T12:13:00.000Z" }
       },
       "expected": {
-        "actionState": "running",
+        "actionState": "active",
+        "runState": "running",
+        "resumeDirectiveCreated": true,
         "warningInteractions": 1,
         "acknowledgment": {
+          "actionId": "action-late-continue",
+          "scopeRevisionId": "scope-revision-7",
           "source": "operator_continue",
           "snapshotHash": "sha256:fixture-snapshot-late-continue",
           "reasonCodes": ["outside_scope"],
@@ -213,17 +228,21 @@
     },
     {
       "id": "d1.warning.late-cancel-cancels",
-      "description": "Explicit Cancel terminates a late paused action without acknowledging it.",
+      "description": "Explicit Cancel requests cleanup for a late paused action without acknowledging it.",
       "given": {
         "actionId": "action-late-cancel",
-        "actionState": "paused_for_warning",
+        "actionState": "active_paused_for_warning",
+        "runState": "running",
         "warningAcknowledgment": null,
         "event": { "type": "cancel" }
       },
       "expected": {
-        "actionState": "cancelled",
+        "actionState": "active_paused_for_warning",
+        "runState": "cancel_requested",
+        "cleanupRequired": true,
         "warningAcknowledgment": null,
-        "resumed": false
+        "resumed": false,
+        "terminal": false
       }
     },
     {
@@ -231,20 +250,22 @@
       "description": "A first late reason under engagement policy records facts and keeps running.",
       "given": {
         "actionId": "action-auto-late",
-        "actionState": "running",
+        "actionState": "active",
+        "runState": "running",
         "snapshotHash": "sha256:fixture-snapshot-auto-late",
         "scopeRevisionId": "scope-revision-7",
         "warningAcknowledgment": null,
         "engagementAutoContinue": true,
         "event": {
-          "type": "dns_destination_discovered",
+          "type": "late_destination_pending",
           "destination": { "hostname": "other.test", "address": "192.0.2.41" },
           "scopeMatch": false,
           "at": "2026-08-09T12:14:00.000Z"
         }
       },
       "expected": {
-        "actionState": "running",
+        "actionState": "active",
+        "runState": "running",
         "warningInteractions": 0,
         "acknowledgment": {
           "source": "engagement_policy",
@@ -259,7 +280,8 @@
       "description": "Later reasons and destinations append to the record without another pause.",
       "given": {
         "actionId": "action-covered-late",
-        "actionState": "running",
+        "actionState": "active",
+        "runState": "running",
         "warningAcknowledgment": {
           "source": "operator_continue",
           "snapshotHash": "sha256:fixture-snapshot-covered-late",
@@ -267,7 +289,7 @@
           "coveredDestinations": []
         },
         "event": {
-          "type": "redirect_destination_discovered",
+          "type": "late_destination_pending",
           "destination": {
             "origin": "https://third.test:443",
             "resolvedAddress": "192.0.2.42"
@@ -276,7 +298,7 @@
         }
       },
       "expected": {
-        "actionState": "running",
+        "actionState": "active",
         "warningInteractions": 0,
         "snapshotMutated": false,
         "coveredDestinationAppended": {

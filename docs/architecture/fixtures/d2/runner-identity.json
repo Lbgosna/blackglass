@@ -62,6 +62,18 @@
       "description": "A lease is withheld when its pinned action needs an unenforceable capability.",
       "given": { "protocol": "runner-control-v1", "requiredCapability": "memory_limit", "advertisedCapabilities": ["duration_limit", "bounded_output", "process_group_cancel"] },
       "error": { "code": "runner_capability_unavailable", "leaseAllowed": false }
+    },
+    {
+      "id": "d2.runner.event-schema-unsupported",
+      "description": "An unknown runner event schema is rejected before lease event state can change.",
+      "given": { "protocol": "runner-control-v1", "supportedEventSchemas": ["runner-event-v1"], "presentedEventSchema": "runner-event-v2" },
+      "error": { "httpStatus": 422, "code": "event_schema_unsupported", "eventAppendCount": 0, "leaseCreated": false }
+    },
+    {
+      "id": "d2.runner.handshake-reports-abandoned-journals",
+      "description": "A restarted runner reports bounded cleanup dispositions in its mandatory pre-lease handshake.",
+      "given": { "newSessionId": "session-fixture-6", "handshakeComplete": false, "abandonedJournalReports": [{ "runId": "run-fixture-32", "leaseId": "lease-fixture-11", "fence": 24, "priorSessionId": "session-fixture-5", "cleanupDisposition": "verified_clean", "reason": "runner_restarted" }], "reportLimit": 1024 },
+      "expected": { "transport": "runner_control_handshake", "reportsAccepted": 1, "terminalReason": "runner_restarted", "newLeaseAllowedAfterHandshake": true, "oldLeaseAdopted": false }
     }
   ]
 }

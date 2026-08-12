@@ -7,12 +7,13 @@
       "id": "d2.state.action-transition-matrix",
       "description": "The listed Action edges are valid and every other ordered state pair is invalid.",
       "given": {
-        "states": ["planning", "paused_for_warning", "queued", "active", "succeeded", "failed", "cancelled", "capability_error"],
+        "states": ["planning", "paused_for_warning", "queued", "active", "active_paused_for_warning", "succeeded", "failed", "cancelled", "capability_error"],
         "validEdges": [
           ["planning", "paused_for_warning"], ["planning", "queued"], ["planning", "capability_error"], ["planning", "cancelled"],
           ["paused_for_warning", "planning"], ["paused_for_warning", "queued"], ["paused_for_warning", "cancelled"],
-          ["queued", "active"], ["queued", "cancelled"],
-          ["active", "queued"], ["active", "succeeded"], ["active", "failed"], ["active", "cancelled"],
+          ["queued", "active"], ["queued", "cancelled"], ["queued", "failed"],
+          ["active", "queued"], ["active", "active_paused_for_warning"], ["active", "succeeded"], ["active", "failed"], ["active", "cancelled"],
+          ["active_paused_for_warning", "active"], ["active_paused_for_warning", "failed"], ["active_paused_for_warning", "cancelled"],
           ["failed", "queued"], ["cancelled", "queued"]
         ],
         "invalidRule": "every_ordered_pair_not_in_valid_edges_including_same_state"
@@ -25,7 +26,7 @@
       "given": {
         "states": ["queued", "leased", "running", "cancel_requested", "succeeded", "failed", "cancelled"],
         "validEdges": [
-          ["queued", "leased"], ["queued", "cancelled"],
+          ["queued", "leased"], ["queued", "cancelled"], ["queued", "failed"],
           ["leased", "queued"], ["leased", "running"], ["leased", "cancel_requested"], ["leased", "failed"],
           ["running", "cancel_requested"], ["running", "succeeded"], ["running", "failed"],
           ["cancel_requested", "cancelled"], ["cancel_requested", "failed"]
@@ -36,9 +37,51 @@
     },
     {
       "id": "d2.state.d1-warning-and-capability-routing",
-      "description": "D1 warning remains runnable while representability failure never enters warning flow.",
-      "given": { "representableWithWarning": true, "continueAvailable": true, "unrepresentable": true },
-      "expected": { "warningState": "paused_for_warning", "continuedState": "queued", "unrepresentableState": "capability_error" }
+      "description": "D1 pre-run and late warnings remain runnable while representability failure never enters warning flow.",
+      "given": { "representablePreRunWarning": true, "representableLateWarning": true, "continueAvailable": true, "unrepresentable": true },
+      "expected": { "preRunWarningState": "paused_for_warning", "preRunContinuedState": "queued", "lateWarningState": "active_paused_for_warning", "lateContinuedState": "active", "unrepresentableState": "capability_error" }
+    },
+    {
+      "id": "d2.state.late-warning-pauses-before-connect",
+      "description": "A current fenced late-destination event durably pauses the Action before the adapter connects while the Run remains live.",
+      "given": { "actionId": "action-fixture-11", "actionState": "active", "runId": "run-fixture-24", "runState": "running", "leaseId": "lease-fixture-8", "fence": 17, "sequence": 5, "queuedSnapshotVersion": 2, "snapshotDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444", "warningAcknowledgment": null, "engagementAutoContinue": false, "pendingDestination": { "origin": "https://other.test:443", "resolvedAddress": "192.0.2.61" }, "reasonCodes": ["outside_scope"], "connectionAttempted": false },
+      "expected": { "actionState": "active_paused_for_warning", "runState": "running", "pendingEventId": 61, "pendingEvidenceAppendCount": 1, "warningInteractions": 1, "connectionAllowed": false, "leaseCurrent": true, "heartbeatsRequired": true, "savedScopeChanged": false, "queuedSnapshotChanged": false }
+    },
+    {
+      "id": "d2.state.late-continue-binds-context-and-resumes",
+      "description": "Continue binds the exact pending event and immutable queued snapshot then creates one durable resume directive.",
+      "given": { "actionId": "action-fixture-11", "actionState": "active_paused_for_warning", "runId": "run-fixture-24", "runState": "running", "expectedRevision": 6, "queuedSnapshotVersion": 2, "snapshotDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444", "scopeRevisionId": "scope-revision-fixture-2", "pendingEventId": 61, "pendingDestination": { "origin": "https://other.test:443", "resolvedAddress": "192.0.2.61" }, "reasonCodes": ["outside_scope"], "source": "operator_continue" },
+      "expected": { "actionState": "active", "runState": "running", "acknowledgment": { "actionId": "action-fixture-11", "queuedSnapshotVersion": 2, "snapshotDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444", "scopeRevisionId": "scope-revision-fixture-2", "pendingEventId": 61, "knownAdditions": [{ "origin": "https://other.test:443", "resolvedAddress": "192.0.2.61" }], "reasonCodes": ["outside_scope"], "source": "operator_continue" }, "acknowledgmentCount": 1, "resumeDirective": { "directiveId": "directive-fixture-1", "kind": "resume", "runId": "run-fixture-24", "fence": 17, "pendingEventId": 61 }, "resumeDirectiveCount": 1, "savedScopeChanged": false, "queuedSnapshotChanged": false }
+    },
+    {
+      "id": "d2.state.late-auto-continue-never-pauses",
+      "description": "Engagement auto-continue acknowledges the pending context in the event transaction and permits the connection without a pause.",
+      "given": { "actionId": "action-fixture-12", "actionState": "active", "runId": "run-fixture-25", "runState": "running", "fence": 18, "sequence": 7, "warningAcknowledgment": null, "engagementAutoContinue": true, "pendingDestination": { "hostname": "other.test", "address": "192.0.2.62" }, "reasonCodes": ["outside_scope"] },
+      "expected": { "actionState": "active", "runState": "running", "eventResponse": "continue", "warningInteractions": 0, "acknowledgmentSource": "engagement_policy", "pendingEvidenceAppendCount": 1, "connectionAllowed": true, "savedScopeChanged": false }
+    },
+    {
+      "id": "d2.state.late-covered-destination-appends-without-pause",
+      "description": "A later destination under an existing acknowledgment appends context without consuming another interaction.",
+      "given": { "actionId": "action-fixture-13", "actionState": "active", "runId": "run-fixture-26", "runState": "running", "fence": 19, "sequence": 8, "warningAcknowledgmentId": "warning-fixture-2", "pendingDestination": { "origin": "https://third.test:443", "resolvedAddress": "192.0.2.63" } },
+      "expected": { "actionState": "active", "runState": "running", "eventResponse": "continue", "warningInteractions": 0, "coveredDestinationAppendCount": 1, "connectionAllowed": true, "queuedSnapshotChanged": false }
+    },
+    {
+      "id": "d2.state.late-cancel-awaits-cleanup",
+      "description": "Cancel requests cleanup but does not claim a terminal Action while the paused process remains live.",
+      "given": { "actionId": "action-fixture-14", "actionState": "active_paused_for_warning", "runId": "run-fixture-27", "runState": "running", "warningAcknowledgment": null, "operatorCancel": true },
+      "expected": { "actionState": "active_paused_for_warning", "runState": "cancel_requested", "cleanupRequired": true, "terminal": false, "acknowledgmentCount": 0, "resumeDirectiveCount": 0 }
+    },
+    {
+      "id": "d2.state.late-cancel-cleanup-completes",
+      "description": "A paused cancellation becomes terminal only after fenced cleanup verification.",
+      "given": { "actionId": "action-fixture-14", "actionState": "active_paused_for_warning", "runId": "run-fixture-27", "runState": "cancel_requested", "fence": 20, "sequence": 9, "cleanupVerified": true, "pendingEventId": 67 },
+      "expected": { "actionState": "cancelled", "runState": "cancelled", "terminalWriteCount": 1, "pendingEvidencePreserved": true, "warningAcknowledgment": null }
+    },
+    {
+      "id": "d2.state.late-cancel-cleanup-failure",
+      "description": "Failed cleanup truthfully fails the paused Action and preserves its pending evidence.",
+      "given": { "actionId": "action-fixture-15", "actionState": "active_paused_for_warning", "runId": "run-fixture-28", "runState": "cancel_requested", "fence": 21, "sequence": 10, "cleanupVerified": false, "pendingEventId": 68 },
+      "expected": { "actionState": "failed", "runState": "failed", "terminalReason": "process_cleanup_failed", "pendingEvidencePreserved": true, "workingDirectoryQuarantined": true }
     },
     {
       "id": "d2.state.add-scope-appends-planning-version",

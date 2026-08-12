@@ -243,7 +243,7 @@
     },
     {
       "id": "d1.snapshot.late-destination-appends-without-mutation",
-      "description": "A destination discovered during execution is appended outside the immutable snapshot.",
+      "description": "A destination discovered during execution is appended as pending evidence outside the immutable snapshot.",
       "given": {
         "snapshotHash": "sha256:fixture-snapshot-late",
         "lateDestination": {
@@ -255,7 +255,7 @@
       "expected": {
         "snapshotHash": "sha256:fixture-snapshot-late",
         "snapshotMutated": false,
-        "coveredDestinationAppended": true,
+        "pendingDestinationAppended": true,
         "eventEvidenceAppended": true
       }
     },

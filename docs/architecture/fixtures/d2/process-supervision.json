@@ -112,6 +112,12 @@
       "expected": { "wallDurationMs": { "default": 1800000, "minimum": 1000, "maximum": 86400000 }, "memoryBytes": { "default": 536870912, "minimum": 16777216, "maximum": 8589934592 }, "processCount": { "default": 64, "minimum": 1, "maximum": 4096 }, "cpuMillicores": { "default": 1000, "minimum": 10, "maximum": 4000 } }
     },
     {
+      "id": "d2.process.resource-limit-out-of-range",
+      "description": "A finite control above the detected host bound fails planning instead of being clamped.",
+      "given": { "control": "memoryBytes", "requested": 17179869184, "detectedHostMaximum": 8589934592, "delegatedCgroupV2": true },
+      "error": { "code": "resource_limit_out_of_range", "effectiveValue": null, "clamped": false, "leaseAllowed": false }
+    },
+    {
       "id": "d2.process.resource-unlimited-supported",
       "description": "Operator-selected null explicitly maps supported controls to unlimited.",
       "given": { "delegatedCgroupV2": true, "operatorSelected": { "wallDurationMs": null, "memoryBytes": null, "processCount": null, "cpuMillicores": null, "fileSizeBytes": null, "openFiles": null } },
@@ -176,6 +182,30 @@
       "description": "A complete credential in a final unterminated frame is redacted and flushed at EOF.",
       "given": { "chunks": ["status\n--pass", "word=[fixture-value]"], "matchValue": "[fixture-value]", "finalNewline": false },
       "expected": { "output": "status\n--password=[REDACTED]", "finalFrameFlushed": true, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-prefix-delimiter-and-eof",
+      "description": "Common-prefix redaction preserves delimiters and quotes while discarding values through EOF.",
+      "given": { "chunks": ["Authorization: [fixture-value]\r", "\n--password=\"[fixture-value]\"\t--token=[fixture-value]"], "finalNewline": false },
+      "expected": { "output": "Authorization: [REDACTED]\r\n--password=\"[REDACTED]\"\t--token=[REDACTED]", "crlfPreserved": true, "quotesPreserved": true, "unterminatedValueDiscardedThroughEof": true, "plaintextCredentialOccurrences": 0 }
+    },
+    {
+      "id": "d2.process.redaction-field-oversize",
+      "description": "A common-prefix value over 64 KiB remains discarded and records one bounded diagnostic.",
+      "given": { "prefix": "--password=", "valueTemplate": { "repeat": "x", "count": 65537 }, "terminatorHex": "0a", "chunks": 65 },
+      "expected": { "output": "--password=[REDACTED]\n", "diagnostic": "redaction_field_oversize", "diagnosticCount": 1, "discardedValueBytes": 65537, "plaintextValueBytesRetained": 0 }
+    },
+    {
+      "id": "d2.process.long-line-continuation-frames",
+      "description": "A redacted logical line over 64 KiB is split without loss before retained-output truncation.",
+      "given": { "redactedLineBytes": 131073, "lineTerminatorBytes": 1, "frameLimitBytes": 65536, "retainedOutputLimitBytes": 1048576 },
+      "expected": { "framePayloadBytes": [65536, 65536, 2], "continuationFlags": [true, true, false], "lineTerminatorInFinalFrame": true, "bytesDropped": 0, "runFailed": false }
+    },
+    {
+      "id": "d2.process.structured-frame-too-large",
+      "description": "A runner-control event larger than 64 KiB is rejected before append.",
+      "given": { "encodedFrameBytes": 65537, "frameLimitBytes": 65536, "frameKind": "runner_control_event" },
+      "error": { "code": "event_frame_too_large", "eventAppendCount": 0, "projectionWriteCount": 0, "runFailed": true }
     },
     {
       "id": "d2.process.restart-stale-journal-boot-mismatch",
