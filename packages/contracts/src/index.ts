@@ -1,4 +1,5 @@
 export { HealthResponseSchema, type HealthResponse } from "./health.js";
+export * from "./action-api.js";
 export * from "./action-planning.js";
 export * from "./action-persistence.js";
 export * from "./action-snapshot.js";
