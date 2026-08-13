@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ActionSnapshot, WarningContextAddition } from "@blackglass/contracts";
+import {
+  MAX_CANONICAL_JSON_BYTES,
+  type ActionSnapshot,
+  type WarningContextAddition,
+} from "@blackglass/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { bindActionSnapshot } from "./action-snapshot.js";
@@ -400,7 +404,6 @@ describe("action persistence foundation", () => {
         engagementId: engagement.id,
         actionId: "action-late-auto",
         expectedRevision: autoLateActivated.value.revision,
-        runState: "running",
         snapshotVersion: 1,
         snapshotBinding: autoLateQueued.action.snapshots[0]?.binding,
         reasonCodes: ["outside_scope"],
@@ -438,7 +441,6 @@ describe("action persistence foundation", () => {
       engagementId: engagement.id,
       actionId: "action-late",
       expectedRevision: activated.value.revision,
-      runState: "running",
       snapshotVersion: 1,
       snapshotBinding: queued.action.snapshots[0]?.binding,
       reasonCodes: ["outside_scope"],
@@ -472,7 +474,6 @@ describe("action persistence foundation", () => {
       engagementId: engagement.id,
       actionId: "action-covered",
       expectedRevision: activated.value.revision,
-      runState: "running",
       snapshotVersion: 1,
       snapshotBinding: snapshot.binding,
       reasonCodes: ["outside_scope"],
@@ -507,7 +508,6 @@ describe("action persistence foundation", () => {
       engagementId: engagement.id,
       actionId: "action-covered",
       expectedRevision: continued.value.revision,
-      runState: "running",
       snapshotVersion: 1,
       snapshotBinding: snapshot.binding,
       reasonCodes: ["outside_scope", "risk_tier_t2"],
@@ -1122,7 +1122,6 @@ describe("action persistence foundation", () => {
       engagementId: engagement.id,
       actionId: "action-forge-late",
       expectedRevision: activated.value.revision,
-      runState: "running",
       snapshotVersion: 1,
       snapshotBinding: queued.action.snapshots[0]?.binding,
       reasonCodes: ["outside_scope"],
@@ -1136,21 +1135,357 @@ describe("action persistence foundation", () => {
       error: { code: "invalid_repository_input" },
     });
     expect(JSON.stringify(forgedLate)).not.toContain("engagementAutoContinue");
-    const pausedLate = repository.recordLateWarning({
+    const forgedRunState = repository.recordLateWarning({
       engagementId: engagement.id,
       actionId: "action-forge-late",
       expectedRevision: activated.value.revision,
-      runState: "running",
       snapshotVersion: 1,
       snapshotBinding: queued.action.snapshots[0]?.binding,
       reasonCodes: ["outside_scope"],
       addition: lateAddition,
       pendingEventId: 4,
+      runState: "running",
       occurredAt: "2026-08-12T12:31:00.000Z",
+    });
+    expect(forgedRunState).toEqual({
+      ok: false,
+      error: { code: "invalid_repository_input" },
+    });
+    expect(JSON.stringify(forgedRunState)).not.toContain("runState");
+    const pausedLate = repository.recordLateWarning({
+      engagementId: engagement.id,
+      actionId: "action-forge-late",
+      expectedRevision: activated.value.revision,
+      snapshotVersion: 1,
+      snapshotBinding: queued.action.snapshots[0]?.binding,
+      reasonCodes: ["outside_scope"],
+      addition: lateAddition,
+      pendingEventId: 4,
+      occurredAt: "2026-08-12T12:32:00.000Z",
     });
     expect(pausedLate).toMatchObject({
       ok: true,
       value: { action: { state: "active_paused_for_warning" } },
+    });
+  });
+
+  it("persists and reloads a capability error without a queued snapshot", () => {
+    const { repository } = createFixture();
+    const engagement = createEngagement(repository);
+    const snapshot = boundSnapshot({
+      actionId: "action-capability",
+      snapshotId: "snapshot-capability",
+    });
+    const persisted = persistPlan(repository, engagement.id, snapshot, {
+      representable: false,
+      capabilityErrorCode: "required_resolution_unavailable",
+    });
+    expect(persisted.action).toMatchObject({
+      state: "capability_error",
+      queuedSnapshotVersion: null,
+      capabilityErrorCode: "required_resolution_unavailable",
+      warningAcknowledgment: null,
+    });
+    expect(repository.getAction(engagement.id, "action-capability")).toEqual({
+      ok: true,
+      value: persisted,
+    });
+    expect(
+      repository.continueAction({
+        engagementId: engagement.id,
+        actionId: "action-capability",
+        expectedRevision: persisted.revision,
+        snapshotVersion: 1,
+        snapshotBinding: snapshot.binding,
+        occurredAt: "2026-08-12T12:33:00.000Z",
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "capability_error_not_overridable" },
+    });
+  });
+
+  it("cancels persisted paused-for-warning and queued actions", () => {
+    const { repository } = createFixture();
+    const engagement = createEngagement(repository);
+
+    const paused = persistPlan(
+      repository,
+      engagement.id,
+      boundSnapshot({
+        actionId: "action-cancel-paused",
+        snapshotId: "snapshot-cancel-paused",
+        warningState: {
+          reasonCodes: ["outside_scope"],
+          knownAdditions: [],
+          acknowledgment: null,
+        },
+      }),
+    );
+    expect(paused.action.state).toBe("paused_for_warning");
+    expect(
+      repository.cancelAction({
+        engagementId: engagement.id,
+        actionId: "action-cancel-paused",
+        expectedRevision: paused.revision,
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        action: {
+          state: "cancelled",
+          pendingWarning: null,
+          queuedSnapshotVersion: null,
+        },
+      },
+    });
+    expect(repository.getAction(engagement.id, "action-cancel-paused")).toMatchObject({
+      ok: true,
+      value: { action: { state: "cancelled", pendingWarning: null } },
+    });
+
+    const queued = persistPlan(
+      repository,
+      engagement.id,
+      boundSnapshot({
+        actionId: "action-cancel-queued",
+        snapshotId: "snapshot-cancel-queued",
+      }),
+    );
+    expect(queued.action.state).toBe("queued");
+    expect(
+      repository.cancelAction({
+        engagementId: engagement.id,
+        actionId: "action-cancel-queued",
+        expectedRevision: queued.revision,
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: { action: { state: "cancelled", queuedSnapshotVersion: 1 } },
+    });
+    expect(repository.getAction(engagement.id, "action-cancel-queued")).toMatchObject({
+      ok: true,
+      value: { action: { state: "cancelled" } },
+    });
+  });
+
+  it("reloads retry context from a failed queued action", () => {
+    const { database, repository } = createFixture();
+    const engagement = createEngagement(repository);
+    const snapshot = boundSnapshot({
+      actionId: "action-failed-retry",
+      snapshotId: "snapshot-failed-retry",
+      warningState: {
+        reasonCodes: ["outside_scope"],
+        knownAdditions: [],
+        acknowledgment: null,
+      },
+    });
+    const paused = persistPlan(repository, engagement.id, snapshot);
+    const queued = repository.continueAction({
+      engagementId: engagement.id,
+      actionId: "action-failed-retry",
+      expectedRevision: paused.revision,
+      snapshotVersion: 1,
+      snapshotBinding: snapshot.binding,
+      occurredAt: "2026-08-12T12:34:00.000Z",
+    });
+    if (!queued.ok) throw new Error(queued.error.code);
+    database.sqlite
+      .prepare("update actions set state = 'failed' where id = ?")
+      .run("action-failed-retry");
+    const reloaded = repository.getAction(engagement.id, "action-failed-retry");
+    if (!reloaded.ok) throw new Error(reloaded.error.code);
+    expect(reloaded.value.action.state).toBe("failed");
+    expect(repository.retryActionContext(engagement.id, "action-failed-retry")).toEqual({
+      ok: true,
+      value: {
+        actionId: "action-failed-retry",
+        snapshotId: "snapshot-failed-retry",
+        snapshotVersion: 1,
+        snapshotBinding: snapshot.binding,
+        warningAcknowledgment: reloaded.value.action.warningAcknowledgment,
+        warningAcknowledgmentId: reloaded.value.warningAcknowledgmentId,
+        resolutionRefreshed: false,
+        newWarningBudget: false,
+      },
+    });
+  });
+
+  it("reloads late-warning acknowledgment covered destinations from stored deltas", () => {
+    const { database, repository } = createFixture();
+    const engagement = createEngagement(repository);
+    const snapshot = boundSnapshot({
+      actionId: "action-reload-covered",
+      snapshotId: "snapshot-reload-covered",
+    });
+    const queued = persistPlan(repository, engagement.id, snapshot);
+    const activated = repository.activateAction({
+      engagementId: engagement.id,
+      actionId: "action-reload-covered",
+      expectedRevision: queued.revision,
+    });
+    if (!activated.ok) throw new Error(activated.error.code);
+    const paused = repository.recordLateWarning({
+      engagementId: engagement.id,
+      actionId: "action-reload-covered",
+      expectedRevision: activated.value.revision,
+      snapshotVersion: 1,
+      snapshotBinding: snapshot.binding,
+      reasonCodes: ["outside_scope"],
+      addition: lateAddition,
+      pendingEventId: 1,
+      occurredAt: "2026-08-12T12:35:00.000Z",
+    });
+    if (!paused.ok) throw new Error(paused.error.code);
+    const continued = repository.continueLateWarning({
+      engagementId: engagement.id,
+      actionId: "action-reload-covered",
+      expectedRevision: paused.value.revision,
+      snapshotVersion: 1,
+      snapshotBinding: snapshot.binding,
+      pendingEventId: 1,
+      occurredAt: "2026-08-12T12:36:00.000Z",
+    });
+    if (!continued.ok) throw new Error(continued.error.code);
+    const second = {
+      hostname: "cdn.target.test",
+      address: "192.0.2.50",
+    } as const;
+    const covered = repository.recordLateWarning({
+      engagementId: engagement.id,
+      actionId: "action-reload-covered",
+      expectedRevision: continued.value.revision,
+      snapshotVersion: 1,
+      snapshotBinding: snapshot.binding,
+      reasonCodes: ["outside_scope", "risk_tier_t2"],
+      addition: second,
+      pendingEventId: 2,
+      occurredAt: "2026-08-12T12:37:00.000Z",
+    });
+    if (!covered.ok) throw new Error(covered.error.code);
+
+    const storedReasons = database.sqlite
+      .prepare(
+        "select sequence, reason_codes_json from action_covered_destinations where action_id = ? order by sequence",
+      )
+      .all("action-reload-covered") as {
+      sequence: number;
+      reason_codes_json: string;
+    }[];
+    expect(storedReasons.map((row) => JSON.parse(row.reason_codes_json))).toEqual([
+      [],
+      ["risk_tier_t2"],
+    ]);
+
+    expect(repository.getAction(engagement.id, "action-reload-covered")).toEqual({
+      ok: true,
+      value: covered.value,
+    });
+    expect(covered.value.action.warningAcknowledgment).toMatchObject({
+      reasonCodes: ["outside_scope", "risk_tier_t2"],
+      coveredDestinations: [second],
+    });
+    expect(covered.value.action.coveredDestinations).toEqual([lateAddition, second]);
+  });
+
+  it("rejects add-scope against a prior owned revision instead of the active one", () => {
+    const { repository } = createFixture();
+    const engagement = createEngagement(repository);
+    const firstScope = repository.appendScopeRevision({
+      engagementId: engagement.id,
+      expectedRevision: 1,
+      rules: [],
+    });
+    if (!firstScope.ok) throw new Error(firstScope.error.code);
+    const paused = persistPlan(
+      repository,
+      engagement.id,
+      boundSnapshot({
+        actionId: "action-stale-scope",
+        snapshotId: "snapshot-stale-scope",
+        scopeRevisionId: firstScope.value.id,
+        warningState: {
+          reasonCodes: ["outside_scope"],
+          knownAdditions: [],
+          acknowledgment: null,
+        },
+      }),
+    );
+    const secondScope = repository.appendScopeRevision({
+      engagementId: engagement.id,
+      expectedRevision: 2,
+      rules: [],
+    });
+    if (!secondScope.ok) throw new Error(secondScope.error.code);
+    expect(
+      repository.addScopeAndRunAction({
+        engagementId: engagement.id,
+        actionId: "action-stale-scope",
+        expectedRevision: paused.revision,
+        recheckedSnapshot: boundSnapshot({
+          actionId: "action-stale-scope",
+          snapshotId: "snapshot-stale-scope-2",
+          version: 2,
+          scopeRevisionId: firstScope.value.id,
+          warningState: {
+            reasonCodes: ["large_target_set"],
+            knownAdditions: [],
+            acknowledgment: null,
+          },
+        }),
+        occurredAt: "2026-08-12T12:38:00.000Z",
+      }),
+    ).toEqual({ ok: false, error: { code: "invalid_repository_input" } });
+    expect(repository.getAction(engagement.id, "action-stale-scope")).toMatchObject({
+      ok: true,
+      value: {
+        revision: paused.revision,
+        action: {
+          state: "paused_for_warning",
+          queuedSnapshotVersion: null,
+          snapshots: [{ version: 1, scopeRevisionId: firstScope.value.id }],
+        },
+      },
+    });
+  });
+
+  it("rejects stored snapshot JSON over the 1 MiB bound as invalid input", () => {
+    const { repository } = createFixture();
+    const engagement = createEngagement(repository);
+    const seed = boundSnapshot({
+      actionId: "action-oversize",
+      snapshotId: "snapshot-oversize",
+      typedOptions: { pad: "" },
+    });
+    const pad = "n".repeat(
+      MAX_CANONICAL_JSON_BYTES - Buffer.byteLength(JSON.stringify(seed), "utf8") + 1,
+    );
+    const snapshot = boundSnapshot({
+      actionId: "action-oversize",
+      snapshotId: "snapshot-oversize",
+      typedOptions: { pad },
+    });
+    const bound = bindActionSnapshot(snapshot);
+    expect(bound.ok).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(snapshot), "utf8")).toBeGreaterThan(
+      MAX_CANONICAL_JSON_BYTES,
+    );
+    const result = repository.persistPlannedAction({
+      engagementId: engagement.id,
+      snapshot,
+      representable: true,
+      capabilityErrorCode: null,
+      occurredAt: "2026-08-12T12:39:00.000Z",
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "invalid_repository_input" },
+    });
+    expect(JSON.stringify(result)).not.toContain(pad.slice(0, 32));
+    expect(repository.getAction(engagement.id, "action-oversize")).toEqual({
+      ok: false,
+      error: { code: "action_not_found" },
     });
   });
 });

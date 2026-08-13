@@ -63,7 +63,6 @@ export const RecordPersistedLateWarningInputSchema = z.strictObject({
   engagementId: EngagementSchema.shape.id,
   actionId: ActionIdentifierSchema,
   expectedRevision: z.number().int().positive(),
-  runState: LateWarningInputSchema.shape.runState,
   snapshotVersion: LateWarningInputSchema.shape.snapshotVersion,
   snapshotBinding: LateWarningInputSchema.shape.snapshotBinding,
   reasonCodes: LateWarningInputSchema.shape.reasonCodes,

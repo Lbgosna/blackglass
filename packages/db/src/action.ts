@@ -7,6 +7,7 @@ import {
   CancelPersistedActionInputSchema,
   ContinuePersistedActionInputSchema,
   ContinuePersistedLateWarningInputSchema,
+  MAX_CANONICAL_JSON_BYTES,
   PendingWarningSchema,
   PersistPlannedActionInputSchema,
   PersistedActionSchema,
@@ -49,6 +50,7 @@ import {
   actionSnapshots,
   actionWarningAcknowledgments,
   actions,
+  engagementActiveScopes,
   engagements,
   scopeRevisions,
   type ActionCoveredDestinationRow,
@@ -172,6 +174,37 @@ function requireOwnedScopeRevision(
   return row === undefined
     ? failed({ code: "invalid_repository_input" })
     : { ok: true, value: true };
+}
+
+function currentActiveScopeRevisionId(
+  client: ActionQueryClient,
+  engagementId: string,
+): string | null {
+  return (
+    client
+      .select({ id: engagementActiveScopes.scopeRevisionId })
+      .from(engagementActiveScopes)
+      .where(eq(engagementActiveScopes.engagementId, engagementId))
+      .get()?.id ?? null
+  );
+}
+
+function requireActiveScopeBinding(
+  client: ActionQueryClient,
+  engagementId: string,
+  scopeRevisionId: string | null,
+): ActionResult<true> {
+  return currentActiveScopeRevisionId(client, engagementId) === scopeRevisionId
+    ? { ok: true, value: true }
+    : failed({ code: "invalid_repository_input" });
+}
+
+function snapshotJsonForStorage(snapshot: ActionSnapshot): ActionResult<string> {
+  const snapshotJson = JSON.stringify(snapshot);
+  if (Buffer.byteLength(snapshotJson, "utf8") > MAX_CANONICAL_JSON_BYTES) {
+    return failed({ code: "invalid_repository_input" });
+  }
+  return { ok: true, value: snapshotJson };
 }
 
 function snapshotFromRow(row: ActionSnapshotRow): ActionResult<ActionSnapshot> {
@@ -393,6 +426,8 @@ function insertSnapshot(
     snapshot.scopeRevisionId,
   );
   if (!owned.ok) return owned;
+  const snapshotJson = snapshotJsonForStorage(snapshot);
+  if (!snapshotJson.ok) return snapshotJson;
   context.client
     .insert(actionSnapshots)
     .values({
@@ -404,7 +439,7 @@ function insertSnapshot(
       binding: snapshot.binding,
       canonicalizationProfile: ACTION_SNAPSHOT_CANONICALIZATION_PROFILE,
       scopeRevisionId: snapshot.scopeRevisionId,
-      snapshotJson: JSON.stringify(snapshot),
+      snapshotJson: snapshotJson.value,
       createdAt: context.now().toISOString(),
     })
     .run();
@@ -454,7 +489,12 @@ function insertCoveredDestinations(
   }
   let acknowledgedCursor = previous.warningAcknowledgment?.coveredDestinations.length ?? 0;
   const nextAcknowledged = next.warningAcknowledgment.coveredDestinations;
-  const extraReasons = next.warningAcknowledgment.reasonCodes;
+  const accountedReasons =
+    previous.warningAcknowledgment?.reasonCodes ??
+    next.warningAcknowledgment.reasonCodes;
+  const extraReasons = next.warningAcknowledgment.reasonCodes.filter(
+    (code) => !accountedReasons.includes(code),
+  );
   for (const [offset, destination] of newDestinations.entries()) {
     const nextAcknowledgedDestination = nextAcknowledged[acknowledgedCursor];
     const acknowledgedCover =
@@ -501,6 +541,8 @@ function writeActionProjection(
       snapshot.scopeRevisionId,
     );
     if (!owned.ok) return owned;
+    const snapshotJson = snapshotJsonForStorage(snapshot);
+    if (!snapshotJson.ok) return snapshotJson;
   }
 
   const timestamp = context.now().toISOString();
@@ -603,6 +645,8 @@ export function persistPlannedAction(
     parsed.data.snapshot.scopeRevisionId,
   );
   if (!owned.ok) return owned;
+  const snapshotJson = snapshotJsonForStorage(parsed.data.snapshot);
+  if (!snapshotJson.ok) return snapshotJson;
   const existing = context.client
     .select({ id: actions.id })
     .from(actions)
@@ -694,6 +738,19 @@ export function addScopeAndRunPersistedAction(
   if (!parsed.success) return failed({ code: "invalid_repository_input" });
   const binding = requireSnapshotBinding(parsed.data.recheckedSnapshot);
   if (!binding.ok) return binding;
+  const engagement = requireActiveEngagement(
+    context.client,
+    parsed.data.engagementId,
+  );
+  if (!engagement.ok) return engagement;
+  const activeScope = requireActiveScopeBinding(
+    context.client,
+    parsed.data.engagementId,
+    parsed.data.recheckedSnapshot.scopeRevisionId,
+  );
+  if (!activeScope.ok) return activeScope;
+  const snapshotJson = snapshotJsonForStorage(parsed.data.recheckedSnapshot);
+  if (!snapshotJson.ok) return snapshotJson;
   return mutateAction(
     context,
     parsed.data.engagementId,
@@ -757,7 +814,7 @@ export function recordPersistedLateWarning(
     (action) =>
       recordLateWarning({
         action,
-        runState: parsed.data.runState,
+        runState: "running",
         snapshotVersion: parsed.data.snapshotVersion,
         snapshotBinding: parsed.data.snapshotBinding,
         reasonCodes: parsed.data.reasonCodes,
