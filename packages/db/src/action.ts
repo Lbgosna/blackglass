@@ -645,6 +645,12 @@ export function persistPlannedAction(
     parsed.data.snapshot.scopeRevisionId,
   );
   if (!owned.ok) return owned;
+  const activeScope = requireActiveScopeBinding(
+    context.client,
+    parsed.data.engagementId,
+    parsed.data.snapshot.scopeRevisionId,
+  );
+  if (!activeScope.ok) return activeScope;
   const snapshotJson = snapshotJsonForStorage(parsed.data.snapshot);
   if (!snapshotJson.ok) return snapshotJson;
   const existing = context.client

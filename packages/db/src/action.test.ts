@@ -144,6 +144,35 @@ function persistPlan(
   return result.value;
 }
 
+function expectNoPersistedAction(
+  database: ReturnType<typeof openEngagementDatabase>,
+  repository: EngagementRepository,
+  actionId: string,
+  engagementId: string,
+) {
+  expect(repository.getAction(engagementId, actionId)).toEqual({
+    ok: false,
+    error: { code: "action_not_found" },
+  });
+  expect(
+    database.sqlite
+      .prepare("select count(*) as count from actions where id = ?")
+      .get(actionId),
+  ).toEqual({ count: 0 });
+  expect(
+    database.sqlite
+      .prepare("select count(*) as count from action_snapshots where action_id = ?")
+      .get(actionId),
+  ).toEqual({ count: 0 });
+  expect(
+    database.sqlite
+      .prepare(
+        "select count(*) as count from action_warning_acknowledgments where action_id = ?",
+      )
+      .get(actionId),
+  ).toEqual({ count: 0 });
+}
+
 function writePartialMigrations(): string {
   const directory = mkdtempSync(path.join(tmpdir(), "blackglass-partial-migrate-"));
   chmodSync(directory, 0o700);
@@ -367,6 +396,14 @@ describe("action persistence foundation", () => {
       },
     });
 
+    const engagementAfterScope = repository.getEngagement(engagement.id);
+    if (!engagementAfterScope.ok) throw new Error(engagementAfterScope.error.code);
+    const activeScopeId =
+      engagementAfterScope.value.engagement.activeScopeRevisionId;
+    if (activeScopeId === null) {
+      throw new Error("expected an active scope after add-scope");
+    }
+
     expect(
       repository.updateAutoContinueWarnings(engagement.id, 2, true),
     ).toMatchObject({ ok: true });
@@ -376,6 +413,7 @@ describe("action persistence foundation", () => {
       boundSnapshot({
         actionId: "action-auto-continue",
         snapshotId: "snapshot-auto",
+        scopeRevisionId: activeScopeId,
         warningState: {
           reasonCodes: ["outside_scope"],
           knownAdditions: [],
@@ -391,7 +429,11 @@ describe("action persistence foundation", () => {
     const autoLateQueued = persistPlan(
       repository,
       engagement.id,
-      boundSnapshot({ actionId: "action-late-auto", snapshotId: "snapshot-late-auto" }),
+      boundSnapshot({
+        actionId: "action-late-auto",
+        snapshotId: "snapshot-late-auto",
+        scopeRevisionId: activeScopeId,
+      }),
     );
     const autoLateActivated = repository.activateAction({
       engagementId: engagement.id,
@@ -429,7 +471,11 @@ describe("action persistence foundation", () => {
     const queued = persistPlan(
       repository,
       engagement.id,
-      boundSnapshot({ actionId: "action-late", snapshotId: "snapshot-late" }),
+      boundSnapshot({
+        actionId: "action-late",
+        snapshotId: "snapshot-late",
+        scopeRevisionId: activeScopeId,
+      }),
     );
     const activated = repository.activateAction({
       engagementId: engagement.id,
@@ -1448,6 +1494,138 @@ describe("action persistence foundation", () => {
         },
       },
     });
+  });
+
+  it("requires persistPlannedAction to bind the current active scope revision", () => {
+    const { database, repository } = createFixture();
+    const engagement = createEngagement(repository);
+    const marker = "UNTRUSTED_SCOPE_BINDING_MARKER";
+
+    const nullToNull = persistPlan(
+      repository,
+      engagement.id,
+      boundSnapshot({
+        actionId: "action-null-to-null",
+        snapshotId: "snapshot-null-to-null",
+      }),
+    );
+    expect(nullToNull.action.snapshots[0]?.scopeRevisionId).toBeNull();
+
+    expect(
+      repository.updateAutoContinueWarnings(engagement.id, 1, true),
+    ).toMatchObject({ ok: true });
+    const unowned = repository.persistPlannedAction({
+      engagementId: engagement.id,
+      snapshot: boundSnapshot({
+        actionId: "action-unowned-scope",
+        snapshotId: "snapshot-unowned-scope",
+        scopeRevisionId: "20000000-0000-4000-8000-0000000000aa",
+        typedOptions: { note: marker },
+        warningState: {
+          reasonCodes: ["outside_scope"],
+          knownAdditions: [],
+          acknowledgment: null,
+        },
+      }),
+      representable: true,
+      capabilityErrorCode: null,
+      occurredAt: "2026-08-12T12:40:00.000Z",
+    });
+    expect(unowned).toEqual({
+      ok: false,
+      error: { code: "invalid_repository_input" },
+    });
+    expect(JSON.stringify(unowned)).not.toContain(marker);
+    expectNoPersistedAction(
+      database,
+      repository,
+      "action-unowned-scope",
+      engagement.id,
+    );
+
+    const firstScope = repository.appendScopeRevision({
+      engagementId: engagement.id,
+      expectedRevision: 2,
+      rules: [],
+    });
+    if (!firstScope.ok) throw new Error(firstScope.error.code);
+
+    const matching = persistPlan(
+      repository,
+      engagement.id,
+      boundSnapshot({
+        actionId: "action-matching-scope",
+        snapshotId: "snapshot-matching-scope",
+        scopeRevisionId: firstScope.value.id,
+      }),
+    );
+    expect(matching.action.snapshots[0]?.scopeRevisionId).toBe(firstScope.value.id);
+
+    const nullWhileActive = repository.persistPlannedAction({
+      engagementId: engagement.id,
+      snapshot: boundSnapshot({
+        actionId: "action-null-while-active",
+        snapshotId: "snapshot-null-while-active",
+        scopeRevisionId: null,
+        typedOptions: { note: marker },
+        warningState: {
+          reasonCodes: ["outside_scope"],
+          knownAdditions: [],
+          acknowledgment: null,
+        },
+      }),
+      representable: true,
+      capabilityErrorCode: null,
+      occurredAt: "2026-08-12T12:41:00.000Z",
+    });
+    expect(nullWhileActive).toEqual({
+      ok: false,
+      error: { code: "invalid_repository_input" },
+    });
+    expect(JSON.stringify(nullWhileActive)).not.toContain(marker);
+    expectNoPersistedAction(
+      database,
+      repository,
+      "action-null-while-active",
+      engagement.id,
+    );
+
+    const secondScope = repository.appendScopeRevision({
+      engagementId: engagement.id,
+      expectedRevision: 3,
+      rules: [],
+    });
+    if (!secondScope.ok) throw new Error(secondScope.error.code);
+
+    const stale = repository.persistPlannedAction({
+      engagementId: engagement.id,
+      snapshot: boundSnapshot({
+        actionId: "action-stale-owned-scope",
+        snapshotId: "snapshot-stale-owned-scope",
+        scopeRevisionId: firstScope.value.id,
+        typedOptions: { note: marker },
+        warningState: {
+          reasonCodes: ["outside_scope"],
+          knownAdditions: [],
+          acknowledgment: null,
+        },
+      }),
+      representable: true,
+      capabilityErrorCode: null,
+      occurredAt: "2026-08-12T12:42:00.000Z",
+    });
+    expect(stale).toEqual({
+      ok: false,
+      error: { code: "invalid_repository_input" },
+    });
+    expect(JSON.stringify(stale)).not.toContain(marker);
+    expect(JSON.stringify(stale)).not.toContain(firstScope.value.id);
+    expectNoPersistedAction(
+      database,
+      repository,
+      "action-stale-owned-scope",
+      engagement.id,
+    );
   });
 
   it("rejects stored snapshot JSON over the 1 MiB bound as invalid input", () => {
