@@ -1,0 +1,296 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "d2f9b49d-f2d2-4e2c-a5ea-2b17816859c5",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "engagement_active_scopes": {
+      "name": "engagement_active_scopes",
+      "columns": {
+        "engagement_id": {
+          "name": "engagement_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scope_revision_id": {
+          "name": "scope_revision_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "engagement_active_scopes_engagement_id_engagements_id_fk": {
+          "name": "engagement_active_scopes_engagement_id_engagements_id_fk",
+          "tableFrom": "engagement_active_scopes",
+          "tableTo": "engagements",
+          "columnsFrom": [
+            "engagement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "active_scope_belongs_to_engagement": {
+          "name": "active_scope_belongs_to_engagement",
+          "tableFrom": "engagement_active_scopes",
+          "tableTo": "scope_revisions",
+          "columnsFrom": [
+            "engagement_id",
+            "scope_revision_id"
+          ],
+          "columnsTo": [
+            "engagement_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "engagements": {
+      "name": "engagements",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contract_version": {
+          "name": "contract_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "authorization_context": {
+          "name": "authorization_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "auto_continue_warnings": {
+          "name": "auto_continue_warnings",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "engagement_status_created_idx": {
+          "name": "engagement_status_created_idx",
+          "columns": [
+            "status",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "engagement_contract_version": {
+          "name": "engagement_contract_version",
+          "value": "\"engagements\".\"contract_version\" = 1"
+        },
+        "engagement_revision_positive": {
+          "name": "engagement_revision_positive",
+          "value": "\"engagements\".\"revision\" >= 1"
+        },
+        "engagement_name_length": {
+          "name": "engagement_name_length",
+          "value": "length(\"engagements\".\"name\") between 1 and 120 and \"engagements\".\"name\" = trim(\"engagements\".\"name\")"
+        },
+        "engagement_kind": {
+          "name": "engagement_kind",
+          "value": "\"engagements\".\"kind\" in ('ctf', 'lab', 'assessment')"
+        },
+        "engagement_status": {
+          "name": "engagement_status",
+          "value": "\"engagements\".\"status\" in ('active', 'archived')"
+        },
+        "engagement_description_length": {
+          "name": "engagement_description_length",
+          "value": "\"engagements\".\"description\" is null or length(\"engagements\".\"description\") <= 4096"
+        },
+        "engagement_authorization_context_length": {
+          "name": "engagement_authorization_context_length",
+          "value": "\"engagements\".\"authorization_context\" is null or length(\"engagements\".\"authorization_context\") <= 4096"
+        },
+        "engagement_auto_continue_boolean": {
+          "name": "engagement_auto_continue_boolean",
+          "value": "\"engagements\".\"auto_continue_warnings\" in (0, 1)"
+        }
+      }
+    },
+    "scope_revisions": {
+      "name": "scope_revisions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contract_version": {
+          "name": "contract_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "engagement_id": {
+          "name": "engagement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rules_json": {
+          "name": "rules_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "scope_revision_engagement_version_unique": {
+          "name": "scope_revision_engagement_version_unique",
+          "columns": [
+            "engagement_id",
+            "version"
+          ],
+          "isUnique": true
+        },
+        "scope_revision_engagement_id_unique": {
+          "name": "scope_revision_engagement_id_unique",
+          "columns": [
+            "engagement_id",
+            "id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "scope_revisions_engagement_id_engagements_id_fk": {
+          "name": "scope_revisions_engagement_id_engagements_id_fk",
+          "tableFrom": "scope_revisions",
+          "tableTo": "engagements",
+          "columnsFrom": [
+            "engagement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "scope_revision_contract_version": {
+          "name": "scope_revision_contract_version",
+          "value": "\"scope_revisions\".\"contract_version\" = 1"
+        },
+        "scope_revision_version_positive": {
+          "name": "scope_revision_version_positive",
+          "value": "\"scope_revisions\".\"version\" >= 1"
+        },
+        "scope_revision_rules_json": {
+          "name": "scope_revision_rules_json",
+          "value": "json_valid(\"scope_revisions\".\"rules_json\")"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
