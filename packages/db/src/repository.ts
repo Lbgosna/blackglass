@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  AddScopeAndRunActionRequestSchema,
   AppendScopeRevisionInputSchema,
   CreateEngagementInputSchema,
   ENGAGEMENT_CONTRACT_VERSION,
@@ -36,6 +37,13 @@ import {
   type ActionPersistenceContext,
 } from "./action.js";
 import {
+  bindPlannedSnapshot,
+  declaredPortsFromTypedOptions,
+  derivePlanningWarningState,
+  normalizeOperatorTargets,
+  parseCreateActionRequest,
+} from "./action-operator.js";
+import {
   engagementActiveScopes,
   engagements,
   scopeRevisions,
@@ -49,7 +57,12 @@ export type RepositoryError =
   | { code: "invalid_engagement_transition" }
   | { code: "invalid_persisted_data" }
   | { code: "invalid_repository_input" }
-  | { code: "revision_conflict"; currentRevision: number }
+  | {
+      code: "revision_conflict";
+      currentRevision: number;
+      resourceType?: "engagement" | "action";
+      resourceId?: string;
+    }
   | { code: "storage_busy" };
 
 export type ActionRepositoryError =
@@ -77,6 +90,7 @@ export type DatabaseWriteClient = Parameters<
 >[0];
 export interface EngagementWriteTransaction {
   readonly client: DatabaseWriteClient;
+  now(): Date;
   createEngagement(input: unknown): RepositoryResult<Engagement>;
   archive(
     engagementId: string,
@@ -92,13 +106,29 @@ export interface EngagementWriteTransaction {
     autoContinueWarnings: boolean,
   ): RepositoryResult<Engagement>;
   appendScopeRevision(input: unknown): RepositoryResult<ScopeRevision>;
+  getEngagement(
+    engagementId: string,
+  ): RepositoryResult<EngagementWithActiveScope>;
+  getAction(
+    engagementId: string,
+    actionId: string,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
   persistPlannedAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  planOperatorAction(
+    engagementId: string,
     input: unknown,
   ): RepositoryResult<PersistedAction, ActionRepositoryError>;
   continueAction(
     input: unknown,
   ): RepositoryResult<PersistedAction, ActionRepositoryError>;
   addScopeAndRunAction(
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  addScopeAndRunOperatorAction(
+    engagementId: string,
+    actionId: string,
     input: unknown,
   ): RepositoryResult<PersistedAction, ActionRepositoryError>;
   activateAction(
@@ -258,12 +288,63 @@ function scopeRevisionFromRow(
   return { ok: true, value: parsed.data };
 }
 
+function readEngagementWithActiveScope(
+  client: DatabaseWriteClient | BetterSQLite3Database<DatabaseSchema>,
+  engagementId: string,
+): RepositoryResult<EngagementWithActiveScope> {
+  const joined = client
+    .select({
+      engagement: engagements,
+      activeScopeRevisionId: engagementActiveScopes.scopeRevisionId,
+      activeScopeRevision: scopeRevisions,
+    })
+    .from(engagements)
+    .leftJoin(
+      engagementActiveScopes,
+      eq(engagementActiveScopes.engagementId, engagements.id),
+    )
+    .leftJoin(
+      scopeRevisions,
+      eq(scopeRevisions.id, engagementActiveScopes.scopeRevisionId),
+    )
+    .where(eq(engagements.id, engagementId))
+    .get();
+  if (joined === undefined) return failed({ code: "engagement_not_found" });
+  if (
+    joined.activeScopeRevisionId !== null &&
+    joined.activeScopeRevision === null
+  ) {
+    return failed({ code: "invalid_persisted_data" });
+  }
+  const activeScope =
+    joined.activeScopeRevision === null
+      ? { ok: true as const, value: null }
+      : scopeRevisionFromRow(joined.activeScopeRevision);
+  if (!activeScope.ok) return activeScope;
+  const engagement = engagementFromRow(
+    joined.engagement,
+    activeScope.value?.id ?? null,
+  );
+  if (!engagement.ok) return engagement;
+  const output = EngagementWithActiveScopeSchema.safeParse({
+    engagement: engagement.value,
+    activeScopeRevision: activeScope.value,
+  });
+  return output.success
+    ? { ok: true, value: output.data }
+    : failed({ code: "invalid_persisted_data" });
+}
+
 class TransactionRepository implements EngagementWriteTransaction {
   constructor(
     readonly client: DatabaseWriteClient,
-    private readonly createId: () => string,
-    private readonly now: () => Date,
+    private readonly nextId: () => string,
+    private readonly clock: () => Date,
   ) {}
+
+  now(): Date {
+    return this.clock();
+  }
 
   private currentEngagement(
     engagementId: string,
@@ -281,9 +362,9 @@ class TransactionRepository implements EngagementWriteTransaction {
   createEngagement(input: unknown): RepositoryResult<Engagement> {
     const parsed = CreateEngagementInputSchema.safeParse(input);
     if (!parsed.success) return failed({ code: "invalid_repository_input" });
-    const timestamp = this.now().toISOString();
+    const timestamp = this.clock().toISOString();
     const row = {
-      id: this.createId(),
+      id: this.nextId(),
       contractVersion: ENGAGEMENT_CONTRACT_VERSION,
       revision: 1,
       name: parsed.data.name,
@@ -334,7 +415,7 @@ class TransactionRepository implements EngagementWriteTransaction {
     if (current.value.status === status) {
       return failed({ code: "invalid_engagement_transition" });
     }
-    const updatedAt = this.now().toISOString();
+    const updatedAt = this.clock().toISOString();
     this.client
       .update(engagements)
       .set({ status, revision: expectedRevision + 1, updatedAt })
@@ -367,7 +448,7 @@ class TransactionRepository implements EngagementWriteTransaction {
     if (current.value.status === "archived") {
       return failed({ code: "engagement_archived" });
     }
-    const updatedAt = this.now().toISOString();
+    const updatedAt = this.clock().toISOString();
     this.client
       .update(engagements)
       .set({
@@ -415,9 +496,9 @@ class TransactionRepository implements EngagementWriteTransaction {
       .from(scopeRevisions)
       .where(eq(scopeRevisions.engagementId, parsed.data.engagementId))
       .get();
-    const timestamp = this.now().toISOString();
+    const timestamp = this.clock().toISOString();
     const row = {
-      id: this.createId(),
+      id: this.nextId(),
       contractVersion: ENGAGEMENT_CONTRACT_VERSION,
       engagementId: parsed.data.engagementId,
       version: (latest?.version ?? 0) + 1,
@@ -465,9 +546,167 @@ class TransactionRepository implements EngagementWriteTransaction {
   private actionContext(): ActionPersistenceContext {
     return {
       client: this.client,
-      createId: this.createId,
-      now: this.now,
+      createId: this.nextId,
+      now: this.clock,
     };
+  }
+
+  getEngagement(
+    engagementId: string,
+  ): RepositoryResult<EngagementWithActiveScope> {
+    return readEngagementWithActiveScope(this.client, engagementId);
+  }
+
+  getAction(
+    engagementId: string,
+    actionId: string,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return getPersistedAction(this.client, engagementId, actionId);
+  }
+
+  planOperatorAction(
+    engagementId: string,
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    const parsed = parseCreateActionRequest(input);
+    if (!parsed.ok) return parsed;
+    const detail = this.getEngagement(engagementId);
+    if (!detail.ok) return detail;
+    const engagement = detail.value.engagement;
+    if (engagement.revision !== parsed.value.expectedEngagementRevision) {
+      return failed({
+        code: "revision_conflict",
+        currentRevision: engagement.revision,
+        resourceType: "engagement",
+        resourceId: engagement.id,
+      });
+    }
+    if (engagement.status === "archived") {
+      return failed({ code: "engagement_archived" });
+    }
+    if (
+      engagement.activeScopeRevisionId !==
+      parsed.value.expectedActiveScopeRevisionId
+    ) {
+      return failed({ code: "invalid_repository_input" });
+    }
+
+    const targets = normalizeOperatorTargets(parsed.value.targets);
+    if (!targets.ok) return targets;
+    const actionId = this.nextId();
+    const warning = derivePlanningWarningState({
+      actionId,
+      scopeRevisionId: engagement.activeScopeRevisionId,
+      rules: detail.value.activeScopeRevision?.rules ?? [],
+      targets: targets.value,
+      declaredPorts: parsed.value.declaredPorts,
+    });
+    if (!warning.ok) return warning;
+    const snapshot = bindPlannedSnapshot({
+      actionId,
+      snapshotId: this.nextId(),
+      version: 1,
+      scopeRevisionId: engagement.activeScopeRevisionId,
+      targets: targets.value,
+      typedOptions: { declaredPorts: parsed.value.declaredPorts },
+      resolutionSnapshots: [],
+      warningState: warning.value,
+    });
+    if (!snapshot.ok) return snapshot;
+    return this.persistPlannedAction({
+      engagementId,
+      snapshot: snapshot.value,
+      representable: true,
+      capabilityErrorCode: null,
+      occurredAt: this.clock().toISOString(),
+    });
+  }
+
+  addScopeAndRunOperatorAction(
+    engagementId: string,
+    actionId: string,
+    input: unknown,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    const parsed = AddScopeAndRunActionRequestSchema.safeParse(input);
+    if (!parsed.success) return failed({ code: "invalid_repository_input" });
+    const current = this.getAction(engagementId, actionId);
+    if (!current.ok) return current;
+    if (current.value.revision !== parsed.data.expectedActionRevision) {
+      return failed({
+        code: "revision_conflict",
+        currentRevision: current.value.revision,
+        resourceType: "action",
+        resourceId: actionId,
+      });
+    }
+    if (current.value.action.state !== "paused_for_warning") {
+      return failed({
+        code:
+          current.value.action.queuedSnapshotVersion !== null
+            ? "action_already_queued"
+            : "invalid_action_transition",
+      });
+    }
+    const latest = current.value.action.snapshots.reduce<
+      (typeof current.value.action.snapshots)[number] | undefined
+    >(
+      (winner, candidate) =>
+        winner === undefined || candidate.version > winner.version
+          ? candidate
+          : winner,
+      undefined,
+    );
+    if (latest === undefined) {
+      return failed({ code: "invalid_persisted_data" });
+    }
+    const scope = this.appendScopeRevision({
+      engagementId,
+      expectedRevision: parsed.data.expectedEngagementRevision,
+      rules: parsed.data.rules,
+    });
+    if (!scope.ok) {
+      return scope.error.code === "revision_conflict"
+        ? failed({
+            ...scope.error,
+            resourceType: "engagement",
+            resourceId: engagementId,
+          })
+        : scope;
+    }
+    const warning = derivePlanningWarningState({
+      actionId,
+      scopeRevisionId: scope.value.id,
+      rules: scope.value.rules,
+      targets: latest.canonicalTargets,
+      declaredPorts: declaredPortsFromTypedOptions(latest.typedOptions),
+    });
+    if (!warning.ok) {
+      throw new Error("action persist write aborted: invalid_repository_input");
+    }
+    const snapshot = bindPlannedSnapshot({
+      actionId,
+      snapshotId: this.nextId(),
+      version: latest.version + 1,
+      scopeRevisionId: scope.value.id,
+      targets: latest.canonicalTargets,
+      typedOptions: latest.typedOptions,
+      resolutionSnapshots: latest.resolutionSnapshots,
+      warningState: warning.value,
+    });
+    if (!snapshot.ok) {
+      throw new Error("action persist write aborted: invalid_repository_input");
+    }
+    const queued = this.addScopeAndRunAction({
+      engagementId,
+      actionId,
+      expectedRevision: parsed.data.expectedActionRevision,
+      recheckedSnapshot: snapshot.value,
+      occurredAt: this.clock().toISOString(),
+    });
+    if (!queued.ok) {
+      throw new Error(`action persist write aborted: ${queued.error.code}`);
+    }
+    return queued;
   }
 
   persistPlannedAction(
@@ -622,47 +861,7 @@ export class EngagementRepository {
 
   getEngagement(engagementId: string): RepositoryResult<EngagementWithActiveScope> {
     try {
-      const joined = this.db
-        .select({
-          engagement: engagements,
-          activeScopeRevisionId: engagementActiveScopes.scopeRevisionId,
-          activeScopeRevision: scopeRevisions,
-        })
-        .from(engagements)
-        .leftJoin(
-          engagementActiveScopes,
-          eq(engagementActiveScopes.engagementId, engagements.id),
-        )
-        .leftJoin(
-          scopeRevisions,
-          eq(scopeRevisions.id, engagementActiveScopes.scopeRevisionId),
-        )
-        .where(eq(engagements.id, engagementId))
-        .get();
-      if (joined === undefined) return failed({ code: "engagement_not_found" });
-      if (
-        joined.activeScopeRevisionId !== null &&
-        joined.activeScopeRevision === null
-      ) {
-        return failed({ code: "invalid_persisted_data" });
-      }
-      const activeScope =
-        joined.activeScopeRevision === null
-          ? { ok: true as const, value: null }
-          : scopeRevisionFromRow(joined.activeScopeRevision);
-      if (!activeScope.ok) return activeScope;
-      const engagement = engagementFromRow(
-        joined.engagement,
-        activeScope.value?.id ?? null,
-      );
-      if (!engagement.ok) return engagement;
-      const output = EngagementWithActiveScopeSchema.safeParse({
-        engagement: engagement.value,
-        activeScopeRevision: activeScope.value,
-      });
-      return output.success
-        ? { ok: true, value: output.data }
-        : failed({ code: "invalid_persisted_data" });
+      return readEngagementWithActiveScope(this.db, engagementId);
     } catch (error) {
       return failed({
         code: isStorageBusy(error) ? "storage_busy" : "invalid_persisted_data",
@@ -724,6 +923,17 @@ export class EngagementRepository {
     );
   }
 
+  planOperatorAction(
+    engagementId: string,
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) => repository.planOperatorAction(engagementId, input),
+      transaction,
+    );
+  }
+
   continueAction(
     input: unknown,
     transaction?: EngagementWriteTransaction,
@@ -740,6 +950,19 @@ export class EngagementRepository {
   ): RepositoryResult<PersistedAction, ActionRepositoryError> {
     return this.runMutation(
       (repository) => repository.addScopeAndRunAction(input),
+      transaction,
+    );
+  }
+
+  addScopeAndRunOperatorAction(
+    engagementId: string,
+    actionId: string,
+    input: unknown,
+    transaction?: EngagementWriteTransaction,
+  ): RepositoryResult<PersistedAction, ActionRepositoryError> {
+    return this.runMutation(
+      (repository) =>
+        repository.addScopeAndRunOperatorAction(engagementId, actionId, input),
       transaction,
     );
   }
