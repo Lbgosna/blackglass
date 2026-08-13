@@ -3,6 +3,8 @@ import {
   CreateActionRequestSchema,
   DeclaredPortsSchema,
   type ActionSnapshot,
+  type CanonicalCidrTarget,
+  type CanonicalIpTarget,
   type CanonicalTarget,
   type SavedScopeRule,
   type WarningContextAddition,
@@ -43,6 +45,66 @@ function targetIdentity(target: CanonicalTarget): OperatorResult<string> {
   return canonical.ok
     ? { ok: true, value: canonical.canonicalJson }
     : failed({ code: "invalid_repository_input" });
+}
+
+function concreteIpFromTarget(target: CanonicalTarget): CanonicalIpTarget | null {
+  if (target.kind === "ip") {
+    return target;
+  }
+  if (target.kind !== "url" || "hostname" in target.host) {
+    return null;
+  }
+  if (target.host.address.includes(":")) {
+    return {
+      kind: "ip",
+      normalizationProfile: target.normalizationProfile,
+      family: 6,
+      address: target.host.address,
+      zone: target.host.zone,
+    };
+  }
+  return {
+    kind: "ip",
+    normalizationProfile: target.normalizationProfile,
+    family: 4,
+    address: target.host.address,
+    zone: null,
+  };
+}
+
+function concreteIpIdentity(target: CanonicalIpTarget): string {
+  return `${target.family}:${target.address}%${target.zone ?? ""}`;
+}
+
+function concreteCardinalityTargets(
+  targets: readonly CanonicalTarget[],
+): Array<CanonicalIpTarget | CanonicalCidrTarget> {
+  const concrete: Array<CanonicalIpTarget | CanonicalCidrTarget> = [];
+  for (const target of targets) {
+    if (target.kind === "cidr") {
+      concrete.push(target);
+      continue;
+    }
+    const ip = concreteIpFromTarget(target);
+    if (ip !== null) concrete.push(ip);
+  }
+  return concrete;
+}
+
+function uniqueConcreteDestinations(
+  targets: readonly CanonicalTarget[],
+): CanonicalIpTarget[] {
+  const destinations: CanonicalIpTarget[] = [];
+  const seen = new Set<string>();
+  for (const target of targets) {
+    const ip = concreteIpFromTarget(target);
+    if (ip === null) continue;
+    const identity = concreteIpIdentity(ip);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    destinations.push(ip);
+  }
+  return destinations;
 }
 
 export function normalizeOperatorTargets(
@@ -93,10 +155,7 @@ export function derivePlanningWarningState(input: {
   }
 
   const cardinality = estimateConcreteTargetCardinality({
-    targets: input.targets.filter(
-      (target): target is Extract<CanonicalTarget, { kind: "ip" | "cidr" }> =>
-        target.kind === "ip" || target.kind === "cidr",
-    ),
+    targets: concreteCardinalityTargets(input.targets),
   });
   if (cardinality.largeTargetWarning) {
     reasonCodes.push("large_target_set");
@@ -127,10 +186,7 @@ export function bindPlannedSnapshot(input: {
     binding: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     actionId: input.actionId,
     canonicalTargets: [...input.targets],
-    concreteDestinations: input.targets.filter(
-      (target): target is Extract<CanonicalTarget, { kind: "ip" }> =>
-        target.kind === "ip",
-    ),
+    concreteDestinations: uniqueConcreteDestinations(input.targets),
     typedOptions: input.typedOptions,
     resolutionSnapshots: [...input.resolutionSnapshots],
     scopeRevisionId: input.scopeRevisionId,

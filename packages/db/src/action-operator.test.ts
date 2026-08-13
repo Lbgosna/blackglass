@@ -4,6 +4,10 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  bindPlannedSnapshot,
+  derivePlanningWarningState,
+} from "./action-operator.js";
 import { openEngagementDatabase } from "./database.js";
 import { EngagementRepository } from "./repository.js";
 
@@ -193,6 +197,145 @@ describe("operator action planning", () => {
     expect(repository.listScopeRevisions(engagement.value.id)).toMatchObject({
       ok: true,
       value: [{ version: 1 }, { version: 2 }],
+    });
+  });
+});
+
+describe("numeric-IP URL target facts", () => {
+  const reservedIp = {
+    kind: "ip" as const,
+    normalizationProfile: "d1-v1" as const,
+    family: 4 as const,
+    address: "192.0.2.10",
+    zone: null,
+  };
+
+  it("counts an IP URL and equivalent direct IP once and ignores hostname URLs", () => {
+    const { repository } = createFixture();
+    const engagement = repository.createEngagement({
+      name: "Target lab",
+      kind: "lab",
+      autoContinueWarnings: false,
+    });
+    if (!engagement.ok) throw new Error(engagement.error.code);
+    const planned = repository.planOperatorAction(engagement.value.id, {
+      expectedEngagementRevision: 1,
+      expectedActiveScopeRevisionId: null,
+      targets: [
+        "https://192.0.2.10/a",
+        "192.0.2.10",
+        "https://192.0.2.10/b",
+        "https://app.target.test/path",
+      ],
+    });
+    expect(planned).toMatchObject({
+      ok: true,
+      value: {
+        action: {
+          snapshots: [
+            {
+              concreteDestinations: [reservedIp],
+              warningState: { reasonCodes: [] },
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("preserves compact CIDR cardinality when an IP URL is already covered", () => {
+    const warning = derivePlanningWarningState({
+      actionId: "10000000-0000-4000-8000-000000000001",
+      scopeRevisionId: null,
+      rules: [],
+      targets: [
+        {
+          kind: "cidr",
+          normalizationProfile: "d1-v1",
+          family: 4,
+          network: "192.0.2.0",
+          prefixLength: 24,
+          hostBitsMasked: false,
+        },
+        {
+          kind: "url",
+          normalizationProfile: "d1-v1",
+          url: "https://192.0.2.10/",
+          origin: "https://192.0.2.10:443",
+          host: { address: "192.0.2.10", zone: null },
+          effectivePort: 443,
+          pathAndQuery: "/",
+        },
+      ],
+      declaredPorts: null,
+    });
+    expect(warning).toEqual({
+      ok: true,
+      value: { reasonCodes: [], knownAdditions: [] },
+    });
+    const snapshot = bindPlannedSnapshot({
+      actionId: "10000000-0000-4000-8000-000000000001",
+      snapshotId: "10000000-0000-4000-8000-000000000002",
+      version: 1,
+      scopeRevisionId: null,
+      targets: [
+        {
+          kind: "cidr",
+          normalizationProfile: "d1-v1",
+          family: 4,
+          network: "192.0.2.0",
+          prefixLength: 24,
+          hostBitsMasked: false,
+        },
+        {
+          kind: "url",
+          normalizationProfile: "d1-v1",
+          url: "https://192.0.2.10/",
+          origin: "https://192.0.2.10:443",
+          host: { address: "192.0.2.10", zone: null },
+          effectivePort: 443,
+          pathAndQuery: "/",
+        },
+      ],
+      typedOptions: { declaredPorts: null },
+      resolutionSnapshots: [],
+      warningState: { reasonCodes: [], knownAdditions: [] },
+    });
+    expect(snapshot).toMatchObject({
+      ok: true,
+      value: { concreteDestinations: [reservedIp] },
+    });
+  });
+
+  it("warns when distinct numeric-IP URL hosts saturate concrete cardinality", () => {
+    const targets = Array.from({ length: 4_097 }, (_, index) => {
+      const high = Math.floor(index / 256);
+      const low = index % 256;
+      const address = `198.18.${high}.${low}`;
+      return {
+        kind: "url" as const,
+        normalizationProfile: "d1-v1" as const,
+        url: `http://${address}/`,
+        origin: `http://${address}:80`,
+        host: { address, zone: null },
+        effectivePort: 80,
+        pathAndQuery: "/",
+      };
+    });
+    expect(
+      derivePlanningWarningState({
+        actionId: "10000000-0000-4000-8000-000000000001",
+        scopeRevisionId: null,
+        rules: [],
+        targets,
+        declaredPorts: null,
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        reasonCodes: ["large_target_set"],
+        knownAdditions: [{ estimatedConcreteTargets: 4_097 }],
+      },
     });
   });
 });
