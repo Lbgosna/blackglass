@@ -312,7 +312,8 @@ function readEngagementWithActiveScope(
   if (joined === undefined) return failed({ code: "engagement_not_found" });
   if (
     joined.activeScopeRevisionId !== null &&
-    joined.activeScopeRevision === null
+    (joined.activeScopeRevision === null ||
+      joined.activeScopeRevision.engagementId !== joined.engagement.id)
   ) {
     return failed({ code: "invalid_persisted_data" });
   }
@@ -639,13 +640,11 @@ class TransactionRepository implements EngagementWriteTransaction {
         resourceId: actionId,
       });
     }
+    if (current.value.action.state === "queued") {
+      return failed({ code: "action_already_queued" });
+    }
     if (current.value.action.state !== "paused_for_warning") {
-      return failed({
-        code:
-          current.value.action.queuedSnapshotVersion !== null
-            ? "action_already_queued"
-            : "invalid_action_transition",
-      });
+      return failed({ code: "invalid_action_transition" });
     }
     const latest = current.value.action.snapshots.reduce<
       (typeof current.value.action.snapshots)[number] | undefined

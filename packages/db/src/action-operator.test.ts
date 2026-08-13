@@ -199,6 +199,169 @@ describe("operator action planning", () => {
       value: [{ version: 1 }, { version: 2 }],
     });
   });
+
+  it("returns action_already_queued only while queued", () => {
+    const { repository } = createFixture();
+    const engagement = repository.createEngagement({
+      name: "Target lab",
+      kind: "lab",
+      autoContinueWarnings: false,
+    });
+    if (!engagement.ok) throw new Error(engagement.error.code);
+    const queued = repository.planOperatorAction(engagement.value.id, {
+      expectedEngagementRevision: 1,
+      expectedActiveScopeRevisionId: null,
+      targets: ["192.0.2.10"],
+    });
+    if (!queued.ok) throw new Error(queued.error.code);
+    expect(queued.value.action.state).toBe("queued");
+    expect(
+      repository.addScopeAndRunOperatorAction(
+        engagement.value.id,
+        queued.value.action.actionId,
+        {
+          expectedEngagementRevision: 1,
+          expectedActionRevision: queued.value.revision,
+          rules: [],
+        },
+      ),
+    ).toEqual({ ok: false, error: { code: "action_already_queued" } });
+  });
+
+  it("returns invalid_action_transition for terminal add-scope requests", () => {
+    const { repository } = createFixture();
+    const engagement = repository.createEngagement({
+      name: "Target lab",
+      kind: "lab",
+      autoContinueWarnings: false,
+    });
+    if (!engagement.ok) throw new Error(engagement.error.code);
+    const empty = repository.appendScopeRevision({
+      engagementId: engagement.value.id,
+      expectedRevision: 1,
+      rules: [],
+    });
+    if (!empty.ok) throw new Error(empty.error.code);
+    const paused = repository.planOperatorAction(engagement.value.id, {
+      expectedEngagementRevision: 2,
+      expectedActiveScopeRevisionId: empty.value.id,
+      targets: ["192.0.2.10"],
+    });
+    if (!paused.ok) throw new Error(paused.error.code);
+    const cancelledPaused = repository.cancelAction({
+      engagementId: engagement.value.id,
+      actionId: paused.value.action.actionId,
+      expectedRevision: paused.value.revision,
+    });
+    if (!cancelledPaused.ok) throw new Error(cancelledPaused.error.code);
+    expect(
+      repository.addScopeAndRunOperatorAction(
+        engagement.value.id,
+        paused.value.action.actionId,
+        {
+          expectedEngagementRevision: 2,
+          expectedActionRevision: cancelledPaused.value.revision,
+          rules: [],
+        },
+      ),
+    ).toEqual({ ok: false, error: { code: "invalid_action_transition" } });
+
+    const noScope = repository.planOperatorAction(engagement.value.id, {
+      expectedEngagementRevision: 2,
+      expectedActiveScopeRevisionId: empty.value.id,
+      targets: ["192.0.2.11"],
+    });
+    if (!noScope.ok) throw new Error(noScope.error.code);
+    const queuedBinding = noScope.value.action.snapshots[0]?.binding;
+    if (queuedBinding === undefined) {
+      throw new Error("expected queued snapshot binding");
+    }
+    const continued = repository.continueAction({
+      engagementId: engagement.value.id,
+      actionId: noScope.value.action.actionId,
+      expectedRevision: noScope.value.revision,
+      snapshotVersion: 1,
+      snapshotBinding: queuedBinding,
+      occurredAt: "2026-08-12T12:30:00.000Z",
+    });
+    if (!continued.ok) throw new Error(continued.error.code);
+    const cancelledQueued = repository.cancelAction({
+      engagementId: engagement.value.id,
+      actionId: noScope.value.action.actionId,
+      expectedRevision: continued.value.revision,
+    });
+    if (!cancelledQueued.ok) throw new Error(cancelledQueued.error.code);
+    expect(cancelledQueued.value.action.queuedSnapshotVersion).toBe(1);
+    expect(
+      repository.addScopeAndRunOperatorAction(
+        engagement.value.id,
+        noScope.value.action.actionId,
+        {
+          expectedEngagementRevision: 2,
+          expectedActionRevision: cancelledQueued.value.revision,
+          rules: [],
+        },
+      ),
+    ).toEqual({ ok: false, error: { code: "invalid_action_transition" } });
+  });
+
+  it("commits an empty add-scope revision, retains outside_scope, and queues once", () => {
+    const { repository } = createFixture();
+    const engagement = repository.createEngagement({
+      name: "Target lab",
+      kind: "lab",
+      autoContinueWarnings: false,
+    });
+    if (!engagement.ok) throw new Error(engagement.error.code);
+    const empty = repository.appendScopeRevision({
+      engagementId: engagement.value.id,
+      expectedRevision: 1,
+      rules: [],
+    });
+    if (!empty.ok) throw new Error(empty.error.code);
+    const paused = repository.planOperatorAction(engagement.value.id, {
+      expectedEngagementRevision: 2,
+      expectedActiveScopeRevisionId: empty.value.id,
+      targets: ["192.0.2.10"],
+    });
+    if (!paused.ok) throw new Error(paused.error.code);
+    const added = repository.addScopeAndRunOperatorAction(
+      engagement.value.id,
+      paused.value.action.actionId,
+      {
+        expectedEngagementRevision: 2,
+        expectedActionRevision: paused.value.revision,
+        rules: [],
+      },
+    );
+    expect(added).toMatchObject({
+      ok: true,
+      value: {
+        action: {
+          state: "queued",
+          queuedSnapshotVersion: 2,
+          pendingWarning: null,
+          warningAcknowledgment: { source: "add_scope_and_run" },
+        },
+      },
+    });
+    if (!added.ok) throw new Error("expected add-scope success");
+    expect(added.value.action.snapshots).toHaveLength(2);
+    expect(added.value.action.snapshots[1]).toMatchObject({
+      version: 2,
+      warningState: { reasonCodes: ["outside_scope"] },
+    });
+    expect(added.value.action.snapshots[1]?.scopeRevisionId).not.toBe(
+      empty.value.id,
+    );
+    expect(repository.listScopeRevisions(engagement.value.id)).toMatchObject({
+      ok: true,
+      value: [
+        { version: 1, rules: [] },
+        { version: 2, rules: [] },
+      ],
+    });
+  });
 });
 
 describe("numeric-IP URL target facts", () => {
