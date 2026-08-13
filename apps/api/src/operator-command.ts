@@ -87,8 +87,12 @@ export function prepareLocalOperatorCommand(
 export function parseBoundedDigestInput(
   value: unknown,
 ): JsonValue | undefined {
-  const parsed = JsonValueSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
+  try {
+    const parsed = JsonValueSchema.safeParse(value);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function readIdempotencyKey(request: FastifyRequest): string | undefined {

@@ -8,6 +8,8 @@ import fixtureData from "../../../docs/architecture/fixtures/d2/canonical-reques
   type: "json",
 };
 import {
+  JsonValueSchema,
+  MAX_CANONICAL_JSON_DEPTH,
   commandJsonV1CreateEngagementDigest,
   projectCommandJsonV1DigestInput,
   type JsonValue,
@@ -20,6 +22,7 @@ import {
 import {
   LOCAL_OPERATOR_ACTOR_ID,
   executeOperatorMutation,
+  parseBoundedDigestInput,
   prepareLocalOperatorCommand,
 } from "./operator-command.js";
 
@@ -40,6 +43,28 @@ interface CommandFixture {
 const commandFixtures = (fixtureData as { cases: CommandFixture[] }).cases.filter(
   (fixtureCase) => "route" in fixtureCase.given.value,
 );
+
+function nestedJsonThatThrowsParse(leaf: JsonValue): JsonValue {
+  let candidate: JsonValue = leaf;
+  for (let index = 0; index < 32_768; index += 1) {
+    candidate = [candidate];
+  }
+  try {
+    JsonValueSchema.safeParse(candidate);
+  } catch {
+    return candidate;
+  }
+  throw new Error("Could not reproduce Zod JSON RangeError.");
+}
+
+function jsonParseThrows(value: unknown): boolean {
+  try {
+    JsonValueSchema.safeParse(value);
+    return false;
+  } catch (error) {
+    return error instanceof RangeError;
+  }
+}
 
 describe("local operator command preparation", () => {
   it("binds server-owned identity and exact fixture digests", () => {
@@ -412,5 +437,46 @@ describe("operator mutation digest lookup", () => {
       ),
     ).toEqual({ ok: false, error: { code: "idempotency_conflict" } });
     expect(validatorCalls).toBe(0);
+  });
+
+  it("fails closed when bounded JSON parse throws on extreme nesting", () => {
+    const marker = "SENSITIVE_NESTING_MARKER";
+    const nested = nestedJsonThatThrowsParse(marker);
+    expect(jsonParseThrows(nested)).toBe(true);
+    expect(parseBoundedDigestInput(nested)).toBeUndefined();
+
+    let depthLimit: JsonValue = null;
+    for (let index = 0; index < MAX_CANONICAL_JSON_DEPTH; index += 1) {
+      depthLimit = [depthLimit];
+    }
+    expect(parseBoundedDigestInput(depthLimit)).toEqual(depthLimit);
+
+    const { commandRepository, database } = commandRepositoryFixture();
+    let validatorCalls = 0;
+    const result = executeOperatorMutation(
+      commandRepository,
+      {
+        ...input,
+        body: {
+          name: "Target lab",
+          kind: "lab",
+          autoContinueWarnings: false,
+          extra: nested,
+        },
+      },
+      () => {
+        validatorCalls += 1;
+        throw new Error("deep input must not mutate");
+      },
+    );
+    expect(result).toEqual({ ok: false, error: { code: "invalid_command_input" } });
+    expect(JSON.stringify(result)).not.toContain(marker);
+    expect(validatorCalls).toBe(0);
+    expect(
+      database.sqlite
+        .prepare("select count(*) from operator_command_idempotency")
+        .pluck()
+        .get(),
+    ).toBe(0);
   });
 });

@@ -26,10 +26,14 @@ export function projectCommandJsonV1DigestObject(
   value: JsonValue,
 ): JsonValue {
   if (!isJsonObject(value)) return value;
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) return value;
-  const projected = JsonValueSchema.safeParse(parsed.data);
-  return projected.success ? projected.data : value;
+  try {
+    const parsed = schema.safeParse(value);
+    if (!parsed.success) return value;
+    const projected = JsonValueSchema.safeParse(parsed.data);
+    return projected.success ? projected.data : value;
+  } catch {
+    return value;
+  }
 }
 
 function projectDigestArray(
