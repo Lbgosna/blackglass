@@ -206,6 +206,103 @@ describe("action query and mutation routes", () => {
     });
   });
 
+  it("replays omitted declaredPorts and strips unknown action fields from the digest", async () => {
+    const { app, database } = await fixture();
+    const engagement = await createEngagement(app);
+    const base = `/api/v1/engagements/${engagement.id}`;
+    const planKey = key("plan-ports");
+    const omittedPorts = {
+      expectedEngagementRevision: 1,
+      expectedActiveScopeRevisionId: null,
+      targets: ["192.0.2.10"],
+    };
+    const planned = await app.inject({
+      method: "POST",
+      url: `${base}/actions`,
+      headers: headers(planKey),
+      payload: omittedPorts,
+    });
+    expect(planned.statusCode).toBe(201);
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `${base}/actions`,
+        headers: headers(planKey),
+        payload: { ...omittedPorts, declaredPorts: null },
+      }),
+    ).toMatchObject({ statusCode: 201, body: planned.body });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `${base}/actions?ignored=true`,
+        headers: headers(planKey),
+        payload: { ...omittedPorts, extra: true },
+      }),
+    ).toMatchObject({ statusCode: 201, body: planned.body });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `${base}/actions`,
+        headers: headers(planKey),
+        payload: { ...omittedPorts, declaredPorts: [80], extra: true },
+      }),
+    ).toMatchObject({ statusCode: 409, body: '{"code":"idempotency_conflict"}' });
+
+    const unknownPlanKey = key("plan-unknown");
+    const unknownPlan = await app.inject({
+      method: "POST",
+      url: `${base}/actions`,
+      headers: headers(unknownPlanKey),
+      payload: { ...omittedPorts, extra: true, targets: ["192.0.2.11"] },
+    });
+    expect(unknownPlan).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `${base}/actions`,
+        headers: headers(unknownPlanKey),
+        payload: { ...omittedPorts, targets: ["192.0.2.11"] },
+      }),
+    ).toMatchObject({ statusCode: 400, body: unknownPlan.body });
+
+    const addKey = key("add-unknown");
+    const addRequest = {
+      method: "POST" as const,
+      url: `${base}/actions/${planned.json().action.actionId}/add-scope-and-run`,
+      headers: headers(addKey),
+      payload: {
+        expectedEngagementRevision: 1,
+        expectedActionRevision: planned.json().revision,
+        extra: true,
+        rules: [{ ...reservedIpRule, extra: true, target: { ...reservedIpRule.target, extra: true } }],
+      },
+    };
+    const addedUnknown = await app.inject(addRequest);
+    expect(addedUnknown).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(
+      await app.inject({
+        ...addRequest,
+        payload: {
+          expectedEngagementRevision: 1,
+          expectedActionRevision: planned.json().revision,
+          rules: [reservedIpRule],
+        },
+      }),
+    ).toMatchObject({ statusCode: 400, body: addedUnknown.body });
+    expect(
+      database.sqlite
+        .prepare("select count(*) from actions")
+        .pluck()
+        .get(),
+    ).toBe(1);
+  });
+
   it("replays a stored command body that current action schemas would reject", async () => {
     const { app, database } = await fixture();
     const engagement = await createEngagement(app);

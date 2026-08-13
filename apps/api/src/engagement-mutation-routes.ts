@@ -8,6 +8,11 @@ import {
   JsonValueSchema,
   ScopeRevisionMutationResponseSchema,
   UpdateAutoContinueWarningsRequestSchema,
+  commandJsonV1AppendScopeRevisionDigest,
+  commandJsonV1ArchiveEngagementDigest,
+  commandJsonV1CreateEngagementDigest,
+  commandJsonV1ReopenEngagementDigest,
+  commandJsonV1UpdateAutoContinueWarningsDigest,
   type EngagementMutationError,
   type JsonValue,
 } from "@blackglass/contracts";
@@ -95,6 +100,7 @@ export function registerEngagementMutationRoutes(
     return dispatchOperatorMutation(request, reply, repository, {
       route: "/api/v1/engagements",
       operation: "create",
+      digest: commandJsonV1CreateEngagementDigest,
       mutate: (transaction: EngagementWriteTransaction) => {
         const body = CreateEngagementRequestSchema.safeParse(request.body);
         const query = EngagementMutationQuerySchema.safeParse(request.query);
@@ -121,6 +127,10 @@ export function registerEngagementMutationRoutes(
         return dispatchOperatorMutation(request, reply, repository, {
           route: `/api/v1/engagements/${engagementId}/${operation}`,
           operation,
+          digest:
+            operation === "archive"
+              ? commandJsonV1ArchiveEngagementDigest
+              : commandJsonV1ReopenEngagementDigest,
           mutate: (transaction: EngagementWriteTransaction) => {
             const params = EngagementIdParamsSchema.safeParse(request.params);
             const body = EngagementRevisionRequestSchema.safeParse(
@@ -157,6 +167,7 @@ export function registerEngagementMutationRoutes(
       return dispatchOperatorMutation(request, reply, repository, {
         route: `/api/v1/engagements/${engagementId}/auto-continue-warnings`,
         operation: "update_auto_continue_warnings",
+        digest: commandJsonV1UpdateAutoContinueWarningsDigest,
         mutate: (transaction: EngagementWriteTransaction) => {
           const params = EngagementIdParamsSchema.safeParse(request.params);
           const body = UpdateAutoContinueWarningsRequestSchema.safeParse(
@@ -191,6 +202,7 @@ export function registerEngagementMutationRoutes(
       return dispatchOperatorMutation(request, reply, repository, {
         route: `/api/v1/engagements/${engagementId}/scope-revisions`,
         operation: "append_scope_revision",
+        digest: commandJsonV1AppendScopeRevisionDigest,
         mutate: (transaction: EngagementWriteTransaction) => {
           const params = EngagementIdParamsSchema.safeParse(request.params);
           const body = AppendScopeRevisionRequestSchema.safeParse(request.body);

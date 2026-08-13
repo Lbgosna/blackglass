@@ -8,6 +8,8 @@ import fixtureData from "../../../docs/architecture/fixtures/d2/canonical-reques
   type: "json",
 };
 import {
+  commandJsonV1CreateEngagementDigest,
+  projectCommandJsonV1DigestInput,
   type JsonValue,
 } from "@blackglass/contracts";
 import {
@@ -167,7 +169,7 @@ function commandRepositoryFixture() {
   const commandRepository = new OperatorCommandRepository(engagementRepository, {
     now: () => new Date("2026-08-12T12:01:00.000Z"),
   });
-  return { commandRepository };
+  return { commandRepository, database };
 }
 
 afterEach(() => {
@@ -180,6 +182,9 @@ afterEach(() => {
 });
 
 describe("operator mutation digest lookup", () => {
+  const createEngagementDigest =
+    commandFixtures.find((fixtureCase) => fixtureCase.id === "d2.canonical.create-engagement")
+      ?.expected.digest;
   const input = {
     key: "fixture-idempotency-key-0001",
     route: "/api/v1/engagements",
@@ -187,6 +192,7 @@ describe("operator mutation digest lookup", () => {
     path: {},
     query: {},
     body: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+    digest: commandJsonV1CreateEngagementDigest,
   };
 
   it("replays the stored response without invoking the absent-path validator", () => {
@@ -234,6 +240,174 @@ describe("operator mutation digest lookup", () => {
         () => {
           validatorCalls += 1;
           throw new Error("absent-path validator must not run on digest conflict");
+        },
+      ),
+    ).toEqual({ ok: false, error: { code: "idempotency_conflict" } });
+    expect(validatorCalls).toBe(0);
+  });
+
+  it("hashes omitted create-engagement defaults to the pinned digest and replays explicit null", () => {
+    if (createEngagementDigest === undefined) {
+      throw new Error("Missing d2.canonical.create-engagement digest.");
+    }
+    const { commandRepository, database } = commandRepositoryFixture();
+    const applied = executeOperatorMutation(
+      commandRepository,
+      input,
+      (transaction) => {
+        const created = transaction.createEngagement(input.body);
+        if (!created.ok) throw new Error(`Fixture failed: ${created.error.code}`);
+        return { status: 201, body: { id: created.value.id } };
+      },
+    );
+    expect(applied).toMatchObject({ ok: true, disposition: "applied" });
+    expect(
+      database.sqlite
+        .prepare("select request_digest from operator_command_idempotency")
+        .pluck()
+        .get(),
+    ).toBe(createEngagementDigest);
+    expect(
+      prepareLocalOperatorCommand({
+        key: input.key,
+        route: input.route,
+        operation: input.operation,
+        ...projectCommandJsonV1DigestInput(commandJsonV1CreateEngagementDigest, {
+          path: {},
+          query: {},
+          body: input.body,
+        }),
+      }),
+    ).toMatchObject({
+      ok: true,
+      command: { requestDigest: createEngagementDigest },
+    });
+
+    let validatorCalls = 0;
+    const replayed = executeOperatorMutation(
+      commandRepository,
+      {
+        ...input,
+        body: {
+          ...input.body,
+          description: null,
+          authorizationContext: null,
+        },
+      },
+      () => {
+        validatorCalls += 1;
+        throw new Error("explicit-null replay must not run absent-path validation");
+      },
+    );
+    expect(replayed).toEqual(
+      applied.ok ? { ...applied, disposition: "replayed" } : applied,
+    );
+    expect(validatorCalls).toBe(0);
+  });
+
+  it("ignores unknown fields for digest lookup and still stores absent-key validation", () => {
+    const { commandRepository, database } = commandRepositoryFixture();
+    const applied = executeOperatorMutation(
+      commandRepository,
+      input,
+      (transaction) => {
+        const created = transaction.createEngagement(input.body);
+        if (!created.ok) throw new Error(`Fixture failed: ${created.error.code}`);
+        return { status: 201, body: { id: created.value.id } };
+      },
+    );
+    expect(applied).toMatchObject({ ok: true, disposition: "applied" });
+
+    let replayValidatorCalls = 0;
+    expect(
+      executeOperatorMutation(
+        commandRepository,
+        { ...input, body: { ...input.body, extra: true } },
+        () => {
+          replayValidatorCalls += 1;
+          throw new Error("unknown fields must not create a digest conflict");
+        },
+      ),
+    ).toEqual(applied.ok ? { ...applied, disposition: "replayed" } : applied);
+    expect(replayValidatorCalls).toBe(0);
+
+    const unknownKey = {
+      ...input,
+      key: "fixture-idempotency-key-0002",
+      body: { ...input.body, extra: true },
+    };
+    const storedInvalid = executeOperatorMutation(
+      commandRepository,
+      unknownKey,
+      () => ({ status: 400, body: { code: "invalid_request" } }),
+    );
+    expect(storedInvalid).toMatchObject({
+      ok: true,
+      disposition: "applied",
+      response: { status: 400, bodyJson: '{"code":"invalid_request"}' },
+    });
+    expect(
+      executeOperatorMutation(
+        commandRepository,
+        { ...unknownKey, body: input.body },
+        () => {
+          throw new Error("absent-path validator must not run on stored 400 replay");
+        },
+      ),
+    ).toEqual(
+      storedInvalid.ok ? { ...storedInvalid, disposition: "replayed" } : storedInvalid,
+    );
+    expect(
+      database.sqlite
+        .prepare("select count(*) from operator_command_idempotency")
+        .pluck()
+        .get(),
+    ).toBe(2);
+  });
+
+  it("does not let an invalid spelling with extra fields hijack another digest", () => {
+    const { commandRepository } = commandRepositoryFixture();
+    expect(
+      executeOperatorMutation(commandRepository, input, () => ({
+        status: 201,
+        body: { stored: true },
+      })),
+    ).toMatchObject({ ok: true, disposition: "applied" });
+
+    let validatorCalls = 0;
+    expect(
+      executeOperatorMutation(
+        commandRepository,
+        {
+          ...input,
+          body: {
+            name: "Other lab",
+            kind: "lab",
+            autoContinueWarnings: false,
+            extra: true,
+          },
+        },
+        () => {
+          validatorCalls += 1;
+          throw new Error("semantic conflict must happen before validation");
+        },
+      ),
+    ).toEqual({ ok: false, error: { code: "idempotency_conflict" } });
+    expect(
+      executeOperatorMutation(
+        commandRepository,
+        {
+          ...input,
+          body: {
+            name: "Target lab",
+            kind: "lab",
+            autoContinueWarnings: "false",
+            extra: true,
+          },
+        },
+        () => {
+          validatorCalls += 1;
+          throw new Error("invalid spelling must not replay a valid digest");
         },
       ),
     ).toEqual({ ok: false, error: { code: "idempotency_conflict" } });

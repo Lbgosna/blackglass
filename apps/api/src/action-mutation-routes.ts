@@ -8,6 +8,10 @@ import {
   CreateActionRequestSchema,
   EngagementIdParamsSchema,
   JsonValueSchema,
+  commandJsonV1AddScopeAndRunActionDigest,
+  commandJsonV1CancelActionDigest,
+  commandJsonV1ContinueActionDigest,
+  commandJsonV1CreateActionDigest,
   type ActionMutationError,
   type JsonValue,
 } from "@blackglass/contracts";
@@ -109,6 +113,7 @@ export function registerActionMutationRoutes(
       return dispatchOperatorMutation(request, reply, repository, {
         route: `/api/v1/engagements/${engagementId}/actions`,
         operation: "create",
+        digest: commandJsonV1CreateActionDigest,
         mutate: (transaction: EngagementWriteTransaction) => {
           const params = EngagementIdParamsSchema.safeParse(request.params);
           const body = CreateActionRequestSchema.safeParse(request.body);
@@ -140,6 +145,7 @@ export function registerActionMutationRoutes(
       return dispatchOperatorMutation(request, reply, repository, {
         route: `/api/v1/engagements/${engagementId}/actions/${actionId}/continue`,
         operation: "continue",
+        digest: commandJsonV1ContinueActionDigest,
         mutate: (transaction: EngagementWriteTransaction) => {
           const params = ActionIdParamsSchema.safeParse(request.params);
           const body = ContinueActionRequestSchema.safeParse(request.body);
@@ -175,6 +181,7 @@ export function registerActionMutationRoutes(
       return dispatchOperatorMutation(request, reply, repository, {
         route: `/api/v1/engagements/${engagementId}/actions/${actionId}/add-scope-and-run`,
         operation: "add_scope_and_run",
+        digest: commandJsonV1AddScopeAndRunActionDigest,
         mutate: (transaction: EngagementWriteTransaction) => {
           const params = ActionIdParamsSchema.safeParse(request.params);
           const body = AddScopeAndRunActionRequestSchema.safeParse(
@@ -209,6 +216,7 @@ export function registerActionMutationRoutes(
       return dispatchOperatorMutation(request, reply, repository, {
         route: `/api/v1/engagements/${engagementId}/actions/${actionId}/cancel`,
         operation: "cancel",
+        digest: commandJsonV1CancelActionDigest,
         mutate: (transaction: EngagementWriteTransaction) => {
           const params = ActionIdParamsSchema.safeParse(request.params);
           const body = CancelActionRequestSchema.safeParse(request.body);

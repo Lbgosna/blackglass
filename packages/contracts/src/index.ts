@@ -3,6 +3,7 @@ export * from "./action-api.js";
 export * from "./action-planning.js";
 export * from "./action-persistence.js";
 export * from "./action-snapshot.js";
+export * from "./command-json-v1-digest.js";
 export * from "./engagement.js";
 export * from "./engagement-api.js";
 export * from "./operator-command.js";

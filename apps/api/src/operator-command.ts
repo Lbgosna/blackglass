@@ -7,6 +7,8 @@ import {
   IdempotencyKeySchema,
   JsonValueSchema,
   canonicalizeJson,
+  projectCommandJsonV1DigestInput,
+  type CommandJsonV1DigestProjection,
   type JsonValue,
 } from "@blackglass/contracts";
 import type {
@@ -119,6 +121,7 @@ export function executeOperatorMutation(
     path: unknown;
     query: unknown;
     body: unknown;
+    digest: CommandJsonV1DigestProjection;
   },
   mutate: OperatorMutationCallback,
 ): OperatorCommandResult {
@@ -128,13 +131,18 @@ export function executeOperatorMutation(
   if (path === undefined || query === undefined || body === undefined) {
     return { ok: false, error: { code: "invalid_command_input" } };
   }
+  const projected = projectCommandJsonV1DigestInput(input.digest, {
+    path,
+    query,
+    body,
+  });
   const prepared = prepareLocalOperatorCommand({
     key: input.key,
     route: input.route,
     operation: input.operation,
-    path,
-    query,
-    body,
+    path: projected.path,
+    query: projected.query,
+    body: projected.body,
   });
   if (!prepared.ok) return prepared;
   return repository.executeOperatorCommand(prepared.command, mutate);
@@ -185,6 +193,7 @@ export function dispatchOperatorMutation(
   options: {
     route: string;
     operation: string;
+    digest: CommandJsonV1DigestProjection;
     mutate: OperatorMutationCallback;
   },
 ) {
@@ -203,6 +212,7 @@ export function dispatchOperatorMutation(
         path: request.params,
         query: request.query,
         body: request.body,
+        digest: options.digest,
       },
       options.mutate,
     ),

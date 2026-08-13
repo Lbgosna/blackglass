@@ -207,6 +207,151 @@ describe("engagement mutation routes", () => {
       .toHaveLength(1);
   });
 
+  it("replays omitted create-engagement defaults and strips unknown fields from the digest", async () => {
+    const { app, database } = await fixture();
+    const omittedKey = key("omit-null");
+    const omitted = { name: "Target lab", kind: "lab", autoContinueWarnings: false };
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(omittedKey),
+      payload: omitted,
+    });
+    expect(created.statusCode).toBe(201);
+    expect(
+      database.sqlite
+        .prepare("select request_digest from operator_command_idempotency where idempotency_key = ?")
+        .pluck()
+        .get(omittedKey),
+    ).toBe("sha256:b8a1a7e36d9307ad76be0324867dc33bed145bd6553a5782ce594e4c1a29a8cf");
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(omittedKey),
+        payload: { ...omitted, description: null, authorizationContext: null },
+      }),
+    ).toMatchObject({ statusCode: 201, body: created.body });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements?ignored=true",
+        headers: headers(omittedKey),
+        payload: { ...omitted, extra: true },
+      }),
+    ).toMatchObject({ statusCode: 201, body: created.body });
+
+    const unknownKey = key("unknown-create");
+    const unknownCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(unknownKey),
+      payload: { ...omitted, extra: true },
+    });
+    expect(unknownCreate).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(unknownKey),
+        payload: omitted,
+      }),
+    ).toMatchObject({ statusCode: 400, body: unknownCreate.body });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(omittedKey),
+        payload: { ...omitted, name: "Other lab", extra: true },
+      }),
+    ).toMatchObject({ statusCode: 409, body: '{"code":"idempotency_conflict"}' });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(omittedKey),
+        payload: { ...omitted, autoContinueWarnings: "false", extra: true },
+      }),
+    ).toMatchObject({ statusCode: 409, body: '{"code":"idempotency_conflict"}' });
+
+    const reservedIpRule = {
+      id: "reserved-ip",
+      kind: "ip",
+      target: {
+        kind: "ip",
+        normalizationProfile: "d1-v1",
+        family: 4,
+        address: "192.0.2.20",
+        zone: null,
+      },
+    };
+    const scopeKey = key("unknown-scope");
+    const scope = await app.inject({
+      method: "POST",
+      url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+      headers: headers(scopeKey),
+      payload: { expectedRevision: 1, rules: [reservedIpRule] },
+    });
+    expect(scope.statusCode).toBe(201);
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+        headers: headers(scopeKey),
+        payload: {
+          expectedRevision: 1,
+          extra: true,
+          rules: [
+            {
+              ...reservedIpRule,
+              extra: true,
+              target: { ...reservedIpRule.target, extra: true },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ statusCode: 201, body: scope.body });
+
+    const nestedUnknownKey = key("nested-unknown");
+    const nestedUnknown = await app.inject({
+      method: "POST",
+      url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+      headers: headers(nestedUnknownKey),
+      payload: {
+        expectedRevision: 2,
+        extra: true,
+        rules: [
+          {
+            ...reservedIpRule,
+            extra: true,
+            target: { ...reservedIpRule.target, extra: true },
+          },
+        ],
+      },
+    });
+    expect(nestedUnknown).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+        headers: headers(nestedUnknownKey),
+        payload: { expectedRevision: 2, rules: [reservedIpRule] },
+      }),
+    ).toMatchObject({ statusCode: 400, body: nestedUnknown.body });
+    expect(
+      database.sqlite
+        .prepare("select count(*) from engagements")
+        .pluck()
+        .get(),
+    ).toBe(1);
+  });
+
   it("rejects malformed transport before lookup and does not reserve its key", async () => {
     const { app, database } = await fixture();
     const commandKey = key("invalid-transport");
