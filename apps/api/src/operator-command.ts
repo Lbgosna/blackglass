@@ -90,8 +90,9 @@ export function parseBoundedDigestInput(
   try {
     const parsed = JsonValueSchema.safeParse(value);
     return parsed.success ? parsed.data : undefined;
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof RangeError) return undefined;
+    throw error;
   }
 }
 

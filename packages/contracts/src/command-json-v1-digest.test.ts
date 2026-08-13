@@ -264,30 +264,35 @@ describe("command-json-v1 digest projection", () => {
   });
 
   it("does not throw when a second JSON parse overflows", () => {
-    const marker = "SENSITIVE_NESTING_MARKER";
-    const nested = nestedJsonThatThrowsParse(marker);
+    const nested = nestedJsonThatThrowsParse(null);
     expect(jsonParseThrows(nested)).toBe(true);
     const value = { name: nested };
+    expect(
+      projectCommandJsonV1DigestObject(
+        CommandJsonV1CreateEngagementBodyDigestSchema,
+        value,
+      ),
+    ).toBe(value);
+  });
+
+  it("rethrows a non-RangeError from digest projection", () => {
+    const schema = {
+      safeParse(): never {
+        throw new TypeError("SENSITIVE_SCHEMA_FAULT");
+      },
+    };
     expect(() =>
-      projectCommandJsonV1DigestObject(
-        CommandJsonV1CreateEngagementBodyDigestSchema,
-        value,
-      ),
-    ).not.toThrow();
-    expect(
-      projectCommandJsonV1DigestObject(
-        CommandJsonV1CreateEngagementBodyDigestSchema,
-        value,
-      ),
-    ).toEqual(value);
-    expect(
-      JSON.stringify(
-        projectCommandJsonV1DigestObject(
-          CommandJsonV1CreateEngagementBodyDigestSchema,
-          { name: "Target lab" },
-        ),
-      ),
-    ).not.toContain(marker);
+      projectCommandJsonV1DigestObject(schema, { name: "Target lab" }),
+    ).toThrow(TypeError);
+    try {
+      projectCommandJsonV1DigestObject(schema, { name: "Target lab" });
+      throw new Error("expected TypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error instanceof Error ? error.message : "").toBe(
+        "SENSITIVE_SCHEMA_FAULT",
+      );
+    }
   });
 
   it("matches current request schema output for every mutation route", () => {
@@ -555,8 +560,8 @@ describe("command-json-v1 digest projection", () => {
       },
     ];
 
-    expect(cases.map((fixture) => fixture.projection)).toEqual(
-      expect.arrayContaining([
+    expect(new Set(cases.map((fixture) => fixture.projection))).toEqual(
+      new Set([
         commandJsonV1CreateEngagementDigest,
         commandJsonV1ArchiveEngagementDigest,
         commandJsonV1ReopenEngagementDigest,

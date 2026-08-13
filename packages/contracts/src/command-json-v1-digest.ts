@@ -31,8 +31,9 @@ export function projectCommandJsonV1DigestObject(
     if (!parsed.success) return value;
     const projected = JsonValueSchema.safeParse(parsed.data);
     return projected.success ? projected.data : value;
-  } catch {
-    return value;
+  } catch (error) {
+    if (error instanceof RangeError) return value;
+    throw error;
   }
 }
 

@@ -4,6 +4,10 @@ import { request as httpRequest } from "node:http";
 import path from "node:path";
 
 import {
+  JsonValueSchema,
+  MAX_CANONICAL_JSON_BYTES,
+} from "@blackglass/contracts";
+import {
   EngagementRepository,
   OperatorCommandRepository,
   openEngagementDatabase,
@@ -53,6 +57,19 @@ async function fixture() {
 
 const headers = (key: string) => ({ "idempotency-key": key });
 const key = (suffix: string) => `fixture-idempotency-${suffix.padEnd(12, "0")}`;
+
+function rawNestedArrayJson(leafJson: string, depth: number): string {
+  return `${"[".repeat(depth)}${leafJson}${"]".repeat(depth)}`;
+}
+
+function jsonParseThrows(value: unknown): boolean {
+  try {
+    JsonValueSchema.safeParse(value);
+    return false;
+  } catch (error) {
+    return error instanceof RangeError;
+  }
+}
 
 async function sendDuplicateKeyRequest(
   port: number,
@@ -350,6 +367,39 @@ describe("engagement mutation routes", () => {
         .pluck()
         .get(),
     ).toBe(1);
+  });
+
+  it("rejects a deeply nested declared field as a fixed invalid request", async () => {
+    const { app, database, engagementRepository } = await fixture();
+    const marker = "SENSITIVE_NESTING_MARKER";
+    const depth = 32_768;
+    const body = `{"name":${rawNestedArrayJson(JSON.stringify(marker), depth)},"kind":"lab","autoContinueWarnings":false}`;
+    expect(Buffer.byteLength(body)).toBeLessThan(MAX_CANONICAL_JSON_BYTES);
+    const parsed = JSON.parse(body);
+    expect(jsonParseThrows(parsed)).toBe(true);
+
+    const commandKey = key("deep-json");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: {
+        ...headers(commandKey),
+        "content-type": "application/json",
+      },
+      payload: body,
+    });
+    expect(response).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(response.body).not.toContain(marker);
+    expect(
+      database.sqlite
+        .prepare("select count(*) from operator_command_idempotency")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(engagementRepository.listEngagements()).toEqual({ ok: true, value: [] });
   });
 
   it("rejects malformed transport before lookup and does not reserve its key", async () => {
