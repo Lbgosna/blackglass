@@ -5,10 +5,17 @@ import {
   CommandOperationSchema,
   ConcreteCommandRouteSchema,
   IdempotencyKeySchema,
+  JsonValueSchema,
   canonicalizeJson,
   type JsonValue,
 } from "@blackglass/contracts";
-import type { PreparedOperatorCommand } from "@blackglass/db";
+import type {
+  EngagementWriteTransaction,
+  OperatorCommandRepository,
+  OperatorCommandResult,
+  PreparedOperatorCommand,
+} from "@blackglass/db";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 export const LOCAL_OPERATOR_ACTOR_ID = "local-operator-v1" as const;
 
@@ -16,7 +23,7 @@ interface LocalOperatorCommandInput {
   key: string;
   route: string;
   operation: string;
-  /** Successful outputs from the route's path, query, and body schemas. */
+  /** Bounded digest-input path, query, and body values. */
   path: JsonValue;
   query: JsonValue;
   body: JsonValue;
@@ -25,6 +32,18 @@ interface LocalOperatorCommandInput {
 export type PrepareLocalOperatorCommandResult =
   | { ok: true; command: PreparedOperatorCommand }
   | { ok: false; error: { code: "invalid_command_input" } };
+
+export type OperatorMutationCallback = (
+  transaction: EngagementWriteTransaction,
+) => {
+  status: number;
+  body: JsonValue;
+};
+
+type CommandRepository = Pick<
+  OperatorCommandRepository,
+  "executeOperatorCommand"
+>;
 
 export function prepareLocalOperatorCommand(
   input: LocalOperatorCommandInput,
@@ -61,4 +80,131 @@ export function prepareLocalOperatorCommand(
       requestDigest,
     },
   };
+}
+
+export function parseBoundedDigestInput(
+  value: unknown,
+): JsonValue | undefined {
+  const parsed = JsonValueSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function readIdempotencyKey(request: FastifyRequest): string | undefined {
+  const values: string[] = [];
+  for (let index = 0; index < request.raw.rawHeaders.length; index += 2) {
+    if (request.raw.rawHeaders[index]?.toLowerCase() === "idempotency-key") {
+      values.push(request.raw.rawHeaders[index + 1] ?? "");
+    }
+  }
+  if (values.length !== 1) return undefined;
+  const parsed = IdempotencyKeySchema.safeParse(values[0]);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function readPathParam(
+  params: unknown,
+  name: string,
+): string | undefined {
+  if (typeof params !== "object" || params === null) return undefined;
+  const value = Reflect.get(params, name);
+  return typeof value === "string" ? value : undefined;
+}
+
+export function executeOperatorMutation(
+  repository: CommandRepository,
+  input: {
+    key: string;
+    route: string;
+    operation: string;
+    path: unknown;
+    query: unknown;
+    body: unknown;
+  },
+  mutate: OperatorMutationCallback,
+): OperatorCommandResult {
+  const path = parseBoundedDigestInput(input.path);
+  const query = parseBoundedDigestInput(input.query);
+  const body = parseBoundedDigestInput(input.body);
+  if (path === undefined || query === undefined || body === undefined) {
+    return { ok: false, error: { code: "invalid_command_input" } };
+  }
+  const prepared = prepareLocalOperatorCommand({
+    key: input.key,
+    route: input.route,
+    operation: input.operation,
+    path,
+    query,
+    body,
+  });
+  if (!prepared.ok) return prepared;
+  return repository.executeOperatorCommand(prepared.command, mutate);
+}
+
+const FIXED_COMMAND_ERRORS = {
+  invalid_command_input: { status: 400, code: "invalid_request" },
+  idempotency_conflict: { status: 409, code: "idempotency_conflict" },
+  storage_busy: { status: 503, code: "storage_busy" },
+  invalid_persisted_data: { status: 500, code: "invalid_persisted_data" },
+} as const;
+
+export function sendFixedOperatorError(
+  reply: FastifyReply,
+  status: 400 | 409 | 500 | 503,
+  code:
+    | "invalid_request"
+    | "idempotency_conflict"
+    | "invalid_persisted_data"
+    | "storage_busy",
+) {
+  return reply.code(status).type("application/json").send({ code });
+}
+
+export function sendOperatorCommandResult(
+  reply: FastifyReply,
+  result: OperatorCommandResult,
+) {
+  if (!result.ok) {
+    const mapped = FIXED_COMMAND_ERRORS[result.error.code];
+    return sendFixedOperatorError(reply, mapped.status, mapped.code);
+  }
+  try {
+    JSON.parse(result.response.bodyJson);
+  } catch {
+    return sendFixedOperatorError(reply, 500, "invalid_persisted_data");
+  }
+  return reply
+    .code(result.response.status)
+    .type("application/json")
+    .send(result.response.bodyJson);
+}
+
+export function dispatchOperatorMutation(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  repository: CommandRepository,
+  options: {
+    route: string;
+    operation: string;
+    mutate: OperatorMutationCallback;
+  },
+) {
+  const key = readIdempotencyKey(request);
+  if (key === undefined) {
+    return sendFixedOperatorError(reply, 400, "invalid_request");
+  }
+  return sendOperatorCommandResult(
+    reply,
+    executeOperatorMutation(
+      repository,
+      {
+        key,
+        route: options.route,
+        operation: options.operation,
+        path: request.params,
+        query: request.query,
+        body: request.body,
+      },
+      options.mutate,
+    ),
+  );
 }

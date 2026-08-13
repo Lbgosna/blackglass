@@ -206,6 +206,34 @@ describe("action query and mutation routes", () => {
     });
   });
 
+  it("replays a stored command body that current action schemas would reject", async () => {
+    const { app, database } = await fixture();
+    const engagement = await createEngagement(app);
+    const commandKey = key("stale-body");
+    const request = {
+      method: "POST" as const,
+      url: `/api/v1/engagements/${engagement.id}/actions`,
+      headers: headers(commandKey),
+      payload: {
+        expectedEngagementRevision: 1,
+        expectedActiveScopeRevisionId: null,
+        targets: ["192.0.2.10"],
+      },
+    };
+    const first = await app.inject(request);
+    expect(first.statusCode).toBe(201);
+    database.sqlite
+      .prepare(
+        "update operator_command_idempotency set response_body_json = ? where idempotency_key = ?",
+      )
+      .run('{"stale":true}', commandKey);
+    const replay = await app.inject(request);
+    expect(replay).toMatchObject({
+      statusCode: 201,
+      body: '{"stale":true}',
+    });
+  });
+
   it("keeps a null current scope distinct from an active empty revision", async () => {
     const { app } = await fixture();
     const engagement = await createEngagement(app);
@@ -423,6 +451,77 @@ describe("action query and mutation routes", () => {
     expect(engagementRepository.listScopeRevisions(engagement.id)).toMatchObject({
       ok: true,
       value: [{ version: 1 }, { version: 2 }],
+    });
+  });
+
+  it("add-scope-and-run may commit an empty revision, retain outside_scope, and queue once", async () => {
+    const { app, engagementRepository } = await fixture();
+    const engagement = await createEngagement(app);
+    const base = `/api/v1/engagements/${engagement.id}`;
+    const scope = (
+      await app.inject({
+        method: "POST",
+        url: `${base}/scope-revisions`,
+        headers: headers(key("empty-retain")),
+        payload: { expectedRevision: 1, rules: [] },
+      })
+    ).json();
+    const planned = (
+      await app.inject({
+        method: "POST",
+        url: `${base}/actions`,
+        headers: headers(key("plan-retain")),
+        payload: {
+          expectedEngagementRevision: 2,
+          expectedActiveScopeRevisionId: scope.id,
+          targets: ["192.0.2.10"],
+        },
+      })
+    ).json();
+    expect(planned.action.state).toBe("paused_for_warning");
+    const added = await app.inject({
+      method: "POST",
+      url: `${base}/actions/${planned.action.actionId}/add-scope-and-run`,
+      headers: headers(key("add-empty")),
+      payload: {
+        expectedEngagementRevision: 2,
+        expectedActionRevision: planned.revision,
+        rules: [],
+      },
+    });
+    expect(added.statusCode).toBe(200);
+    expect(added.json().action).toMatchObject({
+      state: "queued",
+      queuedSnapshotVersion: 2,
+      pendingWarning: null,
+      warningAcknowledgment: { source: "add_scope_and_run" },
+    });
+    expect(added.json().action.snapshots).toHaveLength(2);
+    expect(added.json().action.snapshots[1]).toMatchObject({
+      version: 2,
+      warningState: { reasonCodes: ["outside_scope"] },
+    });
+    expect(added.json().action.snapshots[1].scopeRevisionId).not.toBe(scope.id);
+    expect(engagementRepository.listScopeRevisions(engagement.id)).toMatchObject({
+      ok: true,
+      value: [
+        { version: 1, rules: [] },
+        { version: 2, rules: [] },
+      ],
+    });
+    const queuedAdd = await app.inject({
+      method: "POST",
+      url: `${base}/actions/${planned.action.actionId}/add-scope-and-run`,
+      headers: headers(key("add-again")),
+      payload: {
+        expectedEngagementRevision: 3,
+        expectedActionRevision: added.json().revision,
+        rules: [],
+      },
+    });
+    expect(queuedAdd).toMatchObject({
+      statusCode: 409,
+      body: '{"code":"action_already_queued"}',
     });
   });
 
@@ -692,7 +791,7 @@ describe("action query and mutation routes", () => {
     const base = `/api/v1/engagements/${engagement.id}/actions`;
     const marker = "SENSITIVE_TARGET_MARKER.example";
     const oversized = `192.0.2.10/${"1".repeat(5_000)}`;
-    for (const payload of [
+    for (const [index, payload] of [
       {
         expectedEngagementRevision: 1,
         expectedActiveScopeRevisionId: null,
@@ -725,11 +824,11 @@ describe("action query and mutation routes", () => {
         expectedActiveScopeRevisionId: null,
         targets: ["192.0.2.10", " 192.0.2.10 "],
       },
-    ]) {
+    ].entries()) {
       const response = await app.inject({
         method: "POST",
         url: base,
-        headers: headers(key(`bad-${JSON.stringify(payload).length}`)),
+        headers: headers(key(`bad-${index}`)),
         payload,
       });
       expect(response).toMatchObject({

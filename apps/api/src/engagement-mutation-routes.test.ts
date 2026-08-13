@@ -212,7 +212,6 @@ describe("engagement mutation routes", () => {
     const commandKey = key("invalid-transport");
     for (const request of [
       { headers: {}, payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false } },
-      { headers: headers(commandKey), payload: { name: " Target lab", kind: "lab", autoContinueWarnings: false } },
       { headers: headers("short"), payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false } },
     ]) {
       const response = await app.inject({
@@ -250,7 +249,7 @@ describe("engagement mutation routes", () => {
       database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
     ).toBe(0);
     const missingId = "10000000-0000-4000-8000-000000000099";
-    for (const queryRequest of [
+    for (const [index, queryRequest] of [
       {
         method: "POST" as const,
         url: "/api/v1/engagements?ignored=true",
@@ -276,16 +275,13 @@ describe("engagement mutation routes", () => {
         url: `/api/v1/engagements/${missingId}/scope-revisions?ignored=true`,
         payload: { expectedRevision: 1, rules: [] },
       },
-    ]) {
+    ].entries()) {
       expect(
         await app.inject({
           ...queryRequest,
-          headers: headers(commandKey),
+          headers: headers(key(`query-${index}`)),
         }),
       ).toMatchObject({ statusCode: 400, body: '{"code":"invalid_request"}' });
-      expect(
-        database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
-      ).toBe(0);
     }
     expect(
       await app.inject({
@@ -521,9 +517,9 @@ describe("engagement mutation routes", () => {
     expect(await app.inject(request)).toMatchObject({ statusCode: 201 });
   }, 10_000);
 
-  it("does not reflect malformed stored command responses", async () => {
+  it("replays stored command JSON exactly and does not reflect non-JSON bodies", async () => {
     const marker = "SENSITIVE_STORED_MARKER";
-    const app = buildApp({
+    const staleApp = buildApp({
       engagementRepository: {
         getEngagement: () => ({ ok: false, error: { code: "engagement_not_found" } }),
         listEngagements: () => ({ ok: true, value: [] }),
@@ -538,22 +534,54 @@ describe("engagement mutation routes", () => {
         executeOperatorCommand: () => ({
           ok: true,
           disposition: "replayed",
-          response: { status: 201, bodyJson: JSON.stringify({ marker }) },
+          response: { status: 201, bodyJson: '{"stale":true}' },
         }),
       },
       getDevelopmentStorageReadiness: () => "ready",
     });
-    apps.push(app);
-    const response = await app.inject({
+    apps.push(staleApp);
+    const replayed = await staleApp.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(key("stale-response")),
+      payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+    });
+    expect(replayed).toMatchObject({
+      statusCode: 201,
+      body: '{"stale":true}',
+    });
+
+    const brokenApp = buildApp({
+      engagementRepository: {
+        getEngagement: () => ({ ok: false, error: { code: "engagement_not_found" } }),
+        listEngagements: () => ({ ok: true, value: [] }),
+        listScopeRevisions: () => ({ ok: true, value: [] }),
+        getAction: () => ({ ok: false, error: { code: "action_not_found" } }),
+        retryActionContext: () => ({
+          ok: false,
+          error: { code: "action_not_found" },
+        }),
+      },
+      operatorCommandRepository: {
+        executeOperatorCommand: () => ({
+          ok: true,
+          disposition: "replayed",
+          response: { status: 201, bodyJson: `{"marker":"${marker}"` },
+        }),
+      },
+      getDevelopmentStorageReadiness: () => "ready",
+    });
+    apps.push(brokenApp);
+    const broken = await brokenApp.inject({
       method: "POST",
       url: "/api/v1/engagements",
       headers: headers(key("malformed-response")),
       payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
     });
-    expect(response).toMatchObject({
+    expect(broken).toMatchObject({
       statusCode: 500,
       body: '{"code":"invalid_persisted_data"}',
     });
-    expect(response.body).not.toContain(marker);
+    expect(broken.body).not.toContain(marker);
   });
 });

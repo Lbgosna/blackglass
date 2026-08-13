@@ -2,11 +2,9 @@ import {
   AppendScopeRevisionRequestSchema,
   CreateEngagementRequestSchema,
   EngagementIdParamsSchema,
-  EngagementMutationErrorSchema,
   EngagementMutationQuerySchema,
   EngagementMutationResponseSchema,
   EngagementRevisionRequestSchema,
-  IdempotencyKeySchema,
   JsonValueSchema,
   ScopeRevisionMutationResponseSchema,
   UpdateAutoContinueWarningsRequestSchema,
@@ -16,13 +14,16 @@ import {
 import type {
   EngagementWriteTransaction,
   OperatorCommandRepository,
-  OperatorCommandResult,
   RepositoryError,
   RepositoryResult,
 } from "@blackglass/db";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 
-import { prepareLocalOperatorCommand } from "./operator-command.js";
+import {
+  dispatchOperatorMutation,
+  readPathParam,
+  sendFixedOperatorError,
+} from "./operator-command.js";
 
 type CommandRepository = Pick<
   OperatorCommandRepository,
@@ -82,103 +83,8 @@ function definitiveResponse<T>(
   return mutationError(result.error, engagementId);
 }
 
-function sendFixedError(
-  reply: FastifyReply,
-  status: 400 | 409 | 500 | 503,
-  code: "invalid_request" | "idempotency_conflict" | "invalid_persisted_data" | "storage_busy",
-) {
-  return reply
-    .code(status)
-    .type("application/json")
-    .send(EngagementMutationErrorSchema.parse({ code }));
-}
-
-function sendCommandResult(
-  reply: FastifyReply,
-  result: OperatorCommandResult,
-  successStatus: 200 | 201,
-  successSchema: ResponseSchema,
-) {
-  if (!result.ok) {
-    switch (result.error.code) {
-      case "invalid_command_input":
-        return sendFixedError(reply, 400, "invalid_request");
-      case "idempotency_conflict":
-        return sendFixedError(reply, 409, result.error.code);
-      case "storage_busy":
-        return sendFixedError(reply, 503, result.error.code);
-      case "invalid_persisted_data":
-        return sendFixedError(reply, 500, result.error.code);
-    }
-  }
-
-  let body: unknown;
-  try {
-    body = JSON.parse(result.response.bodyJson);
-  } catch {
-    return sendFixedError(reply, 500, "invalid_persisted_data");
-  }
-  const schema = result.response.status === successStatus
-    ? successSchema
-    : EngagementMutationErrorSchema;
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return sendFixedError(reply, 500, "invalid_persisted_data");
-  }
-  return reply
-    .code(result.response.status)
-    .type("application/json")
-    .send(parsed.data);
-}
-
-function commandKey(request: FastifyRequest): string | undefined {
-  const values: string[] = [];
-  for (let index = 0; index < request.raw.rawHeaders.length; index += 2) {
-    if (request.raw.rawHeaders[index]?.toLowerCase() === "idempotency-key") {
-      values.push(request.raw.rawHeaders[index + 1] ?? "");
-    }
-  }
-  if (values.length !== 1) return undefined;
-  const parsed = IdempotencyKeySchema.safeParse(values[0]);
-  return parsed.success ? parsed.data : undefined;
-}
-
-interface ExecuteOptions {
-  key: string;
-  route: string;
-  operation: string;
-  path: JsonValue;
-  query: JsonValue;
-  body: JsonValue;
-  successStatus: 200 | 201;
-  successSchema: ResponseSchema;
-  mutate: (transaction: EngagementWriteTransaction) => {
-    status: number;
-    body: JsonValue;
-  };
-}
-
-function execute(
-  reply: FastifyReply,
-  repository: CommandRepository,
-  options: ExecuteOptions,
-) {
-  const prepared = prepareLocalOperatorCommand({
-    key: options.key,
-    route: options.route,
-    operation: options.operation,
-    path: options.path,
-    query: options.query,
-    body: options.body,
-  });
-  if (!prepared.ok) return sendFixedError(reply, 400, "invalid_request");
-  const result = repository.executeOperatorCommand(prepared.command, options.mutate);
-  return sendCommandResult(
-    reply,
-    result,
-    options.successStatus,
-    options.successSchema,
-  );
+function invalidRequest(): { status: 400; body: { code: "invalid_request" } } {
+  return { status: 400, body: { code: "invalid_request" } };
 }
 
 export function registerEngagementMutationRoutes(
@@ -186,85 +92,81 @@ export function registerEngagementMutationRoutes(
   repository: CommandRepository,
 ): void {
   app.post("/api/v1/engagements", async (request, reply) => {
-    const key = commandKey(request);
-    const body = CreateEngagementRequestSchema.safeParse(request.body);
-    const query = EngagementMutationQuerySchema.safeParse(request.query);
-    if (key === undefined || !body.success || !query.success) {
-      return sendFixedError(reply, 400, "invalid_request");
-    }
-    return execute(reply, repository, {
-      key,
+    return dispatchOperatorMutation(request, reply, repository, {
       route: "/api/v1/engagements",
       operation: "create",
-      path: {},
-      query: query.data,
-      body: JsonValueSchema.parse(body.data),
-      successStatus: 201,
-      successSchema: EngagementMutationResponseSchema,
-      mutate: (transaction) =>
-        definitiveResponse(
+      mutate: (transaction: EngagementWriteTransaction) => {
+        const body = CreateEngagementRequestSchema.safeParse(request.body);
+        const query = EngagementMutationQuerySchema.safeParse(request.query);
+        if (!body.success || !query.success) {
+          return invalidRequest();
+        }
+        return definitiveResponse(
           transaction.createEngagement(body.data),
           201,
           EngagementMutationResponseSchema,
-        ),
+        );
+      },
     });
   });
 
   for (const operation of ["archive", "reopen"] as const) {
-    app.post(`/api/v1/engagements/:engagementId/${operation}`, async (request, reply) => {
-      const key = commandKey(request);
-      const params = EngagementIdParamsSchema.safeParse(request.params);
-      const body = EngagementRevisionRequestSchema.safeParse(request.body);
-      const query = EngagementMutationQuerySchema.safeParse(request.query);
-      if (key === undefined || !params.success || !body.success || !query.success) {
-        return sendFixedError(reply, 400, "invalid_request");
-      }
-      const route = `/api/v1/engagements/${params.data.engagementId}/${operation}`;
-      return execute(reply, repository, {
-        key,
-        route,
-        operation,
-        path: params.data,
-        query: query.data,
-        body: JsonValueSchema.parse(body.data),
-        successStatus: 200,
-        successSchema: EngagementMutationResponseSchema,
-        mutate: (transaction) =>
-          definitiveResponse(
-            transaction[operation](
+    app.post(
+      `/api/v1/engagements/:engagementId/${operation}`,
+      async (request, reply) => {
+        const engagementId = readPathParam(request.params, "engagementId");
+        if (engagementId === undefined) {
+          return sendFixedOperatorError(reply, 400, "invalid_request");
+        }
+        return dispatchOperatorMutation(request, reply, repository, {
+          route: `/api/v1/engagements/${engagementId}/${operation}`,
+          operation,
+          mutate: (transaction: EngagementWriteTransaction) => {
+            const params = EngagementIdParamsSchema.safeParse(request.params);
+            const body = EngagementRevisionRequestSchema.safeParse(
+              request.body,
+            );
+            const query = EngagementMutationQuerySchema.safeParse(
+              request.query,
+            );
+            if (!params.success || !body.success || !query.success) {
+              return invalidRequest();
+            }
+            return definitiveResponse(
+              transaction[operation](
+                params.data.engagementId,
+                body.data.expectedRevision,
+              ),
+              200,
+              EngagementMutationResponseSchema,
               params.data.engagementId,
-              body.data.expectedRevision,
-            ),
-            200,
-            EngagementMutationResponseSchema,
-            params.data.engagementId,
-          ),
-      });
-    });
+            );
+          },
+        });
+      },
+    );
   }
 
   app.patch(
     "/api/v1/engagements/:engagementId/auto-continue-warnings",
     async (request, reply) => {
-      const key = commandKey(request);
-      const params = EngagementIdParamsSchema.safeParse(request.params);
-      const body = UpdateAutoContinueWarningsRequestSchema.safeParse(request.body);
-      const query = EngagementMutationQuerySchema.safeParse(request.query);
-      if (key === undefined || !params.success || !body.success || !query.success) {
-        return sendFixedError(reply, 400, "invalid_request");
+      const engagementId = readPathParam(request.params, "engagementId");
+      if (engagementId === undefined) {
+        return sendFixedOperatorError(reply, 400, "invalid_request");
       }
-      const route = `/api/v1/engagements/${params.data.engagementId}/auto-continue-warnings`;
-      return execute(reply, repository, {
-        key,
-        route,
+      return dispatchOperatorMutation(request, reply, repository, {
+        route: `/api/v1/engagements/${engagementId}/auto-continue-warnings`,
         operation: "update_auto_continue_warnings",
-        path: params.data,
-        query: query.data,
-        body: JsonValueSchema.parse(body.data),
-        successStatus: 200,
-        successSchema: EngagementMutationResponseSchema,
-        mutate: (transaction) =>
-          definitiveResponse(
+        mutate: (transaction: EngagementWriteTransaction) => {
+          const params = EngagementIdParamsSchema.safeParse(request.params);
+          const body = UpdateAutoContinueWarningsRequestSchema.safeParse(
+            request.body,
+          );
+          const query = EngagementMutationQuerySchema.safeParse(request.query);
+          if (!params.success || !body.success || !query.success) {
+            return invalidRequest();
+          }
+          return definitiveResponse(
             transaction.updateAutoContinueWarnings(
               params.data.engagementId,
               body.data.expectedRevision,
@@ -273,7 +175,8 @@ export function registerEngagementMutationRoutes(
             200,
             EngagementMutationResponseSchema,
             params.data.engagementId,
-          ),
+          );
+        },
       });
     },
   );
@@ -281,25 +184,21 @@ export function registerEngagementMutationRoutes(
   app.post(
     "/api/v1/engagements/:engagementId/scope-revisions",
     async (request, reply) => {
-      const key = commandKey(request);
-      const params = EngagementIdParamsSchema.safeParse(request.params);
-      const body = AppendScopeRevisionRequestSchema.safeParse(request.body);
-      const query = EngagementMutationQuerySchema.safeParse(request.query);
-      if (key === undefined || !params.success || !body.success || !query.success) {
-        return sendFixedError(reply, 400, "invalid_request");
+      const engagementId = readPathParam(request.params, "engagementId");
+      if (engagementId === undefined) {
+        return sendFixedOperatorError(reply, 400, "invalid_request");
       }
-      const route = `/api/v1/engagements/${params.data.engagementId}/scope-revisions`;
-      return execute(reply, repository, {
-        key,
-        route,
+      return dispatchOperatorMutation(request, reply, repository, {
+        route: `/api/v1/engagements/${engagementId}/scope-revisions`,
         operation: "append_scope_revision",
-        path: params.data,
-        query: query.data,
-        body: JsonValueSchema.parse(body.data),
-        successStatus: 201,
-        successSchema: ScopeRevisionMutationResponseSchema,
-        mutate: (transaction) =>
-          definitiveResponse(
+        mutate: (transaction: EngagementWriteTransaction) => {
+          const params = EngagementIdParamsSchema.safeParse(request.params);
+          const body = AppendScopeRevisionRequestSchema.safeParse(request.body);
+          const query = EngagementMutationQuerySchema.safeParse(request.query);
+          if (!params.success || !body.success || !query.success) {
+            return invalidRequest();
+          }
+          return definitiveResponse(
             transaction.appendScopeRevision({
               engagementId: params.data.engagementId,
               ...body.data,
@@ -307,7 +206,8 @@ export function registerEngagementMutationRoutes(
             201,
             ScopeRevisionMutationResponseSchema,
             params.data.engagementId,
-          ),
+          );
+        },
       });
     },
   );

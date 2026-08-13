@@ -1,6 +1,5 @@
 import {
   ActionIdParamsSchema,
-  ActionMutationErrorSchema,
   ActionMutationQuerySchema,
   ActionResponseSchema,
   AddScopeAndRunActionRequestSchema,
@@ -8,7 +7,6 @@ import {
   ContinueActionRequestSchema,
   CreateActionRequestSchema,
   EngagementIdParamsSchema,
-  IdempotencyKeySchema,
   JsonValueSchema,
   type ActionMutationError,
   type JsonValue,
@@ -17,12 +15,15 @@ import type {
   ActionRepositoryError,
   EngagementWriteTransaction,
   OperatorCommandRepository,
-  OperatorCommandResult,
   RepositoryResult,
 } from "@blackglass/db";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 
-import { prepareLocalOperatorCommand } from "./operator-command.js";
+import {
+  dispatchOperatorMutation,
+  readPathParam,
+  sendFixedOperatorError,
+} from "./operator-command.js";
 
 type CommandRepository = Pick<
   OperatorCommandRepository,
@@ -90,104 +91,8 @@ function definitiveResponse(
   return mutationError(result.error, defaults);
 }
 
-function sendFixedError(
-  reply: FastifyReply,
-  status: 400 | 409 | 500 | 503,
-  code:
-    | "invalid_request"
-    | "idempotency_conflict"
-    | "invalid_persisted_data"
-    | "storage_busy",
-) {
-  return reply
-    .code(status)
-    .type("application/json")
-    .send(ActionMutationErrorSchema.parse({ code }));
-}
-
-function sendCommandResult(
-  reply: FastifyReply,
-  result: OperatorCommandResult,
-  successStatus: 200 | 201,
-) {
-  if (!result.ok) {
-    switch (result.error.code) {
-      case "invalid_command_input":
-        return sendFixedError(reply, 400, "invalid_request");
-      case "idempotency_conflict":
-        return sendFixedError(reply, 409, result.error.code);
-      case "storage_busy":
-        return sendFixedError(reply, 503, result.error.code);
-      case "invalid_persisted_data":
-        return sendFixedError(reply, 500, result.error.code);
-    }
-  }
-
-  let body: unknown;
-  try {
-    body = JSON.parse(result.response.bodyJson);
-  } catch {
-    return sendFixedError(reply, 500, "invalid_persisted_data");
-  }
-  const schema =
-    result.response.status === successStatus
-      ? ActionResponseSchema
-      : ActionMutationErrorSchema;
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return sendFixedError(reply, 500, "invalid_persisted_data");
-  }
-  return reply
-    .code(result.response.status)
-    .type("application/json")
-    .send(parsed.data);
-}
-
-function commandKey(request: FastifyRequest): string | undefined {
-  const values: string[] = [];
-  for (let index = 0; index < request.raw.rawHeaders.length; index += 2) {
-    if (request.raw.rawHeaders[index]?.toLowerCase() === "idempotency-key") {
-      values.push(request.raw.rawHeaders[index + 1] ?? "");
-    }
-  }
-  if (values.length !== 1) return undefined;
-  const parsed = IdempotencyKeySchema.safeParse(values[0]);
-  return parsed.success ? parsed.data : undefined;
-}
-
-interface ExecuteOptions {
-  key: string;
-  route: string;
-  operation: string;
-  path: JsonValue;
-  query: JsonValue;
-  body: JsonValue;
-  successStatus: 200 | 201;
-  mutate: (transaction: EngagementWriteTransaction) => {
-    status: number;
-    body: JsonValue;
-  };
-}
-
-function execute(
-  reply: FastifyReply,
-  repository: CommandRepository,
-  options: ExecuteOptions,
-) {
-  const prepared = prepareLocalOperatorCommand({
-    key: options.key,
-    route: options.route,
-    operation: options.operation,
-    path: options.path,
-    query: options.query,
-    body: options.body,
-  });
-  if (!prepared.ok) return sendFixedError(reply, 400, "invalid_request");
-  const result = repository.executeOperatorCommand(
-    prepared.command,
-    options.mutate,
-  );
-  return sendCommandResult(reply, result, options.successStatus);
+function invalidRequest(): { status: 400; body: { code: "invalid_request" } } {
+  return { status: 400, body: { code: "invalid_request" } };
 }
 
 export function registerActionMutationRoutes(
@@ -197,31 +102,29 @@ export function registerActionMutationRoutes(
   app.post(
     "/api/v1/engagements/:engagementId/actions",
     async (request, reply) => {
-      const key = commandKey(request);
-      const params = EngagementIdParamsSchema.safeParse(request.params);
-      const body = CreateActionRequestSchema.safeParse(request.body);
-      const query = ActionMutationQuerySchema.safeParse(request.query);
-      if (key === undefined || !params.success || !body.success || !query.success) {
-        return sendFixedError(reply, 400, "invalid_request");
+      const engagementId = readPathParam(request.params, "engagementId");
+      if (engagementId === undefined) {
+        return sendFixedOperatorError(reply, 400, "invalid_request");
       }
-      const route = `/api/v1/engagements/${params.data.engagementId}/actions`;
-      return execute(reply, repository, {
-        key,
-        route,
+      return dispatchOperatorMutation(request, reply, repository, {
+        route: `/api/v1/engagements/${engagementId}/actions`,
         operation: "create",
-        path: params.data,
-        query: query.data,
-        body: JsonValueSchema.parse(body.data),
-        successStatus: 201,
-        mutate: (transaction) =>
-          definitiveResponse(
+        mutate: (transaction: EngagementWriteTransaction) => {
+          const params = EngagementIdParamsSchema.safeParse(request.params);
+          const body = CreateActionRequestSchema.safeParse(request.body);
+          const query = ActionMutationQuerySchema.safeParse(request.query);
+          if (!params.success || !body.success || !query.success) {
+            return invalidRequest();
+          }
+          return definitiveResponse(
             transaction.planOperatorAction(params.data.engagementId, body.data),
             201,
             {
               resourceType: "engagement",
               resourceId: params.data.engagementId,
             },
-          ),
+          );
+        },
       });
     },
   );
@@ -229,24 +132,22 @@ export function registerActionMutationRoutes(
   app.post(
     "/api/v1/engagements/:engagementId/actions/:actionId/continue",
     async (request, reply) => {
-      const key = commandKey(request);
-      const params = ActionIdParamsSchema.safeParse(request.params);
-      const body = ContinueActionRequestSchema.safeParse(request.body);
-      const query = ActionMutationQuerySchema.safeParse(request.query);
-      if (key === undefined || !params.success || !body.success || !query.success) {
-        return sendFixedError(reply, 400, "invalid_request");
+      const engagementId = readPathParam(request.params, "engagementId");
+      const actionId = readPathParam(request.params, "actionId");
+      if (engagementId === undefined || actionId === undefined) {
+        return sendFixedOperatorError(reply, 400, "invalid_request");
       }
-      const route = `/api/v1/engagements/${params.data.engagementId}/actions/${params.data.actionId}/continue`;
-      return execute(reply, repository, {
-        key,
-        route,
+      return dispatchOperatorMutation(request, reply, repository, {
+        route: `/api/v1/engagements/${engagementId}/actions/${actionId}/continue`,
         operation: "continue",
-        path: params.data,
-        query: query.data,
-        body: JsonValueSchema.parse(body.data),
-        successStatus: 200,
-        mutate: (transaction) =>
-          definitiveResponse(
+        mutate: (transaction: EngagementWriteTransaction) => {
+          const params = ActionIdParamsSchema.safeParse(request.params);
+          const body = ContinueActionRequestSchema.safeParse(request.body);
+          const query = ActionMutationQuerySchema.safeParse(request.query);
+          if (!params.success || !body.success || !query.success) {
+            return invalidRequest();
+          }
+          return definitiveResponse(
             transaction.continueAction({
               engagementId: params.data.engagementId,
               actionId: params.data.actionId,
@@ -257,7 +158,8 @@ export function registerActionMutationRoutes(
             }),
             200,
             { resourceType: "action", resourceId: params.data.actionId },
-          ),
+          );
+        },
       });
     },
   );
@@ -265,24 +167,24 @@ export function registerActionMutationRoutes(
   app.post(
     "/api/v1/engagements/:engagementId/actions/:actionId/add-scope-and-run",
     async (request, reply) => {
-      const key = commandKey(request);
-      const params = ActionIdParamsSchema.safeParse(request.params);
-      const body = AddScopeAndRunActionRequestSchema.safeParse(request.body);
-      const query = ActionMutationQuerySchema.safeParse(request.query);
-      if (key === undefined || !params.success || !body.success || !query.success) {
-        return sendFixedError(reply, 400, "invalid_request");
+      const engagementId = readPathParam(request.params, "engagementId");
+      const actionId = readPathParam(request.params, "actionId");
+      if (engagementId === undefined || actionId === undefined) {
+        return sendFixedOperatorError(reply, 400, "invalid_request");
       }
-      const route = `/api/v1/engagements/${params.data.engagementId}/actions/${params.data.actionId}/add-scope-and-run`;
-      return execute(reply, repository, {
-        key,
-        route,
+      return dispatchOperatorMutation(request, reply, repository, {
+        route: `/api/v1/engagements/${engagementId}/actions/${actionId}/add-scope-and-run`,
         operation: "add_scope_and_run",
-        path: params.data,
-        query: query.data,
-        body: JsonValueSchema.parse(body.data),
-        successStatus: 200,
-        mutate: (transaction) =>
-          definitiveResponse(
+        mutate: (transaction: EngagementWriteTransaction) => {
+          const params = ActionIdParamsSchema.safeParse(request.params);
+          const body = AddScopeAndRunActionRequestSchema.safeParse(
+            request.body,
+          );
+          const query = ActionMutationQuerySchema.safeParse(request.query);
+          if (!params.success || !body.success || !query.success) {
+            return invalidRequest();
+          }
+          return definitiveResponse(
             transaction.addScopeAndRunOperatorAction(
               params.data.engagementId,
               params.data.actionId,
@@ -290,7 +192,8 @@ export function registerActionMutationRoutes(
             ),
             200,
             { resourceType: "action", resourceId: params.data.actionId },
-          ),
+          );
+        },
       });
     },
   );
@@ -298,24 +201,22 @@ export function registerActionMutationRoutes(
   app.post(
     "/api/v1/engagements/:engagementId/actions/:actionId/cancel",
     async (request, reply) => {
-      const key = commandKey(request);
-      const params = ActionIdParamsSchema.safeParse(request.params);
-      const body = CancelActionRequestSchema.safeParse(request.body);
-      const query = ActionMutationQuerySchema.safeParse(request.query);
-      if (key === undefined || !params.success || !body.success || !query.success) {
-        return sendFixedError(reply, 400, "invalid_request");
+      const engagementId = readPathParam(request.params, "engagementId");
+      const actionId = readPathParam(request.params, "actionId");
+      if (engagementId === undefined || actionId === undefined) {
+        return sendFixedOperatorError(reply, 400, "invalid_request");
       }
-      const route = `/api/v1/engagements/${params.data.engagementId}/actions/${params.data.actionId}/cancel`;
-      return execute(reply, repository, {
-        key,
-        route,
+      return dispatchOperatorMutation(request, reply, repository, {
+        route: `/api/v1/engagements/${engagementId}/actions/${actionId}/cancel`,
         operation: "cancel",
-        path: params.data,
-        query: query.data,
-        body: JsonValueSchema.parse(body.data),
-        successStatus: 200,
-        mutate: (transaction) =>
-          definitiveResponse(
+        mutate: (transaction: EngagementWriteTransaction) => {
+          const params = ActionIdParamsSchema.safeParse(request.params);
+          const body = CancelActionRequestSchema.safeParse(request.body);
+          const query = ActionMutationQuerySchema.safeParse(request.query);
+          if (!params.success || !body.success || !query.success) {
+            return invalidRequest();
+          }
+          return definitiveResponse(
             transaction.cancelAction({
               engagementId: params.data.engagementId,
               actionId: params.data.actionId,
@@ -323,7 +224,8 @@ export function registerActionMutationRoutes(
             }),
             200,
             { resourceType: "action", resourceId: params.data.actionId },
-          ),
+          );
+        },
       });
     },
   );
