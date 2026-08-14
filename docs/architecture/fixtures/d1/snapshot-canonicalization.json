@@ -1,0 +1,256 @@
+{
+  "fixtureVersion": 1,
+  "normalizationProfile": "d1-v1",
+  "kind": "snapshot-canonicalization",
+  "cases": [
+    {
+      "id": "d1.snapshot-canonical.six-fields-and-nulls",
+      "description": "The digest binds the six immutable snapshot fields and keeps explicit nulls.",
+      "given": {
+        "value": {
+          "actionId": "action-snapshot-canonical",
+          "snapshotId": "snapshot-ignored",
+          "version": 1,
+          "binding": "sha256:fixture-not-hashed",
+          "normalizationProfile": "d1-v1",
+          "orchestrationProfile": "d2-v1",
+          "canonicalTargets": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "hostname",
+              "hostname": "app.target.test"
+            }
+          ],
+          "concreteDestinations": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "ip",
+              "family": 4,
+              "address": "192.0.2.40",
+              "zone": null
+            }
+          ],
+          "typedOptions": { "ports": [80, 443], "followRedirects": true },
+          "resolutionSnapshots": [
+            {
+              "canonicalQueryName": "app.target.test",
+              "resolverMode": "system",
+              "cnameChain": [],
+              "answers": [{ "address": "192.0.2.40", "family": 4, "ttlSeconds": 60 }],
+              "resolvedAt": "2026-08-09T12:00:00.000Z"
+            }
+          ],
+          "scopeRevisionId": null,
+          "warningState": {
+            "reasonCodes": [],
+            "knownAdditions": [],
+            "acknowledgment": null
+          }
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"actionId\":\"action-snapshot-canonical\",\"canonicalTargets\":[{\"hostname\":\"app.target.test\",\"kind\":\"hostname\",\"normalizationProfile\":\"d1-v1\"}],\"canonicalizationProfile\":\"action-snapshot-json-v1\",\"resolutionSnapshots\":[{\"answers\":[{\"address\":\"192.0.2.40\",\"family\":4,\"ttlSeconds\":60}],\"canonicalQueryName\":\"app.target.test\",\"cnameChain\":[],\"resolvedAt\":\"2026-08-09T12:00:00.000Z\",\"resolverMode\":\"system\"}],\"scopeRevisionId\":null,\"typedOptions\":{\"followRedirects\":true,\"ports\":[80,443]},\"warningState\":{\"acknowledgment\":null,\"knownAdditions\":[],\"reasonCodes\":[]}}",
+        "digest": "sha256:bdb1bfb19b9abb9b1da8f1e27336afc63d39ba32533059a94a38e0d753196f2c"
+      }
+    },
+    {
+      "id": "d1.snapshot-canonical.object-and-array-order",
+      "description": "Object insertion order is erased while array order and explicit null remain exact.",
+      "given": {
+        "value": {
+          "warningState": {
+            "acknowledgment": null,
+            "reasonCodes": [],
+            "knownAdditions": []
+          },
+          "scopeRevisionId": null,
+          "typedOptions": { "followRedirects": true, "ports": [80, 443] },
+          "resolutionSnapshots": [
+            {
+              "resolverMode": "system",
+              "resolvedAt": "2026-08-09T12:00:00.000Z",
+              "cnameChain": [],
+              "canonicalQueryName": "app.target.test",
+              "answers": [{ "ttlSeconds": 60, "family": 4, "address": "192.0.2.40" }]
+            }
+          ],
+          "canonicalTargets": [
+            {
+              "hostname": "app.target.test",
+              "kind": "hostname",
+              "normalizationProfile": "d1-v1"
+            }
+          ],
+          "actionId": "action-snapshot-canonical"
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"actionId\":\"action-snapshot-canonical\",\"canonicalTargets\":[{\"hostname\":\"app.target.test\",\"kind\":\"hostname\",\"normalizationProfile\":\"d1-v1\"}],\"canonicalizationProfile\":\"action-snapshot-json-v1\",\"resolutionSnapshots\":[{\"answers\":[{\"address\":\"192.0.2.40\",\"family\":4,\"ttlSeconds\":60}],\"canonicalQueryName\":\"app.target.test\",\"cnameChain\":[],\"resolvedAt\":\"2026-08-09T12:00:00.000Z\",\"resolverMode\":\"system\"}],\"scopeRevisionId\":null,\"typedOptions\":{\"followRedirects\":true,\"ports\":[80,443]},\"warningState\":{\"acknowledgment\":null,\"knownAdditions\":[],\"reasonCodes\":[]}}",
+        "digest": "sha256:bdb1bfb19b9abb9b1da8f1e27336afc63d39ba32533059a94a38e0d753196f2c"
+      }
+    },
+    {
+      "id": "d1.snapshot-canonical.typed-options-null-and-key-order",
+      "description": "Typed option keys are sorted and an explicit null option is distinct from omission.",
+      "given": {
+        "value": {
+          "actionId": "action-snapshot-options",
+          "canonicalTargets": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "hostname",
+              "hostname": "app.target.test"
+            }
+          ],
+          "typedOptions": { "zOption": null, "aOption": false },
+          "resolutionSnapshots": [],
+          "scopeRevisionId": null,
+          "warningState": {
+            "reasonCodes": [],
+            "knownAdditions": [],
+            "acknowledgment": null
+          }
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"actionId\":\"action-snapshot-options\",\"canonicalTargets\":[{\"hostname\":\"app.target.test\",\"kind\":\"hostname\",\"normalizationProfile\":\"d1-v1\"}],\"canonicalizationProfile\":\"action-snapshot-json-v1\",\"resolutionSnapshots\":[],\"scopeRevisionId\":null,\"typedOptions\":{\"aOption\":false,\"zOption\":null},\"warningState\":{\"acknowledgment\":null,\"knownAdditions\":[],\"reasonCodes\":[]}}",
+        "digest": "sha256:c98a8c313b8a463041ebbae8cb20cdd961049c75bfd2069b3498ea0f43147625"
+      }
+    },
+    {
+      "id": "d1.snapshot-canonical.number-spelling",
+      "description": "Finite numbers use ECMAScript JSON spelling and negative zero becomes zero.",
+      "given": {
+        "value": {
+          "actionId": "action-snapshot-numbers",
+          "canonicalTargets": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "hostname",
+              "hostname": "app.target.test"
+            }
+          ],
+          "typedOptions": { "values": [0, 0, 1, 1.5, 1e+30, 0.000001, 1e-7] },
+          "resolutionSnapshots": [],
+          "scopeRevisionId": null,
+          "warningState": {
+            "reasonCodes": [],
+            "knownAdditions": [],
+            "acknowledgment": null
+          }
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"actionId\":\"action-snapshot-numbers\",\"canonicalTargets\":[{\"hostname\":\"app.target.test\",\"kind\":\"hostname\",\"normalizationProfile\":\"d1-v1\"}],\"canonicalizationProfile\":\"action-snapshot-json-v1\",\"resolutionSnapshots\":[],\"scopeRevisionId\":null,\"typedOptions\":{\"values\":[0,0,1,1.5,1e+30,0.000001,1e-7]},\"warningState\":{\"acknowledgment\":null,\"knownAdditions\":[],\"reasonCodes\":[]}}",
+        "digest": "sha256:93aa77af95a3502636572259c73d318f726169e182d331d08d6e1de03a72ee2e"
+      }
+    },
+    {
+      "id": "d1.snapshot-canonical.excludes-identity-and-concrete-destinations",
+      "description": "Snapshot identity fields and concrete destinations do not change the digest.",
+      "given": {
+        "left": {
+          "actionId": "action-snapshot-canonical",
+          "snapshotId": "snapshot-left",
+          "version": 1,
+          "binding": "sha256:fixture-left",
+          "canonicalTargets": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "hostname",
+              "hostname": "app.target.test"
+            }
+          ],
+          "concreteDestinations": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "ip",
+              "family": 4,
+              "address": "192.0.2.40",
+              "zone": null
+            }
+          ],
+          "typedOptions": { "ports": [80, 443], "followRedirects": true },
+          "resolutionSnapshots": [
+            {
+              "canonicalQueryName": "app.target.test",
+              "resolverMode": "system",
+              "cnameChain": [],
+              "answers": [{ "address": "192.0.2.40", "family": 4, "ttlSeconds": 60 }],
+              "resolvedAt": "2026-08-09T12:00:00.000Z"
+            }
+          ],
+          "scopeRevisionId": null,
+          "warningState": {
+            "reasonCodes": [],
+            "knownAdditions": [],
+            "acknowledgment": null
+          }
+        },
+        "right": {
+          "actionId": "action-snapshot-canonical",
+          "snapshotId": "snapshot-right",
+          "version": 2,
+          "binding": "sha256:fixture-right",
+          "canonicalTargets": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "hostname",
+              "hostname": "app.target.test"
+            }
+          ],
+          "concreteDestinations": [],
+          "typedOptions": { "followRedirects": true, "ports": [80, 443] },
+          "resolutionSnapshots": [
+            {
+              "canonicalQueryName": "app.target.test",
+              "resolverMode": "system",
+              "cnameChain": [],
+              "answers": [{ "address": "192.0.2.40", "family": 4, "ttlSeconds": 60 }],
+              "resolvedAt": "2026-08-09T12:00:00.000Z"
+            }
+          ],
+          "scopeRevisionId": null,
+          "warningState": {
+            "reasonCodes": [],
+            "knownAdditions": [],
+            "acknowledgment": null
+          }
+        }
+      },
+      "expected": {
+        "sameDigest": true,
+        "canonicalJson": "{\"actionId\":\"action-snapshot-canonical\",\"canonicalTargets\":[{\"hostname\":\"app.target.test\",\"kind\":\"hostname\",\"normalizationProfile\":\"d1-v1\"}],\"canonicalizationProfile\":\"action-snapshot-json-v1\",\"resolutionSnapshots\":[{\"answers\":[{\"address\":\"192.0.2.40\",\"family\":4,\"ttlSeconds\":60}],\"canonicalQueryName\":\"app.target.test\",\"cnameChain\":[],\"resolvedAt\":\"2026-08-09T12:00:00.000Z\",\"resolverMode\":\"system\"}],\"scopeRevisionId\":null,\"typedOptions\":{\"followRedirects\":true,\"ports\":[80,443]},\"warningState\":{\"acknowledgment\":null,\"knownAdditions\":[],\"reasonCodes\":[]}}",
+        "digest": "sha256:bdb1bfb19b9abb9b1da8f1e27336afc63d39ba32533059a94a38e0d753196f2c"
+      }
+    },
+    {
+      "id": "d1.snapshot-canonical.active-scope-differs-from-null",
+      "description": "An active scope revision identity is distinct from no saved scope.",
+      "given": {
+        "value": {
+          "actionId": "action-snapshot-scope",
+          "canonicalTargets": [
+            {
+              "normalizationProfile": "d1-v1",
+              "kind": "hostname",
+              "hostname": "app.target.test"
+            }
+          ],
+          "typedOptions": {},
+          "resolutionSnapshots": [],
+          "scopeRevisionId": "10000000-0000-4000-8000-00000000000a",
+          "warningState": {
+            "reasonCodes": ["outside_scope"],
+            "knownAdditions": [],
+            "acknowledgment": null
+          }
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"actionId\":\"action-snapshot-scope\",\"canonicalTargets\":[{\"hostname\":\"app.target.test\",\"kind\":\"hostname\",\"normalizationProfile\":\"d1-v1\"}],\"canonicalizationProfile\":\"action-snapshot-json-v1\",\"resolutionSnapshots\":[],\"scopeRevisionId\":\"10000000-0000-4000-8000-00000000000a\",\"typedOptions\":{},\"warningState\":{\"acknowledgment\":null,\"knownAdditions\":[],\"reasonCodes\":[\"outside_scope\"]}}",
+        "digest": "sha256:20ff1efcc760f39ba5f1db20bd8e8e06c422d92260c7f3095d580b2372ddadbd"
+      }
+    }
+  ]
+}

@@ -29,6 +29,8 @@ import {
   planAction,
   recordLateWarning,
   retryActionContext,
+  snapshotIsCanonical,
+  warningAdditionIsCanonical,
 } from "./action-planning.js";
 
 interface WarningFixtureCase {
@@ -1199,5 +1201,36 @@ describe("applicable D2 Action state fixtures", () => {
       ok: false,
       error: { code: successfulFixture.error?.code },
     });
+  });
+});
+
+describe("exported snapshot canonicality", () => {
+  it("rejects noncanonical stored target and addition shapes", () => {
+    const valid = snapshot({ actionId: "action-canonical" });
+    expect(snapshotIsCanonical(valid)).toBe(true);
+    expect(
+      snapshotIsCanonical({
+        ...valid,
+        canonicalTargets: [
+          {
+            normalizationProfile: "d1-v1",
+            kind: "hostname",
+            hostname: "Target.Test",
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      warningAdditionIsCanonical({
+        hostname: "cdn.target.test",
+        address: "192.0.2.50",
+      }),
+    ).toBe(true);
+    expect(
+      warningAdditionIsCanonical({
+        hostname: "Target.Test",
+        address: "192.0.2.41",
+      }),
+    ).toBe(false);
   });
 });

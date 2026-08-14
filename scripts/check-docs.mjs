@@ -13,6 +13,51 @@ const d1FixtureFiles = new Map([
   ["scope-comparison.json", "scope-comparison"],
   ["resolution-snapshot.json", "resolution-snapshot"],
   ["warning-flow.json", "warning-flow"],
+  ["snapshot-canonicalization.json", "snapshot-canonicalization"],
+]);
+const requiredD1SnapshotCanonicalCases = new Map([
+  [
+    "d1.snapshot-canonical.six-fields-and-nulls",
+    [
+      "snapshot-canonicalization.json",
+      "5287bb7e938e14f607210d2494c74a978bdc0bc89827431596de9e16ab67caad",
+    ],
+  ],
+  [
+    "d1.snapshot-canonical.object-and-array-order",
+    [
+      "snapshot-canonicalization.json",
+      "2b9e47850536e08f4c7a1d924e3ecbfbd7bed302a97beab6086831d3258af17f",
+    ],
+  ],
+  [
+    "d1.snapshot-canonical.typed-options-null-and-key-order",
+    [
+      "snapshot-canonicalization.json",
+      "5db831ca16a7c0f5858a3375753c5bb1bd9d6e248946438d854c976528641b9f",
+    ],
+  ],
+  [
+    "d1.snapshot-canonical.number-spelling",
+    [
+      "snapshot-canonicalization.json",
+      "09d1f8fc6915b4fa676a3f2d1bcb1c491723213fa1df1c121836cbf78bdb667c",
+    ],
+  ],
+  [
+    "d1.snapshot-canonical.excludes-identity-and-concrete-destinations",
+    [
+      "snapshot-canonicalization.json",
+      "f6e8dc4dcd4f8bffda7cb2b3257a92982848d53425c4c033ed2c0d5dce13932f",
+    ],
+  ],
+  [
+    "d1.snapshot-canonical.active-scope-differs-from-null",
+    [
+      "snapshot-canonicalization.json",
+      "2b1c5f5ba3dc8c7431afd30480ed4f043265ba215afdaf5808f22b84bd4057d9",
+    ],
+  ],
 ]);
 const requiredD1MalformedTargetCases = [
   {
@@ -571,6 +616,39 @@ export async function checkD1Fixtures(repositoryRoot) {
     if (expectedKind === "normalization") {
       errors.push(...requiredMalformedTargetErrors(fixture.cases, relativePath));
       errors.push(...requiredPositiveTargetErrors(fixture.cases, relativePath));
+    }
+
+    if (expectedKind === "snapshot-canonicalization") {
+      const seenRequired = new Set();
+      for (const [index, fixtureCase] of fixture.cases.entries()) {
+        if (!isRecord(fixtureCase) || typeof fixtureCase.id !== "string") continue;
+        const required = requiredD1SnapshotCanonicalCases.get(fixtureCase.id);
+        if (required === undefined) {
+          errors.push(
+            `${relativePath}: cases[${index}].id ${fixtureCase.id} is not a required action-snapshot-json-v1 case`,
+          );
+          continue;
+        }
+        const [requiredFileName, requiredFingerprint] = required;
+        if (requiredFileName !== fileName) {
+          errors.push(
+            `${relativePath}: cases[${index}].id ${fixtureCase.id} belongs in ${requiredFileName}`,
+          );
+          continue;
+        }
+        seenRequired.add(fixtureCase.id);
+        const fingerprint = d2CaseFingerprint(fixtureCase);
+        if (fingerprint !== requiredFingerprint) {
+          errors.push(
+            `${relativePath}: cases[${index}]: ${fixtureCase.id} critical given fields or exact outcome changed`,
+          );
+        }
+      }
+      for (const [requiredId, [requiredFileName]] of requiredD1SnapshotCanonicalCases) {
+        if (requiredFileName === fileName && !seenRequired.has(requiredId)) {
+          errors.push(`${relativePath}: missing required D1 case ${requiredId}`);
+        }
+      }
     }
   }
 

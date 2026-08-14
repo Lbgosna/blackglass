@@ -15,11 +15,17 @@ export {
   EngagementRepository,
   type DatabaseWriteClient,
   type EngagementWriteTransaction,
+  type ActionRepositoryError,
   type RepositoryError,
   type RepositoryProviders,
   type RepositoryResult,
 } from "./repository.js";
+export { bindActionSnapshot } from "./action-snapshot.js";
 export {
+  actionCoveredDestinations,
+  actionSnapshots,
+  actionWarningAcknowledgments,
+  actions,
   engagementActiveScopes,
   engagements,
   operatorCommandIdempotency,

@@ -90,6 +90,17 @@ Failure to obtain an address required by the selected action enters `capability_
 
 Before queueing, the action freezes canonical input targets, concrete destinations, typed options, active scope revision, resolution results, and warning state into an immutable target/options/resolution/scope snapshot. The acknowledgment binding uses `actionId` plus the snapshot hash. Plugins receive this snapshot.
 
+The control plane is the only component that derives that hash. The versioned server-only profile is `action-snapshot-json-v1`. It binds exactly these six immutable snapshot fields and no other snapshot identity or projection fields:
+
+- `actionId`
+- `canonicalTargets`
+- `typedOptions`
+- `resolutionSnapshots`
+- `scopeRevisionId`
+- `warningState`
+
+`snapshotId`, `version`, `binding`, `concreteDestinations`, `normalizationProfile`, and `orchestrationProfile` are stored with the snapshot and are not hashed. The versioned envelope adds `canonicalizationProfile: "action-snapshot-json-v1"` so a later profile cannot silently collide. Serialization reuses the accepted JSON spelling rules: objects sort keys by ECMAScript UTF-16 code-unit order; arrays preserve order; strings and finite numbers use ECMAScript JSON spelling, including `-0` as `0`; explicit `null` remains present, including `scopeRevisionId: null` and `warningState.acknowledgment: null`. UUIDs and Unicode are not rewritten. Undefined or non-JSON values, sparse arrays, non-plain objects, accessors, symbol keys, cycles, non-finite numbers, unpaired surrogates, depth over 32 containers, and canonical UTF-8 output over 1 MiB fail closed before a binding is issued. SHA-256 is lowercase hexadecimal with prefix `sha256:`. Exact vectors are pinned in the D1 snapshot-canonicalization fixture. This profile is not `command-json-v1` and does not hash actor, route, or command envelopes.
+
 HTTP-capable first-party actions connect only to the frozen A and AAAA set for the current origin while preserving that origin's canonical Host header and SNI name. DNS changes cannot replace the frozen set silently. Each redirect origin gets its own frozen action-scoped resolution set.
 
 Each redirect hop records source URL, raw `Location` value, canonical destination, scheme, canonical host, effective port, and the resolved address actually used. Later destinations append evidence and covered-destination records; they never mutate the immutable action snapshot.
@@ -188,6 +199,7 @@ Each issue consumes the ADR and fixtures without redefining normalization or war
 - [Normalization fixtures](./fixtures/d1/normalization.json) cover valid and adversarial IPv4, IPv6, mapped IPv6, zones, IDNA, trailing dots, CIDR, and URL behavior.
 - [Scope fixtures](./fixtures/d1/scope-comparison.json) cover null and empty revisions, label boundaries, origins, port restrictions, shared addresses, and saturated cardinality.
 - [Resolution and snapshot fixtures](./fixtures/d1/resolution-snapshot.json) cover resolution evidence, pinning, retry, refresh, redirect origins, and capability errors.
+- [Snapshot canonicalization fixtures](./fixtures/d1/snapshot-canonicalization.json) pin `action-snapshot-json-v1` field coverage, explicit nulls, array order, and SHA-256 vectors.
 - [Warning-flow fixtures](./fixtures/d1/warning-flow.json) cover combined reasons, Continue, add-scope recheck, auto-continue, late discovery, UI loss, Cancel, and covered destinations.
 - `node --test scripts/check-docs.test.mjs` validates fixture shape, versions, unique case IDs, required outcomes, and forbidden secret or non-reserved target content.
 - `pnpm check` runs the validator through the repository documentation check.

@@ -9,6 +9,8 @@ export {
   planAction,
   recordLateWarning,
   retryActionContext,
+  snapshotIsCanonical,
+  warningAdditionIsCanonical,
 } from "./action-planning.js";
 export {
   compareSavedScope,
