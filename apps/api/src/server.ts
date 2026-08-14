@@ -1,14 +1,11 @@
-import { buildApp } from "./app.js";
 import { apiPortFromEnvironment, dataDirectoryFromEnvironment } from "./config.js";
-import {
-  bootstrapDevelopmentStorage,
-  checkDevelopmentStorage,
-} from "./development-storage.js";
+import { buildStorageBackedApp } from "./runtime.js";
+import type { FastifyInstance } from "fastify";
 
 const HOST = "127.0.0.1";
 
 async function main(): Promise<void> {
-  let app: ReturnType<typeof buildApp> | undefined;
+  let app: FastifyInstance | undefined;
   let closePromise: Promise<void> | undefined;
 
   function closeOnce(): Promise<void> {
@@ -28,14 +25,7 @@ async function main(): Promise<void> {
   try {
     const port = apiPortFromEnvironment(process.env);
     const dataDirectory = dataDirectoryFromEnvironment(process.env);
-    await bootstrapDevelopmentStorage(dataDirectory);
-
-    app = buildApp({
-      async getDevelopmentStorageReadiness() {
-        await checkDevelopmentStorage(dataDirectory);
-        return "ready" as const;
-      },
-    });
+    app = await buildStorageBackedApp(dataDirectory);
     process.once("SIGINT", () => void shutdown());
     process.once("SIGTERM", () => void shutdown());
     await app.listen({ host: HOST, port });

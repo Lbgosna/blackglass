@@ -12,8 +12,26 @@ import {
 const openApps: ReturnType<typeof buildApp>[] = [];
 const temporaryRoots: string[] = [];
 
+const emptyEngagementRepository = {
+  getEngagement() {
+    return {
+      ok: false as const,
+      error: { code: "engagement_not_found" as const },
+    };
+  },
+  listEngagements() {
+    return { ok: true as const, value: [] };
+  },
+  listScopeRevisions() {
+    return { ok: true as const, value: [] };
+  },
+};
+
 function createApp(readiness: "ready" | "not_ready" = "ready") {
-  const app = buildApp({ getDevelopmentStorageReadiness: () => readiness });
+  const app = buildApp({
+    engagementRepository: emptyEngagementRepository,
+    getDevelopmentStorageReadiness: () => readiness,
+  });
   openApps.push(app);
   return app;
 }
@@ -29,6 +47,7 @@ async function createStorageBackedApp() {
   const dataDirectory = path.join(root, "development");
   await bootstrapDevelopmentStorage(dataDirectory);
   const app = buildApp({
+    engagementRepository: emptyEngagementRepository,
     async getDevelopmentStorageReadiness() {
       await checkDevelopmentStorage(dataDirectory);
       return "ready" as const;
@@ -92,6 +111,7 @@ describe("buildApp", () => {
 
   it("turns a status dependency failure into a path-free not-ready response", async () => {
     const app = buildApp({
+      engagementRepository: emptyEngagementRepository,
       getDevelopmentStorageReadiness() {
         throw new Error("Storage failed at /private/development-data");
       },

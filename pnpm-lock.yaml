@@ -13,6 +13,9 @@ importers:
       '@blackglass/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@blackglass/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       fastify:
         specifier: 5.11.3
         version: 5.11.3
