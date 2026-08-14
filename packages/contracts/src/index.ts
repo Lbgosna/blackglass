@@ -2,6 +2,7 @@ export { HealthResponseSchema, type HealthResponse } from "./health.js";
 export * from "./action-planning.js";
 export * from "./engagement.js";
 export * from "./engagement-api.js";
+export * from "./operator-command.js";
 export {
   ReadinessSchema,
   SYSTEM_STATUS_VERSION,

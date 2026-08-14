@@ -1,4 +1,11 @@
 export {
+  OperatorCommandRepository,
+  type CommandHttpResponse,
+  type OperatorCommandErrorCode,
+  type OperatorCommandResult,
+  type PreparedOperatorCommand,
+} from "./operator-command.js";
+export {
   DATABASE_FILENAME,
   openEngagementDatabase,
   type EngagementDatabase,
@@ -6,6 +13,7 @@ export {
 } from "./database.js";
 export {
   EngagementRepository,
+  type DatabaseWriteClient,
   type EngagementWriteTransaction,
   type RepositoryError,
   type RepositoryProviders,
@@ -14,5 +22,6 @@ export {
 export {
   engagementActiveScopes,
   engagements,
+  operatorCommandIdempotency,
   scopeRevisions,
 } from "./schema.js";

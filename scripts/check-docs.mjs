@@ -59,6 +59,7 @@ const requiredD1PositiveTargetCases = [
 const d2FixtureVersion = 1;
 const d2Profile = "d2-v1";
 const d2FixtureFiles = new Map([
+  ["canonical-request.json", "canonical-request"],
   ["state-machine.json", "state-machine"],
   ["idempotency-concurrency.json", "idempotency-concurrency"],
   ["runner-identity.json", "runner-identity"],
@@ -66,6 +67,10 @@ const d2FixtureFiles = new Map([
   ["process-supervision.json", "process-supervision"],
 ]);
 const requiredD2Cases = new Map([
+  ["d2.canonical.create-engagement", ["canonical-request.json", "28fa9ee97035657e6679117290161520458af1b91f24e8d71ca5eacebdd4af44"]],
+  ["d2.canonical.archive-engagement", ["canonical-request.json", "38b5324f7495c9de34f82b499a7567c4f5beb340103b99548eb6fe45420f8e86"]],
+  ["d2.canonical.object-and-array-order", ["canonical-request.json", "2ab97d4924f907aef3e29efa6d0efa2c94d6ece33e08cea0ea7f0071d1774a76"]],
+  ["d2.canonical.number-spelling", ["canonical-request.json", "f1891544ed2a410e4c70b28370620273c44aa03b32e2df81dbdff77b1dc614b0"]],
   ["d2.idempotency.same-key-same-request-replays", ["idempotency-concurrency.json", "851169759fdbcd531716e67e44aed20f2e1f45c87a8999208ae4f9ff904ac0c4"]],
   ["d2.idempotency.same-key-different-request-conflicts", ["idempotency-concurrency.json", "0fbe3538d7b19ac4edc6ddf96d5f4cf718549adfba7044309fa192234d0369c6"]],
   ["d2.idempotency.continue-replay", ["idempotency-concurrency.json", "f13dde46d7cd0eac8240819a2582797a94177453d579d6247f8a080f94d85855"]],

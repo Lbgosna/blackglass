@@ -48,14 +48,11 @@ export interface RepositoryProviders {
 }
 
 type DatabaseSchema = typeof schema;
-type TransactionClient = Parameters<
+export type DatabaseWriteClient = Parameters<
   Parameters<BetterSQLite3Database<DatabaseSchema>["transaction"]>[0]
 >[0];
-type DatabaseClient =
-  | BetterSQLite3Database<DatabaseSchema>
-  | TransactionClient;
-
 export interface EngagementWriteTransaction {
+  readonly client: DatabaseWriteClient;
   createEngagement(input: unknown): RepositoryResult<Engagement>;
   archive(
     engagementId: string,
@@ -218,7 +215,7 @@ function scopeRevisionFromRow(
 
 class TransactionRepository implements EngagementWriteTransaction {
   constructor(
-    private readonly client: DatabaseClient,
+    readonly client: DatabaseWriteClient,
     private readonly createId: () => string,
     private readonly now: () => Date,
   ) {}
