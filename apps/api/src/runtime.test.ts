@@ -40,12 +40,25 @@ describe("storage-backed API runtime", () => {
     expect(
       await app.inject({ method: "GET", url: "/api/v1/engagements" }),
     ).toMatchObject({ statusCode: 200, body: "[]" });
+    const createRequest = {
+      method: "POST" as const,
+      url: "/api/v1/engagements",
+      headers: { "idempotency-key": "fixture-runtime-idempotency-key" },
+      payload: {
+        name: "Runtime lab",
+        kind: "lab",
+        autoContinueWarnings: false,
+      },
+    };
+    const created = await app.inject(createRequest);
+    expect(created.statusCode).toBe(201);
     await app.close();
 
     const restarted = await buildStorageBackedApp(dataDirectory);
     expect(
       await restarted.inject({ method: "GET", url: "/api/v1/engagements" }),
-    ).toMatchObject({ statusCode: 200, body: "[]" });
+    ).toMatchObject({ statusCode: 200 });
+    expect((await restarted.inject(createRequest)).body).toBe(created.body);
     await restarted.close();
   });
 

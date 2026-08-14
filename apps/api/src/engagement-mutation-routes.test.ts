@@ -1,0 +1,554 @@
+import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { request as httpRequest } from "node:http";
+import path from "node:path";
+
+import {
+  EngagementRepository,
+  OperatorCommandRepository,
+  openEngagementDatabase,
+  type EngagementWriteTransaction,
+} from "@blackglass/db";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { buildApp } from "./app.js";
+
+const directories: string[] = [];
+const apps: ReturnType<typeof buildApp>[] = [];
+
+afterEach(async () => {
+  await Promise.all(apps.splice(0).map(async (app) => app.close()));
+  await Promise.all(
+    directories.splice(0).map(async (directory) =>
+      rm(directory, { recursive: true, force: true }),
+    ),
+  );
+});
+
+async function fixture() {
+  const directory = await mkdtemp(path.join(tmpdir(), "blackglass-mutation-api-"));
+  directories.push(directory);
+  await chmod(directory, 0o700);
+  const database = openEngagementDatabase({ dataDirectory: directory });
+  let nextId = 1;
+  let minute = 0;
+  const engagementRepository = new EngagementRepository(database.db, {
+    createId: () =>
+      `10000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+    now: () => new Date(Date.UTC(2026, 7, 12, 12, minute++)),
+  });
+  const operatorCommandRepository = new OperatorCommandRepository(
+    engagementRepository,
+    { now: () => new Date("2026-08-12T13:00:00.000Z") },
+  );
+  const app = buildApp({
+    engagementRepository,
+    operatorCommandRepository,
+    getDevelopmentStorageReadiness: () => "ready",
+  });
+  app.addHook("onClose", async () => database.close());
+  apps.push(app);
+  return { app, database, directory, engagementRepository, operatorCommandRepository };
+}
+
+const headers = (key: string) => ({ "idempotency-key": key });
+const key = (suffix: string) => `fixture-idempotency-${suffix.padEnd(12, "0")}`;
+
+async function sendDuplicateKeyRequest(
+  port: number,
+  commandKey: string,
+): Promise<{ statusCode: number | undefined; body: string }> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      name: "Target lab",
+      kind: "lab",
+      autoContinueWarnings: false,
+    });
+    const request = httpRequest(
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: "/api/v1/engagements",
+        headers: [
+          "host",
+          "127.0.0.1",
+          "content-type",
+          "application/json",
+          "content-length",
+          String(Buffer.byteLength(body)),
+          "idempotency-key",
+          commandKey,
+          "idempotency-key",
+          commandKey,
+        ],
+      },
+      (response) => {
+        let responseBody = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => (responseBody += chunk));
+        response.once("end", () =>
+          resolve({ statusCode: response.statusCode, body: responseBody }),
+        );
+      },
+    );
+    request.once("error", reject);
+    request.end(body);
+  });
+}
+
+describe("engagement mutation routes", () => {
+  it("creates, archives, reopens, updates warning preference, and appends active scope", async () => {
+    const { app } = await fixture();
+    const createBody = {
+      name: "Target lab",
+      kind: "lab",
+      autoContinueWarnings: false,
+    };
+    const createdResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(key("create")),
+      payload: createBody,
+    });
+    expect(createdResponse.statusCode).toBe(201);
+    const created = createdResponse.json();
+    expect(created).toMatchObject({ revision: 1, status: "active" });
+    const base = `/api/v1/engagements/${created.id}`;
+
+    const archivedResponse = await app.inject({
+      method: "POST",
+      url: `${base}/archive`,
+      headers: headers(key("archive")),
+      payload: { expectedRevision: 1 },
+    });
+    expect(archivedResponse.statusCode).toBe(200);
+    expect(archivedResponse.json()).toMatchObject({ revision: 2, status: "archived" });
+
+    const reopenedResponse = await app.inject({
+      method: "POST",
+      url: `${base}/reopen`,
+      headers: headers(key("reopen")),
+      payload: { expectedRevision: 2 },
+    });
+    expect(reopenedResponse.statusCode).toBe(200);
+    expect(reopenedResponse.json()).toMatchObject({ revision: 3, status: "active" });
+
+    const preferenceResponse = await app.inject({
+      method: "PATCH",
+      url: `${base}/auto-continue-warnings`,
+      headers: headers(key("preference")),
+      payload: { expectedRevision: 3, autoContinueWarnings: true },
+    });
+    expect(preferenceResponse.statusCode).toBe(200);
+    expect(preferenceResponse.json()).toMatchObject({
+      revision: 4,
+      autoContinueWarnings: true,
+    });
+
+    const scopeResponse = await app.inject({
+      method: "POST",
+      url: `${base}/scope-revisions`,
+      headers: headers(key("scope")),
+      payload: { expectedRevision: 4, rules: [] },
+    });
+    expect(scopeResponse.statusCode).toBe(201);
+    expect(scopeResponse.json()).toMatchObject({
+      engagementId: created.id,
+      version: 1,
+      rules: [],
+    });
+    expect((await app.inject({ method: "GET", url: base })).json()).toMatchObject({
+      engagement: {
+        revision: 5,
+        activeScopeRevisionId: scopeResponse.json().id,
+      },
+      activeScopeRevision: { id: scopeResponse.json().id },
+    });
+  });
+
+  it("replays exact stored success after lifecycle changes and conflicts on changed input", async () => {
+    const { app } = await fixture();
+    const commandKey = key("replay-create");
+    const payload = { name: "Target lab", kind: "lab", autoContinueWarnings: false };
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(commandKey),
+      payload,
+    });
+    const created = first.json();
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/engagements/${created.id}/archive`,
+      headers: headers(key("later-archive")),
+      payload: { expectedRevision: 1 },
+    });
+
+    const replay = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(commandKey),
+      payload,
+    });
+    expect(replay.statusCode).toBe(201);
+    expect(replay.body).toBe(first.body);
+    const conflict = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(commandKey),
+      payload: { ...payload, name: "Different lab" },
+    });
+    expect(conflict).toMatchObject({
+      statusCode: 409,
+      body: '{"code":"idempotency_conflict"}',
+    });
+    expect((await app.inject({ method: "GET", url: "/api/v1/engagements" })).json())
+      .toHaveLength(1);
+  });
+
+  it("rejects malformed transport before lookup and does not reserve its key", async () => {
+    const { app, database } = await fixture();
+    const commandKey = key("invalid-transport");
+    for (const request of [
+      { headers: {}, payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false } },
+      { headers: headers(commandKey), payload: { name: " Target lab", kind: "lab", autoContinueWarnings: false } },
+      { headers: headers("short"), payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false } },
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        ...request,
+      });
+      expect(response).toMatchObject({ statusCode: 400, body: '{"code":"invalid_request"}' });
+    }
+    const malformed = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: {
+        ...headers(commandKey),
+        "content-type": "application/json",
+      },
+      payload: '{"name":"SENSITIVE_PARSE_MARKER"',
+    });
+    expect(malformed).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(malformed.body).not.toContain("SENSITIVE_PARSE_MARKER");
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Fixture listener did not expose a port.");
+    }
+    const duplicate = await sendDuplicateKeyRequest(address.port, commandKey);
+    expect(duplicate).toEqual({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(
+      database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
+    ).toBe(0);
+    const missingId = "10000000-0000-4000-8000-000000000099";
+    for (const queryRequest of [
+      {
+        method: "POST" as const,
+        url: "/api/v1/engagements?ignored=true",
+        payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+      },
+      {
+        method: "POST" as const,
+        url: `/api/v1/engagements/${missingId}/archive?ignored=true`,
+        payload: { expectedRevision: 1 },
+      },
+      {
+        method: "POST" as const,
+        url: `/api/v1/engagements/${missingId}/reopen?ignored=true`,
+        payload: { expectedRevision: 1 },
+      },
+      {
+        method: "PATCH" as const,
+        url: `/api/v1/engagements/${missingId}/auto-continue-warnings?ignored=true`,
+        payload: { expectedRevision: 1, autoContinueWarnings: true },
+      },
+      {
+        method: "POST" as const,
+        url: `/api/v1/engagements/${missingId}/scope-revisions?ignored=true`,
+        payload: { expectedRevision: 1, rules: [] },
+      },
+    ]) {
+      expect(
+        await app.inject({
+          ...queryRequest,
+          headers: headers(commandKey),
+        }),
+      ).toMatchObject({ statusCode: 400, body: '{"code":"invalid_request"}' });
+      expect(
+        database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
+      ).toBe(0);
+    }
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(commandKey),
+        payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+      }),
+    ).toMatchObject({ statusCode: 201 });
+  });
+
+  it("stores stale revision and archived-rule errors as exact definitive responses", async () => {
+    const { app } = await fixture();
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(key("error-create")),
+        payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+      })
+    ).json();
+    const base = `/api/v1/engagements/${created.id}`;
+    await app.inject({
+      method: "POST",
+      url: `${base}/archive`,
+      headers: headers(key("error-archive")),
+      payload: { expectedRevision: 1 },
+    });
+    const staleKey = key("stale");
+    const stale = await app.inject({
+      method: "POST",
+      url: `${base}/reopen`,
+      headers: headers(staleKey),
+      payload: { expectedRevision: 1 },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({
+      code: "revision_conflict",
+      resourceType: "engagement",
+      resourceId: created.id,
+      currentRevision: 2,
+    });
+    await app.inject({
+      method: "POST",
+      url: `${base}/reopen`,
+      headers: headers(key("valid-reopen")),
+      payload: { expectedRevision: 2 },
+    });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `${base}/reopen`,
+        headers: headers(staleKey),
+        payload: { expectedRevision: 1 },
+      }),
+    ).toMatchObject({ statusCode: 409, body: stale.body });
+
+    await app.inject({
+      method: "POST",
+      url: `${base}/archive`,
+      headers: headers(key("archive-again")),
+      payload: { expectedRevision: 3 },
+    });
+    for (const request of [
+      {
+        method: "PATCH" as const,
+        url: `${base}/auto-continue-warnings`,
+        payload: { expectedRevision: 4, autoContinueWarnings: true },
+      },
+      {
+        method: "POST" as const,
+        url: `${base}/scope-revisions`,
+        payload: { expectedRevision: 4, rules: [] },
+      },
+    ]) {
+      const response = await app.inject({
+        ...request,
+        headers: headers(key(`archived-${request.method}`)),
+      });
+      expect(response).toMatchObject({
+        statusCode: 409,
+        body: '{"code":"engagement_archived"}',
+      });
+    }
+  });
+
+  it("maps missing engagements and invalid lifecycle transitions exactly", async () => {
+    const { app } = await fixture();
+    const missingId = "10000000-0000-4000-8000-000000000099";
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/engagements/${missingId}/archive`,
+        headers: headers(key("missing")),
+        payload: { expectedRevision: 1 },
+      }),
+    ).toMatchObject({
+      statusCode: 404,
+      body: '{"code":"engagement_not_found"}',
+    });
+
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(key("transition-create")),
+        payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+      })
+    ).json();
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/engagements/${created.id}/reopen`,
+        headers: headers(key("invalid-transition")),
+        payload: { expectedRevision: 1 },
+      }),
+    ).toMatchObject({
+      statusCode: 409,
+      body: '{"code":"invalid_engagement_transition"}',
+    });
+  });
+
+  it("replays lifecycle and scope successes after the engagement advances", async () => {
+    const { app } = await fixture();
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(key("success-replay-create")),
+        payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+      })
+    ).json();
+    const base = `/api/v1/engagements/${created.id}`;
+    const archiveRequest = {
+      method: "POST" as const,
+      url: `${base}/archive`,
+      headers: headers(key("success-replay-archive")),
+      payload: { expectedRevision: 1 },
+    };
+    const archived = await app.inject(archiveRequest);
+    await app.inject({
+      method: "POST",
+      url: `${base}/reopen`,
+      headers: headers(key("success-replay-reopen")),
+      payload: { expectedRevision: 2 },
+    });
+    expect(await app.inject(archiveRequest)).toMatchObject({
+      statusCode: 200,
+      body: archived.body,
+    });
+
+    const scopeRequest = {
+      method: "POST" as const,
+      url: `${base}/scope-revisions`,
+      headers: headers(key("success-replay-scope")),
+      payload: { expectedRevision: 3, rules: [] },
+    };
+    const scope = await app.inject(scopeRequest);
+    await app.inject({
+      method: "PATCH",
+      url: `${base}/auto-continue-warnings`,
+      headers: headers(key("success-replay-preference")),
+      payload: { expectedRevision: 4, autoContinueWarnings: true },
+    });
+    expect(await app.inject(scopeRequest)).toMatchObject({
+      statusCode: 201,
+      body: scope.body,
+    });
+  });
+
+  it("rolls back route mutation when its success response violates the route schema", async () => {
+    const { database, engagementRepository, operatorCommandRepository } = await fixture();
+    const app = buildApp({
+      engagementRepository,
+      operatorCommandRepository: {
+        executeOperatorCommand(command, mutate) {
+          return operatorCommandRepository.executeOperatorCommand(
+            command,
+            (transaction: EngagementWriteTransaction) => {
+              const invalidResponseTransaction = new Proxy(transaction, {
+                get(target, property, receiver) {
+                  if (property !== "createEngagement") {
+                    return Reflect.get(target, property, receiver);
+                  }
+                  return (input: Parameters<EngagementWriteTransaction["createEngagement"]>[0]) => {
+                    target.createEngagement(input);
+                    return { ok: true, value: { id: "schema-invalid" } };
+                  };
+                },
+              });
+              return mutate(invalidResponseTransaction);
+            },
+          );
+        },
+      },
+      getDevelopmentStorageReadiness: () => "ready",
+    });
+    apps.push(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(key("rollback")),
+      payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+    });
+    expect(response).toMatchObject({
+      statusCode: 500,
+      body: '{"code":"invalid_persisted_data"}',
+    });
+    expect(engagementRepository.listEngagements()).toEqual({ ok: true, value: [] });
+    expect(
+      database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
+    ).toBe(0);
+  });
+
+  it("returns unrecorded storage_busy and accepts the same key after lock release", async () => {
+    const { app, database, directory } = await fixture();
+    const blocker = openEngagementDatabase({ dataDirectory: directory });
+    blocker.sqlite.exec("begin immediate");
+    const commandKey = key("busy");
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/engagements",
+      headers: headers(commandKey),
+      payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+    };
+    const busy = await app.inject(request);
+    expect(busy).toMatchObject({ statusCode: 503, body: '{"code":"storage_busy"}' });
+    expect(
+      database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
+    ).toBe(0);
+    blocker.sqlite.exec("rollback");
+    blocker.close();
+    expect(await app.inject(request)).toMatchObject({ statusCode: 201 });
+  }, 10_000);
+
+  it("does not reflect malformed stored command responses", async () => {
+    const marker = "SENSITIVE_STORED_MARKER";
+    const app = buildApp({
+      engagementRepository: {
+        getEngagement: () => ({ ok: false, error: { code: "engagement_not_found" } }),
+        listEngagements: () => ({ ok: true, value: [] }),
+        listScopeRevisions: () => ({ ok: true, value: [] }),
+      },
+      operatorCommandRepository: {
+        executeOperatorCommand: () => ({
+          ok: true,
+          disposition: "replayed",
+          response: { status: 201, bodyJson: JSON.stringify({ marker }) },
+        }),
+      },
+      getDevelopmentStorageReadiness: () => "ready",
+    });
+    apps.push(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(key("malformed-response")),
+      payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+    });
+    expect(response).toMatchObject({
+      statusCode: 500,
+      body: '{"code":"invalid_persisted_data"}',
+    });
+    expect(response.body).not.toContain(marker);
+  });
+});

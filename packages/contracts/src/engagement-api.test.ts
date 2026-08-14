@@ -4,6 +4,8 @@ import {
   EngagementDetailResponseSchema,
   EngagementIdParamsSchema,
   EngagementListResponseSchema,
+  EngagementMutationErrorSchema,
+  EngagementRevisionRequestSchema,
   EngagementQueryErrorSchema,
   ScopeRevisionListResponseSchema,
 } from "./engagement-api.js";
@@ -57,6 +59,37 @@ describe("engagement query API contracts", () => {
     expect(
       EngagementQueryErrorSchema.safeParse({
         code: "invalid_persisted_data",
+        path: "/private/data",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("pins strict mutation revision and error responses", () => {
+    expect(EngagementRevisionRequestSchema.parse({ expectedRevision: 1 })).toEqual({
+      expectedRevision: 1,
+    });
+    expect(
+      EngagementRevisionRequestSchema.safeParse({
+        expectedRevision: 1,
+        ignored: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      EngagementMutationErrorSchema.parse({
+        code: "revision_conflict",
+        resourceType: "engagement",
+        resourceId: engagement.id,
+        currentRevision: 2,
+      }),
+    ).toEqual({
+      code: "revision_conflict",
+      resourceType: "engagement",
+      resourceId: engagement.id,
+      currentRevision: 2,
+    });
+    expect(
+      EngagementMutationErrorSchema.safeParse({
+        code: "storage_busy",
         path: "/private/data",
       }).success,
     ).toBe(false);

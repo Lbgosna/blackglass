@@ -1,12 +1,14 @@
 import {
   HealthResponseSchema,
+  EngagementMutationErrorSchema,
   SYSTEM_STATUS_VERSION,
   SystemStatusResponseSchema,
   type Readiness,
 } from "@blackglass/contracts";
 import Fastify, { type FastifyInstance } from "fastify";
-import type { EngagementRepository } from "@blackglass/db";
+import type { EngagementRepository, OperatorCommandRepository } from "@blackglass/db";
 
+import { registerEngagementMutationRoutes } from "./engagement-mutation-routes.js";
 import { registerEngagementRoutes } from "./engagement-routes.js";
 
 interface BuildAppOptions {
@@ -15,15 +17,40 @@ interface BuildAppOptions {
     EngagementRepository,
     "getEngagement" | "listEngagements" | "listScopeRevisions"
   >;
+  operatorCommandRepository?: Pick<
+    OperatorCommandRepository,
+    "executeOperatorCommand"
+  >;
 }
 
 export function buildApp({
   engagementRepository,
   getDevelopmentStorageReadiness,
+  operatorCommandRepository,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: false });
 
+  app.setErrorHandler((error, _request, reply) => {
+    const clientError =
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      typeof error.statusCode === "number" &&
+      error.statusCode < 500;
+    return reply
+      .code(clientError ? 400 : 500)
+      .type("application/json")
+      .send(
+        EngagementMutationErrorSchema.parse({
+          code: clientError ? "invalid_request" : "invalid_persisted_data",
+        }),
+      );
+  });
+
   registerEngagementRoutes(app, engagementRepository);
+  if (operatorCommandRepository !== undefined) {
+    registerEngagementMutationRoutes(app, operatorCommandRepository);
+  }
 
   app.get("/health", async (_request, reply) => {
     const health = HealthResponseSchema.parse({ status: "ok" });
