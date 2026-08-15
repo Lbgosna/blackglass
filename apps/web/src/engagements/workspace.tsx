@@ -9,18 +9,40 @@ import {
 } from "@blackglass/ui";
 import { Link } from "@tanstack/react-router";
 
-import { engagementMutationMessage, isRevisionConflict } from "./errors.js";
 import {
   ENGAGEMENT_KIND_LABELS,
   ENGAGEMENT_STATUS_LABELS,
   formatEngagementTimestamp,
 } from "./format.js";
-import {
-  useArchiveEngagementMutation,
-  useReopenEngagementMutation,
-} from "./mutations.js";
 import { partitionEngagements, useEngagementsQuery } from "./query.js";
 import { useEngagementWorkspace } from "./workspace-context.js";
+
+const NEXT_SURFACES = [
+  {
+    title: "Targets and saved scope",
+    detail: "Define hosts and saved scope here. Scope is context, not authorization. Not connected yet.",
+  },
+  {
+    title: "Runs",
+    detail: "Choose an action, receive at most one warning, then queue, cancel, or retry. Not connected yet.",
+  },
+  {
+    title: "Evidence",
+    detail: "Inspect captured output and services from completed work. Not connected yet.",
+  },
+  {
+    title: "Findings",
+    detail: "Promote observations into findings for the report. Not connected yet.",
+  },
+  {
+    title: "Notes",
+    detail: "Operator notes stay with this engagement. Not connected yet.",
+  },
+  {
+    title: "Report",
+    detail: "Assemble findings and evidence into a report. Not connected yet.",
+  },
+] as const;
 
 export function EngagementWorkspace({ engagementId }: { engagementId?: string }) {
   const engagements = useEngagementsQuery();
@@ -30,14 +52,16 @@ export function EngagementWorkspace({ engagementId }: { engagementId?: string })
 
   if (!hasData && engagements.isFetching) {
     return (
-      <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-10">
+      <main className="min-h-full bg-background px-4 py-5 sm:px-6">
         <div className="mx-auto w-full max-w-3xl">
-          <h1 className="m-0 text-3xl leading-none font-bold tracking-tight">Engagements</h1>
-          <LoadingRegion label="Loading engagements" className="mt-6 space-y-4">
+          <h1 className="m-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
+            Engagements
+          </h1>
+          <LoadingRegion label="Loading engagements" className="mt-5 space-y-3">
             <Skeleton className="h-3 w-28" />
             <Skeleton className="h-8 w-56 max-w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
           </LoadingRegion>
         </div>
       </main>
@@ -46,9 +70,11 @@ export function EngagementWorkspace({ engagementId }: { engagementId?: string })
 
   if (!hasData && engagements.isError) {
     return (
-      <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-10">
+      <main className="min-h-full bg-background px-4 py-5 sm:px-6">
         <div className="mx-auto w-full max-w-3xl">
-          <h1 className="mb-6 text-3xl leading-none font-bold tracking-tight">Engagements</h1>
+          <h1 className="mb-5 text-[26px] leading-none font-semibold tracking-[-0.04em]">
+            Engagements
+          </h1>
           <RecoverableError
             variant="page"
             title="Engagements unavailable"
@@ -67,7 +93,7 @@ export function EngagementWorkspace({ engagementId }: { engagementId?: string })
 
   if (engagementId !== undefined && selected === undefined) {
     return (
-      <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-10">
+      <main className="min-h-full bg-background px-4 py-5 sm:px-6">
         <div className="mx-auto w-full max-w-3xl">
           <RecoverableError
             variant="page"
@@ -79,7 +105,7 @@ export function EngagementWorkspace({ engagementId }: { engagementId?: string })
           <p className="mt-4 mb-0">
             <Link
               to="/engagements"
-              className="inline-flex min-h-11 items-center text-sm font-bold text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex min-h-11 items-center text-[13px] font-semibold text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             >
               Open Engagements
             </Link>
@@ -94,7 +120,9 @@ export function EngagementWorkspace({ engagementId }: { engagementId?: string })
       <EngagementDetail engagement={selected} />
     ) : records.length === 0 ? (
       <div>
-        <h1 className="mb-6 text-3xl leading-none font-bold tracking-tight">Engagements</h1>
+        <h1 className="mb-5 text-[26px] leading-none font-semibold tracking-[-0.04em]">
+          Engagements
+        </h1>
         <EmptyState
           variant="primary"
           title="No engagements yet"
@@ -107,7 +135,7 @@ export function EngagementWorkspace({ engagementId }: { engagementId?: string })
     );
 
   return (
-    <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-10">
+    <main className="min-h-full bg-background px-4 py-5 sm:px-6">
       <div className="mx-auto w-full max-w-3xl">
         {engagements.isError ? (
           <StaleDataState
@@ -129,14 +157,16 @@ function EngagementIndex({ engagements }: { engagements: readonly Engagement[] }
   const { active, archived } = partitionEngagements(engagements);
   return (
     <div>
-      <header className="mb-6">
-        <h1 className="m-0 text-3xl leading-none font-bold tracking-tight">Engagements</h1>
-        <p className="mt-3 mb-0 max-w-xl text-sm leading-6 text-muted-foreground">
+      <header className="mb-5">
+        <h1 className="m-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
+          Engagements
+        </h1>
+        <p className="mt-2 mb-0 max-w-xl text-[13px] leading-5 text-muted-foreground">
           Active and archived engagements from the local control plane.
         </p>
       </header>
       {active.length > 0 && (
-        <section className="grid gap-2" aria-label="Active engagements">
+        <section className="grid gap-1" aria-label="Active engagements">
           {active.map((engagement) => (
             <EngagementSummaryLink key={engagement.id} engagement={engagement} />
           ))}
@@ -150,9 +180,9 @@ function EngagementIndex({ engagements }: { engagements: readonly Engagement[] }
         />
       )}
       {archived.length > 0 && (
-        <section className="mt-8" aria-label="Archived engagements">
-          <h2 className="m-0 text-sm font-bold text-muted-foreground">Archived</h2>
-          <div className="mt-2 grid gap-2">
+        <section className="mt-6" aria-label="Archived engagements">
+          <h2 className="m-0 text-[11px] font-medium text-muted-foreground">Archived</h2>
+          <div className="mt-2 grid gap-1">
             {archived.map((engagement) => (
               <EngagementSummaryLink key={engagement.id} engagement={engagement} />
             ))}
@@ -168,11 +198,13 @@ function EngagementSummaryLink({ engagement }: { engagement: Engagement }) {
     <Link
       to="/engagements/$engagementId"
       params={{ engagementId: engagement.id }}
-      className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-foreground outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex min-h-14 items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-foreground outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="min-w-0">
-        <span className="block truncate text-sm font-bold">{engagement.name}</span>
-        <span className="mt-0.5 block text-xs text-muted-foreground">
+        <span className="block truncate text-[13px] font-semibold tracking-[-0.02em]">
+          {engagement.name}
+        </span>
+        <span className="mt-0.5 block text-[11px] text-muted-foreground">
           {ENGAGEMENT_KIND_LABELS[engagement.kind]} · {ENGAGEMENT_STATUS_LABELS[engagement.status]}
         </span>
       </span>
@@ -184,71 +216,55 @@ function EngagementSummaryLink({ engagement }: { engagement: Engagement }) {
 }
 
 function EngagementDetail({ engagement }: { engagement: Engagement }) {
-  const archive = useArchiveEngagementMutation();
-  const reopen = useReopenEngagementMutation();
-  const pending = archive.isPending || reopen.isPending;
-  const error = archive.error ?? reopen.error;
-  const conflict = isRevisionConflict(error);
-  const reverse =
-    engagement.status === "active"
-      ? {
-          label: "Archive engagement",
-          run: () =>
-            archive.mutate({
-              engagementId: engagement.id,
-              expectedRevision: engagement.revision,
-            }),
-        }
-      : {
-          label: "Reopen engagement",
-          run: () =>
-            reopen.mutate({
-              engagementId: engagement.id,
-              expectedRevision: engagement.revision,
-            }),
-        };
+  const { announce } = useEngagementWorkspace();
 
   return (
     <article>
-      <p className="m-0 text-xs font-bold tracking-widest text-muted-foreground uppercase">
+      <p className="m-0 text-[11px] text-muted-foreground">
         {ENGAGEMENT_KIND_LABELS[engagement.kind]}
       </p>
-      <h1 className="mt-2 mb-0 text-3xl leading-none font-bold tracking-tight">{engagement.name}</h1>
-      <p className="mt-3 mb-0 text-sm text-muted-foreground">
+      <h1 className="mt-1 mb-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
+        {engagement.name}
+      </h1>
+      <p className="mt-2 mb-0 text-[13px] text-muted-foreground">
         <span aria-label={`Status: ${ENGAGEMENT_STATUS_LABELS[engagement.status]}`}>
           {ENGAGEMENT_STATUS_LABELS[engagement.status]}
         </span>
         <span className="mx-2 text-border">·</span>
         <span className="font-mono">rev {engagement.revision}</span>
       </p>
-      <dl className="mt-6 grid gap-4 border-t border-border pt-5 text-sm">
-        <Detail term="Description" value={engagement.description ?? "None"} />
-        <Detail
-          term="Authorization context"
-          value={engagement.authorizationContext ?? "None"}
-        />
-        <Detail
-          term="Auto-continue warnings"
-          value={engagement.autoContinueWarnings ? "On" : "Off"}
-        />
-        <Detail term="Created" value={formatEngagementTimestamp(engagement.createdAt)} />
-        <Detail term="Updated" value={formatEngagementTimestamp(engagement.updatedAt)} />
-      </dl>
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Button disabled={pending} onClick={reverse.run} variant="secondary">
-          {pending ? "Working" : reverse.label}
-        </Button>
+      <div className="mt-5 grid gap-4 border-t border-border pt-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+        <dl className="grid gap-3 text-[13px]">
+          <Detail term="Description" value={engagement.description ?? "None"} />
+          <Detail
+            term="Authorization context"
+            value={engagement.authorizationContext ?? "None"}
+          />
+          <Detail
+            term="Auto-continue warnings"
+            value={engagement.autoContinueWarnings ? "On" : "Off"}
+          />
+          <Detail term="Created" value={formatEngagementTimestamp(engagement.createdAt)} />
+          <Detail term="Updated" value={formatEngagementTimestamp(engagement.updatedAt)} />
+        </dl>
+        <section aria-label="Next in this engagement">
+          <h2 className="m-0 px-1 text-[13px] font-semibold">Next in this engagement</h2>
+          <ul className="mt-2 mb-0 list-none divide-y divide-border rounded-[10px] border border-border p-0">
+            {NEXT_SURFACES.map((surface) => (
+              <li key={surface.title}>
+                <button
+                  type="button"
+                  className="flex min-h-11 w-full flex-col items-start justify-center px-3 py-2 text-left outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  onClick={() => announce("Not connected yet")}
+                >
+                  <span className="text-[13px] font-semibold">{surface.title}</span>
+                  <span className="mt-0.5 text-[12px] text-muted-foreground">{surface.detail}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
-      {error && (
-        <p className="mt-3 mb-0 text-sm text-destructive" role="alert">
-          {conflict
-            ? "This engagement changed. Showing the latest revision."
-            : engagementMutationMessage(error)}
-        </p>
-      )}
-      <p className="mt-8 mb-0 text-sm text-muted-foreground">
-        Targets, runs, findings, evidence, and reports are not available in this slice.
-      </p>
     </article>
   );
 }
@@ -256,7 +272,7 @@ function EngagementDetail({ engagement }: { engagement: Engagement }) {
 function Detail({ term, value }: { term: string; value: string }) {
   return (
     <div>
-      <dt className="m-0 text-xs text-muted-foreground">{term}</dt>
+      <dt className="m-0 text-[11px] text-muted-foreground">{term}</dt>
       <dd className="mt-1 mb-0 whitespace-pre-wrap text-foreground">{value}</dd>
     </div>
   );

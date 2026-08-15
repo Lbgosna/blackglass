@@ -8,15 +8,15 @@ interface RoutePageProps {
 
 export function RoutePage({ description, eyebrow, title }: RoutePageProps) {
   return (
-    <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-12">
+    <main className="min-h-full bg-background px-4 py-5 sm:px-6">
       <div className="mx-auto w-full max-w-3xl">
-        <p className="m-0 text-xs font-extrabold tracking-[0.18em] text-primary uppercase">
+        <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
           {eyebrow}
         </p>
-        <h1 className="mt-2 mb-0 text-3xl leading-none font-bold tracking-tight sm:text-4xl">
+        <h1 className="mt-2 mb-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
           {title}
         </h1>
-        <p className="mt-3 mb-0 max-w-xl text-sm leading-6 text-muted-foreground">
+        <p className="mt-2 mb-0 max-w-xl text-[13px] leading-5 text-muted-foreground">
           {description}
         </p>
       </div>
@@ -28,15 +28,15 @@ export function UnknownRoutePage() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   return (
-    <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-12">
+    <main className="min-h-full bg-background px-4 py-5 sm:px-6">
       <div className="mx-auto w-full max-w-3xl">
-        <p className="m-0 text-xs font-extrabold tracking-[0.18em] text-primary uppercase">
+        <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
           Unknown route
         </p>
-        <h1 className="mt-2 mb-0 text-3xl leading-none font-bold tracking-tight sm:text-4xl">
+        <h1 className="mt-2 mb-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
           Page not found
         </h1>
-        <p className="mt-3 mb-0 max-w-xl text-sm leading-6 text-muted-foreground">
+        <p className="mt-2 mb-0 max-w-xl text-[13px] leading-5 text-muted-foreground">
           Blackglass does not have a page at <code className="font-mono">{pathname}</code>.
         </p>
         <Link

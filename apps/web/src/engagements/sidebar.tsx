@@ -10,13 +10,18 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
 
 import { engagementMutationMessage, isRevisionConflict } from "./errors.js";
-import { engagementContext, engagementMetadata, ENGAGEMENT_STATUS_LABELS } from "./format.js";
+import {
+  ENGAGEMENT_KIND_LABELS,
+  ENGAGEMENT_STATUS_LABELS,
+  engagementContext,
+  engagementMetadata,
+} from "./format.js";
 import {
   useArchiveEngagementMutation,
   useReopenEngagementMutation,
 } from "./mutations.js";
 import { partitionEngagements, useEngagementsQuery } from "./query.js";
-import { useEngagementWorkspace } from "./workspace-context.js";
+import { engagementMatchesFilter, useEngagementWorkspace } from "./workspace-context.js";
 
 export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }) {
   const engagements = useEngagementsQuery();
@@ -51,7 +56,16 @@ export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }
   }
 
   const records = engagements.data ?? [];
-  const { active, archived } = partitionEngagements(records);
+  const { engagementFilter } = useEngagementWorkspace();
+  const filtered = records.filter((engagement) =>
+    engagementMatchesFilter(
+      engagement.name,
+      ENGAGEMENT_KIND_LABELS[engagement.kind],
+      engagementFilter,
+    ),
+  );
+  const { active, archived } = partitionEngagements(filtered);
+  const filterActive = engagementFilter.trim().length > 0;
 
   if (records.length === 0) {
     return (
@@ -84,8 +98,13 @@ export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }
           </button>
         </p>
       )}
+      {filterActive && filtered.length === 0 && (
+        <p className="m-0 px-2 py-3 text-xs leading-5 text-sidebar-muted-foreground">
+          No engagements match this filter.
+        </p>
+      )}
       <section aria-label="Active engagements">
-        {active.length === 0 ? (
+        {active.length === 0 && !(filterActive && filtered.length === 0) ? (
           <div className="px-2 py-3">
             <p className="m-0 text-xs leading-5 text-sidebar-muted-foreground">
               No active engagements. Archived work stays below.
@@ -98,7 +117,7 @@ export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }
               New engagement
             </button>
           </div>
-        ) : (
+        ) : active.length === 0 ? null : (
           <ul
             className="m-0 list-none space-y-1 p-0"
             onClick={interceptNavigation}

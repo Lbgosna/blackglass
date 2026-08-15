@@ -181,12 +181,14 @@ export function CreateEngagementDialog({ onOpenChange, open }: CreateEngagementD
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="relative w-full max-w-[520px] rounded-[10px] border border-border bg-popover/95 p-5 text-popover-foreground shadow-lg backdrop-blur-glass"
+        className="relative w-full max-w-[520px] rounded-[10px] border border-border bg-popover/92 p-5 text-popover-foreground shadow-lg backdrop-blur-glass"
         data-keybinding-capture=""
         onKeyDown={onDialogKeyDown}
       >
-        <p className="m-0 text-xs font-semibold text-warning">New engagement</p>
-        <h2 id={titleId} className="mt-2 mb-1 text-lg font-semibold tracking-tight">
+        <p className="m-0 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+          New engagement
+        </p>
+        <h2 id={titleId} className="mt-2 mb-1 text-lg font-semibold tracking-[-0.03em]">
           Start an engagement
         </h2>
         <p id={descriptionId} className="mt-0 mb-4 text-sm text-muted-foreground">
