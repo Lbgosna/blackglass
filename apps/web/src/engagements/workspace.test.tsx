@@ -278,7 +278,7 @@ describe("engagement workspace", () => {
     expect(await screen.findByText("rev 2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Archive engagement" }));
     expect(
-      await screen.findByText("This engagement changed. Refreshing the latest revision."),
+      await screen.findByText("This engagement changed. Showing the latest revision."),
     ).toBeTruthy();
     await waitFor(() => expect(screen.getByText("rev 5")).toBeTruthy());
     expect(screen.getByText("Newer note")).toBeTruthy();

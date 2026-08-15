@@ -12,7 +12,7 @@ export const ENGAGEMENT_MUTATION_ERROR_COPY = {
   engagement_archived: "This engagement is archived.",
   invalid_engagement_transition: "That lifecycle action is not valid now.",
   idempotency_conflict: "This request did not match a previous attempt. Try again.",
-  revision_conflict: "This engagement changed. Refreshing the latest revision.",
+  revision_conflict: "This engagement changed. Showing the latest revision.",
   invalid_persisted_data: "The server returned data this client cannot use.",
   storage_busy: "Storage is busy. Try again.",
   request_failed: ENGAGEMENT_MUTATION_ERROR_MESSAGE,

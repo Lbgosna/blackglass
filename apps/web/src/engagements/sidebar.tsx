@@ -206,7 +206,7 @@ function EngagementRow({
       {error && (
         <p className="m-0 px-3 py-1 text-[11px] text-destructive" role="alert">
           {conflict
-            ? "This engagement changed. Refreshing the latest revision."
+            ? "This engagement changed. Showing the latest revision."
             : engagementMutationMessage(error)}
         </p>
       )}

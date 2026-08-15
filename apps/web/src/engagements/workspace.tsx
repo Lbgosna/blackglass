@@ -72,10 +72,18 @@ export function EngagementWorkspace({ engagementId }: { engagementId?: string })
           <RecoverableError
             variant="page"
             title="Engagement not found"
-            description="That engagement is not in the current list. Refresh or return to the workspace."
+            description="That engagement is not in the current list. Refresh the list or open Engagements."
             onRetry={retry}
             retryLabel="Refresh list"
           />
+          <p className="mt-4 mb-0">
+            <Link
+              to="/engagements"
+              className="inline-flex min-h-11 items-center text-sm font-bold text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Open Engagements
+            </Link>
+          </p>
         </div>
       </main>
     );
@@ -234,7 +242,7 @@ function EngagementDetail({ engagement }: { engagement: Engagement }) {
       {error && (
         <p className="mt-3 mb-0 text-sm text-destructive" role="alert">
           {conflict
-            ? "This engagement changed. Refreshing the latest revision."
+            ? "This engagement changed. Showing the latest revision."
             : engagementMutationMessage(error)}
         </p>
       )}
