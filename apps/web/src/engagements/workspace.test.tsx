@@ -296,4 +296,51 @@ describe("engagement workspace", () => {
     expect(screen.getAllByText("Archived").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Parked box").length).toBeGreaterThan(0);
   });
+
+  it("filters the loaded sidebar list locally without inventing results", async () => {
+    stubFetch((url) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      return response([activeEngagement, archivedEngagement]);
+    });
+    await renderWorkspace();
+    expect((await screen.findAllByText("Target lab")).length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter engagements" }), {
+      target: { value: "Parked" },
+    });
+    expect(screen.queryByText("No engagements match this filter.")).toBeNull();
+    expect(screen.getAllByText("Parked box").length).toBeGreaterThan(0);
+
+    const sidebar = screen.getByRole("complementary", { name: "Primary" });
+    expect(within(sidebar).queryByText("Target lab")).toBeNull();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter engagements" }), {
+      target: { value: "zz-missing" },
+    });
+    expect(screen.getByText("No engagements match this filter.")).toBeTruthy();
+  });
+
+  it("announces unavailable next-step actions without claiming success", async () => {
+    stubFetch((url) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      return response([activeEngagement]);
+    });
+    await renderWorkspace(`/engagements/${activeEngagement.id}`);
+    expect(await screen.findByRole("heading", { level: 1, name: "Target lab" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "New run" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-notice").textContent).toBe("Not connected yet"),
+    );
+    expect(screen.queryByText("Run queued")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Targets and saved scope/ }));
+    expect(screen.getByTestId("workspace-notice").textContent).toBe("Not connected yet");
+    expect(screen.queryByText("Scope saved")).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "Dashboard" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Workspace" })).toBeTruthy();
+    expect(screen.getByTestId("workspace-notice").textContent).toBe("");
+  });
 });

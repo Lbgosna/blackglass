@@ -49,8 +49,8 @@
   --muted-foreground: #7d8478;
   --accent: #121412;
   --accent-foreground: #f4f6f2;
-  --primary: oklch(0.78 0.21 145);
-  --primary-foreground: oklch(0.14 0.025 145);
+  --primary: #a4d07a;
+  --primary-foreground: #08100a;
   --border: rgb(255 255 255 / 0.08);
   --input: rgb(255 255 255 / 0.12);
   --ring: oklch(0.78 0.21 145);
@@ -322,8 +322,7 @@ input {
 }
 
 .shell-sidebar-toggle {
-  left: calc(var(--shell-sidebar-width) + 0.75rem);
-  transition: left 200ms linear;
+  transition: color 200ms linear, background-color 200ms linear;
 }
 
 .application-shell[data-sidebar-open="false"] .shell-sidebar {
@@ -334,9 +333,7 @@ input {
   margin-left: 0;
 }
 
-.application-shell[data-sidebar-open="false"] .shell-sidebar-toggle {
-  left: 0.75rem;
-}
+
 
 .shell-console {
   height: var(--shell-console-height);

@@ -11,7 +11,7 @@ function PluginsPage() {
     <RoutePage
       eyebrow="Workspace"
       title="Plugins"
-      description="Installed tool adapters and their local requirements will appear here."
+      description="Installed tool adapters and their local requirements will appear here. Plugin execution is not connected yet."
     />
   );
 }

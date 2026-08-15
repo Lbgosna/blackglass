@@ -8,6 +8,8 @@ import {
   EngagementWorkspaceProvider,
   useEngagementWorkspace,
 } from "./engagements/workspace-context.js";
+import { partitionEngagements, useEngagementsQuery } from "./engagements/query.js";
+import { StageHeader } from "./stage-header.js";
 import { useSystemStatusQuery } from "./system-status-query.js";
 
 const navigationLinks = [
@@ -20,25 +22,38 @@ const consolePanels: readonly ConsolePanel[] = [
   {
     value: "advisor",
     label: "Advisor",
-    content: <ConsolePlaceholder title="Advisor" detail="Evidence-backed guidance is not available yet." />,
+    content: (
+      <ConsolePlaceholder
+        title="Advisor"
+        detail="Ask from the current engagement when the advisor is connected. Guidance is not available yet."
+      />
+    ),
   },
   {
     value: "activity",
     label: "Activity",
     content: (
-      <ConsolePlaceholder title="Activity" detail="Run and workspace events are not available yet." />
+      <ConsolePlaceholder
+        title="Activity"
+        detail="Queue, run, cancel, and retry events will appear here. No runs are connected yet."
+      />
     ),
   },
   {
     value: "raw-output",
     label: "Raw output",
-    content: <ConsolePlaceholder title="Raw output" detail="Live tool output is not available yet." />,
+    content: (
+      <ConsolePlaceholder
+        title="Raw output"
+        detail="Live tool output will stream here for the current run. Raw output is not available yet."
+      />
+    ),
   },
 ];
 
 function SearchIcon() {
   return (
-    <svg viewBox="0 0 16 16" className="size-4 shrink-0" aria-hidden="true">
+    <svg viewBox="0 0 16 16" className="size-3.5 shrink-0" aria-hidden="true">
       <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" strokeWidth="1.7" />
       <path d="M10.4 10.4 14 14" fill="none" stroke="currentColor" strokeWidth="1.7" />
     </svg>
@@ -47,7 +62,7 @@ function SearchIcon() {
 
 function PlusIcon() {
   return (
-    <svg viewBox="0 0 16 16" className="size-4 shrink-0" aria-hidden="true">
+    <svg viewBox="0 0 16 16" className="size-3.5 shrink-0" aria-hidden="true">
       <path d="M8 3.2v9.6M3.2 8h9.6" fill="none" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
@@ -55,20 +70,33 @@ function PlusIcon() {
 
 function ConsolePlaceholder({ detail, title }: { detail: string; title: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-border p-4">
-      <p className="m-0 text-sm font-bold">{title}</p>
-      <p className="mt-1 mb-0 text-sm text-muted-foreground">{detail}</p>
+    <div>
+      <p className="m-0 text-[13px] font-semibold">{title}</p>
+      <p className="mt-1 mb-0 text-[13px] text-muted-foreground">{detail}</p>
     </div>
   );
 }
 
 function SidebarHeader() {
+  const systemStatus = useSystemStatusQuery();
+  const ready = systemStatus.data?.overall === "ready";
+  const badge = !systemStatus.data
+    ? systemStatus.isError
+      ? "Offline"
+      : "Checking"
+    : ready
+      ? "Ready"
+      : "Not ready";
+
   return (
-    <div className="flex min-h-12 items-center gap-2 px-3 pt-[env(safe-area-inset-top)]">
+    <div className="flex h-12 items-center gap-2 px-3 pt-[env(safe-area-inset-top)]">
       <span className="size-3.5 shrink-0 rounded-[4px] bg-primary" aria-hidden="true" />
-      <p className="m-0 truncate text-[13px] font-semibold tracking-[-0.03em] text-sidebar-foreground">
+      <p className="m-0 min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.03em] text-sidebar-foreground">
         BLACKGLASS
       </p>
+      <span className="shrink-0 font-mono text-[10px] tracking-wide text-sidebar-muted-foreground uppercase">
+        {badge}
+      </span>
     </div>
   );
 }
@@ -80,18 +108,22 @@ function SidebarActions({
   onCreate: () => void;
   onNavigate: () => void;
 }) {
+  const { engagementFilter, setEngagementFilter } = useEngagementWorkspace();
+
   return (
     <div className="flex items-center gap-0.5 px-2 py-1.5">
-      <button
-        type="button"
-        disabled
-        aria-disabled="true"
-        title="Search is not available yet"
-        className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[13px] text-sidebar-muted-foreground"
-      >
+      <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sidebar-muted-foreground focus-within:bg-sidebar-hover">
         <SearchIcon />
-        <span className="truncate">Search unavailable</span>
-      </button>
+        <span className="sr-only">Filter engagements</span>
+        <input
+          type="search"
+          value={engagementFilter}
+          placeholder="Filter engagements"
+          aria-label="Filter engagements"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-sidebar-foreground outline-none placeholder:text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          onChange={(event) => setEngagementFilter(event.target.value)}
+        />
+      </label>
       <button
         type="button"
         aria-label="New engagement"
@@ -156,22 +188,49 @@ function SidebarFooter({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
+function WorkspaceNotice() {
+  const { notice } = useEngagementWorkspace();
+  return (
+    <p
+      className={
+        notice
+          ? "border-b border-border px-4 py-2 text-[13px] text-muted-foreground"
+          : "sr-only"
+      }
+      data-testid="workspace-notice"
+      role="status"
+    >
+      {notice ?? ""}
+    </p>
+  );
+}
+
+function consoleStatusLabel(systemStatus: ReturnType<typeof useSystemStatusQuery>): string {
+  if (systemStatus.data?.overall === "ready") return "No active runs · System ready";
+  if (systemStatus.data) return "No active runs · System not ready";
+  if (systemStatus.isError) return "No active runs · System unavailable";
+  return "No active runs";
+}
+
 export function ApplicationLayout() {
   const [createOpen, setCreateOpen] = useState(false);
   const openCreate = () => setCreateOpen(true);
+  const systemStatus = useSystemStatusQuery();
 
   return (
     <EngagementWorkspaceProvider openCreate={openCreate}>
       <ApplicationShell
         consolePanels={consolePanels}
-        consoleStatus="No active runs"
+        consoleStatus={consoleStatusLabel(systemStatus)}
         sidebarActions={(closeMobile) => (
           <SidebarActions onCreate={openCreate} onNavigate={closeMobile} />
         )}
         sidebarContent={(closeMobile) => <SidebarNavigation onNavigate={closeMobile} />}
         sidebarFooter={(closeMobile) => <SidebarFooter onNavigate={closeMobile} />}
         sidebarHeader={<SidebarHeader />}
+        stageHeader={<StageHeader />}
       >
+        <WorkspaceNotice />
         <Outlet />
       </ApplicationShell>
       <CreateEngagementDialog open={createOpen} onOpenChange={setCreateOpen} />
@@ -182,25 +241,29 @@ export function ApplicationLayout() {
 export function DashboardPage() {
   const systemStatus = useSystemStatusQuery();
   const { openCreate } = useEngagementWorkspace();
+  const engagements = useEngagementsQuery();
   const hasSystemStatus = systemStatus.data !== undefined;
   const retrySystemStatus = () => void systemStatus.refetch();
+  const records = engagements.data ?? [];
+  const { active } = partitionEngagements(records);
+  const recent = mostRecentlyUpdated(active) ?? mostRecentlyUpdated(records);
 
   return (
-    <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-10">
+    <main className="min-h-full bg-background px-4 py-5 sm:px-6">
       <div className="mx-auto w-full max-w-3xl">
-        <header className="mb-8">
-          <h1 className="mt-0 mb-0 text-3xl leading-none font-bold tracking-tight sm:text-4xl">
+        <header className="mb-5">
+          <h1 className="mt-0 mb-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
             Workspace
           </h1>
-          <p className="mt-3 mb-0 max-w-xl text-sm leading-6 text-muted-foreground">
-            Local engagements and control-plane status. Future runner and advisor surfaces stay
-            unavailable until they exist.
+          <p className="mt-2 mb-0 max-w-xl text-[13px] leading-5 text-muted-foreground">
+            Local control-plane status and the current engagement. Runner, advisor, and report
+            surfaces stay unavailable until they exist.
           </p>
         </header>
 
-        <section className="rounded-xl border border-border p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="m-0 text-lg font-bold">Control plane</h2>
+        <section className="rounded-[10px] border border-border px-4 py-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="m-0 text-[13px] font-semibold">Control plane</h2>
             <Button variant="quiet" onClick={retrySystemStatus}>
               Check again
             </Button>
@@ -242,19 +305,46 @@ export function DashboardPage() {
           )}
         </section>
 
-        <section className="mt-5">
-          <EmptyEngagementPrompt onCreate={openCreate} />
-        </section>
+        {recent ? (
+          <section className="mt-4 rounded-[10px] border border-border px-4 py-4">
+            <h2 className="m-0 text-[13px] font-semibold">Current engagement</h2>
+            <p className="mt-2 mb-3 text-[13px] text-muted-foreground">
+              Continue from the selected engagement. Targets and runs are not connected yet.
+            </p>
+            <Link
+              to="/engagements/$engagementId"
+              params={{ engagementId: recent.id }}
+              className="inline-flex min-h-11 items-center text-[13px] font-semibold text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {recent.name}
+            </Link>
+          </section>
+        ) : (
+          <section className="mt-4">
+            <EmptyEngagementPrompt onCreate={openCreate} />
+          </section>
+        )}
       </div>
     </main>
   );
 }
 
+function mostRecentlyUpdated<T extends { id: string; updatedAt: string }>(
+  engagements: readonly T[],
+): T | undefined {
+  return engagements.reduce<T | undefined>((current, engagement) => {
+    if (!current) return engagement;
+    if (engagement.updatedAt > current.updatedAt) return engagement;
+    if (engagement.updatedAt === current.updatedAt && engagement.id > current.id) return engagement;
+    return current;
+  }, undefined);
+}
+
 function EmptyEngagementPrompt({ onCreate }: { onCreate: () => void }) {
   const navigate = useNavigate();
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border px-4 py-4">
-      <p className="m-0 text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-dashed border-border px-4 py-4">
+      <p className="m-0 text-[13px] text-muted-foreground">
         Open Engagements to load records from the API, or create one here.
       </p>
       <div className="flex flex-wrap gap-2">

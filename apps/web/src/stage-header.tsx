@@ -1,0 +1,156 @@
+import { Link, useRouterState } from "@tanstack/react-router";
+import { useEffect } from "react";
+
+import { engagementMutationMessage, isRevisionConflict } from "./engagements/errors.js";
+import { ENGAGEMENT_KIND_LABELS, ENGAGEMENT_STATUS_LABELS } from "./engagements/format.js";
+import {
+  useArchiveEngagementMutation,
+  useReopenEngagementMutation,
+} from "./engagements/mutations.js";
+import { useEngagementsQuery } from "./engagements/query.js";
+import { useSelectedEngagementId } from "./engagements/sidebar.js";
+import { useEngagementWorkspace } from "./engagements/workspace-context.js";
+
+interface Crumb {
+  href?: "/engagements";
+  label: string;
+}
+
+export function StageHeader() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const selectedId = useSelectedEngagementId();
+  const engagements = useEngagementsQuery();
+  const { clearNotice } = useEngagementWorkspace();
+  const selected = selectedId
+    ? engagements.data?.find((engagement) => engagement.id === selectedId)
+    : undefined;
+
+  useEffect(() => {
+    clearNotice();
+  }, [clearNotice, pathname]);
+
+  const crumbs = crumbsForPath(pathname, selected?.name);
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
+        {crumbs.map((crumb, index) => {
+          const last = index === crumbs.length - 1;
+          return (
+            <span key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-2">
+              {index > 0 && (
+                <span className="text-border" aria-hidden="true">
+                  /
+                </span>
+              )}
+              {crumb.href && !last ? (
+                <Link
+                  to={crumb.href}
+                  className="truncate outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span className={last ? "truncate font-medium text-foreground" : "truncate"}>
+                  {crumb.label}
+                </span>
+              )}
+            </span>
+          );
+        })}
+      </nav>
+      {selected ? <EngagementStageActions engagementId={selected.id} /> : <GlobalStageActions />}
+    </div>
+  );
+}
+
+function GlobalStageActions() {
+  const { openCreate } = useEngagementWorkspace();
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        className="inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-[13px] font-semibold text-primary-foreground outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={openCreate}
+      >
+        New engagement
+      </button>
+    </div>
+  );
+}
+
+function EngagementStageActions({ engagementId }: { engagementId: string }) {
+  const engagements = useEngagementsQuery();
+  const engagement = engagements.data?.find((item) => item.id === engagementId);
+  const archive = useArchiveEngagementMutation();
+  const reopen = useReopenEngagementMutation();
+  const { announce } = useEngagementWorkspace();
+
+  useEffect(() => {
+    archive.reset();
+    reopen.reset();
+  }, [engagementId]);
+
+  if (!engagement) return null;
+
+  const pending = archive.isPending || reopen.isPending;
+  const error = archive.error ?? reopen.error;
+  const conflict = isRevisionConflict(error);
+  const isActive = engagement.status === "active";
+
+  return (
+    <div className="flex min-w-0 shrink-0 items-center gap-1">
+      <span className="hidden font-mono text-[11px] text-muted-foreground lg:inline">
+        {ENGAGEMENT_KIND_LABELS[engagement.kind]} · {ENGAGEMENT_STATUS_LABELS[engagement.status]}
+      </span>
+      <button
+        type="button"
+        className="inline-flex min-h-11 items-center rounded-md px-2 text-[13px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => announce("Not connected yet")}
+      >
+        New run
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-[13px] font-semibold text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        onClick={() => {
+          if (isActive) {
+            archive.mutate({
+              engagementId: engagement.id,
+              expectedRevision: engagement.revision,
+            });
+            return;
+          }
+          reopen.mutate({
+            engagementId: engagement.id,
+            expectedRevision: engagement.revision,
+          });
+        }}
+      >
+        {pending ? "Working" : isActive ? "Archive engagement" : "Reopen engagement"}
+      </button>
+      {error && (
+        <p className="m-0 max-w-[14rem] text-[11px] leading-4 text-destructive" role="alert">
+          {conflict
+            ? "This engagement changed. Showing the latest revision."
+            : engagementMutationMessage(error)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function crumbsForPath(pathname: string, engagementName?: string): Crumb[] {
+  if (pathname === "/") return [{ label: "Dashboard" }];
+  if (pathname === "/engagements") return [{ href: "/engagements", label: "Engagements" }];
+  if (pathname.startsWith("/engagements/")) {
+    return [
+      { href: "/engagements", label: "Engagements" },
+      { label: engagementName ?? "Engagement" },
+    ];
+  }
+  if (pathname === "/plugins") return [{ label: "Plugins" }];
+  if (pathname === "/settings") return [{ label: "Settings" }];
+  return [{ label: "Page not found" }];
+}

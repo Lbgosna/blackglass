@@ -173,4 +173,6 @@ Report:
 7. anything not verified;
 8. proposed Conventional Commit PR title.
 
+PR descriptions are written for the whole project, not for the owner's current machine. An `Owner walkthrough` section is optional and omitted by default. Never include owner-specific worktree paths, occupied ports, running-process assumptions, or instructions addressed only to the owner. When a walkthrough materially improves review, write portable steps that any contributor can follow from a clean checkout and use placeholders for environment-specific paths and ports.
+
 High-risk changes require an independent review agent from a clean context and owner review of the security boundary. The implementing agent cannot self-approve that risk.

@@ -43,6 +43,7 @@ export interface ApplicationShellProps {
   sidebarContent: ShellSlot;
   sidebarFooter: ShellSlot;
   sidebarHeader: ReactNode;
+  stageHeader?: ReactNode;
 }
 
 interface ShellStyle extends CSSProperties {
@@ -93,6 +94,7 @@ export function ApplicationShell({
   sidebarContent,
   sidebarFooter,
   sidebarHeader,
+  stageHeader,
 }: ApplicationShellProps) {
   const storage = getLayoutStorage(window);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(() =>
@@ -266,7 +268,7 @@ export function ApplicationShell({
       <aside
         aria-hidden={!desktopSidebarOpen}
         aria-label="Primary"
-        className="shell-sidebar fixed inset-y-0 z-30 hidden md:block"
+        className="shell-sidebar fixed inset-y-0 z-30 hidden border-r border-sidebar-border md:block"
         inert={!desktopSidebarOpen ? true : undefined}
       >
         <SidebarFrame
@@ -291,25 +293,8 @@ export function ApplicationShell({
         )}
       </aside>
 
-      <button
-        ref={desktopSidebarToggle}
-        type="button"
-        aria-keyshortcuts="Control+B Meta+B"
-        aria-label={desktopSidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        aria-pressed={desktopSidebarOpen}
-        className="shell-sidebar-toggle fixed top-3 z-40 hidden size-11 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
-        onClick={() => setDesktopSidebarOpen((current) => !current)}
-        title={`${desktopSidebarOpen ? "Hide" : "Show"} sidebar (Mod+B)`}
-      >
-        {desktopSidebarOpen ? (
-          <PanelLeftClose className="size-5" aria-hidden="true" />
-        ) : (
-          <PanelLeftOpen className="size-5" aria-hidden="true" />
-        )}
-      </button>
-
       <div className="shell-workspace flex h-dvh min-w-0 flex-col">
-        <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-3 pt-[env(safe-area-inset-top)] md:hidden">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-2 pt-[env(safe-area-inset-top)] md:hidden">
           <FullScreenSheet
             description="Global navigation and Blackglass settings."
             onOpenChange={setMobileNavOpen}
@@ -320,7 +305,7 @@ export function ApplicationShell({
             }}
             open={mobileNavOpen}
             title={mobileTitle}
-            trigger={<Menu className="size-5" aria-hidden="true" />}
+            trigger={<Menu className="size-4" aria-hidden="true" />}
             triggerLabel="Open navigation"
           >
             <SidebarFrame
@@ -330,7 +315,9 @@ export function ApplicationShell({
               footer={renderSlot(sidebarFooter, closeMobileNav)}
             />
           </FullScreenSheet>
-          <span className="min-w-0 flex-1 truncate text-sm font-bold">Blackglass</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.03em]">
+            Blackglass
+          </span>
           <FullScreenSheet
             description="Advisor, activity, and raw output views."
             onOpenChange={setMobileConsoleOpen}
@@ -339,11 +326,31 @@ export function ApplicationShell({
             }}
             open={mobileConsoleOpen}
             title="Console"
-            trigger={<Terminal className="size-5" aria-hidden="true" />}
+            trigger={<Terminal className="size-4" aria-hidden="true" />}
             triggerLabel="Open console"
           >
             <ConsoleTabs panels={consolePanels} />
           </FullScreenSheet>
+        </header>
+
+        <header className="shell-stage-header flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background px-2 py-1 md:h-12 md:flex-nowrap md:px-3 md:py-0">
+          <button
+            ref={desktopSidebarToggle}
+            type="button"
+            aria-keyshortcuts="Control+B Meta+B"
+            aria-label={desktopSidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            aria-pressed={desktopSidebarOpen}
+            className="shell-sidebar-toggle hidden size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
+            onClick={() => setDesktopSidebarOpen((current) => !current)}
+            title={`${desktopSidebarOpen ? "Hide" : "Show"} sidebar (Mod+B)`}
+          >
+            {desktopSidebarOpen ? (
+              <PanelLeftClose className="size-4" aria-hidden="true" />
+            ) : (
+              <PanelLeftOpen className="size-4" aria-hidden="true" />
+            )}
+          </button>
+          <div className="flex min-h-11 min-w-0 flex-1 items-center">{stageHeader}</div>
         </header>
 
         <div className="min-h-0 flex-1 overflow-auto" data-testid="workspace-scroll-region">
@@ -354,7 +361,7 @@ export function ApplicationShell({
           ref={desktopConsole}
           aria-label="Console"
           className={cn(
-            "shell-console relative hidden shrink-0 border-t border-border bg-card md:block",
+            "shell-console relative hidden shrink-0 border-t border-border bg-background md:block",
             desktopConsoleCollapsed && "shell-console-collapsed",
           )}
           tabIndex={-1}

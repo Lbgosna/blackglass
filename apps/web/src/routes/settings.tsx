@@ -148,23 +148,23 @@ function ThemeControl() {
 
 function SettingsPage() {
   return (
-    <main className="min-h-full bg-background px-5 py-8 sm:px-8 sm:py-12">
+    <main className="min-h-full bg-background px-4 py-5 sm:px-6">
       <div className="mx-auto w-full max-w-4xl">
-        <header className="mb-8">
-          <p className="m-0 text-xs font-extrabold tracking-[0.18em] text-primary uppercase">
+        <header className="mb-5">
+          <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
             Blackglass
           </p>
-          <h1 className="mt-2 mb-0 text-3xl leading-none font-bold tracking-tight sm:text-4xl">
+          <h1 className="mt-2 mb-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
             Settings
           </h1>
-          <p className="mt-3 mb-0 max-w-xl text-sm leading-6 text-muted-foreground">
+          <p className="mt-2 mb-0 max-w-xl text-[13px] leading-5 text-muted-foreground">
             Configure how Blackglass looks on this device.
           </p>
         </header>
 
         <section
           aria-labelledby="appearance-heading"
-          className="appearance-settings rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6"
+          className="appearance-settings rounded-[10px] border border-border bg-background p-4 text-foreground"
         >
           <h2 id="appearance-heading" className="m-0 text-lg font-bold">
             Appearance
