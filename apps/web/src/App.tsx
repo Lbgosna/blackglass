@@ -329,8 +329,10 @@ export function DashboardPage() {
   );
 }
 
-function mostRecentlyUpdated(engagements: readonly { id: string; updatedAt: string }[]) {
-  return engagements.reduce<(typeof engagements)[number] | undefined>((current, engagement) => {
+function mostRecentlyUpdated<T extends { id: string; updatedAt: string }>(
+  engagements: readonly T[],
+): T | undefined {
+  return engagements.reduce<T | undefined>((current, engagement) => {
     if (!current) return engagement;
     if (engagement.updatedAt > current.updatedAt) return engagement;
     if (engagement.updatedAt === current.updatedAt && engagement.id > current.id) return engagement;
