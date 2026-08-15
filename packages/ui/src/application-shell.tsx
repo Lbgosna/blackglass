@@ -39,7 +39,7 @@ export interface ApplicationShellProps {
   consolePanels: readonly ConsolePanel[];
   consoleStatus?: ReactNode;
   mobileTitle?: string;
-  sidebarActions?: ReactNode;
+  sidebarActions?: ShellSlot;
   sidebarContent: ShellSlot;
   sidebarFooter: ShellSlot;
   sidebarHeader: ReactNode;
@@ -271,7 +271,7 @@ export function ApplicationShell({
       >
         <SidebarFrame
           header={sidebarHeader}
-          actions={sidebarActions}
+          actions={renderSlot(sidebarActions, closeMobileNav)}
           content={renderedDesktopContent}
           footer={renderedDesktopFooter}
         />
@@ -325,7 +325,7 @@ export function ApplicationShell({
           >
             <SidebarFrame
               header={sidebarHeader}
-              actions={sidebarActions}
+              actions={renderSlot(sidebarActions, closeMobileNav)}
               content={renderSlot(sidebarContent, closeMobileNav)}
               footer={renderSlot(sidebarFooter, closeMobileNav)}
             />

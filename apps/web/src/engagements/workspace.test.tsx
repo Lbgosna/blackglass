@@ -1,0 +1,299 @@
+// @vitest-environment jsdom
+
+import { ThemeProvider } from "@blackglass/ui";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
+import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createAppQueryClient } from "../query-client.js";
+import { createAppRouter } from "../router.js";
+
+const activeEngagement = {
+  contractVersion: 1,
+  id: "10000000-0000-4000-8000-000000000001",
+  revision: 2,
+  name: "Target lab",
+  kind: "lab",
+  status: "active",
+  description: "Synthetic reserved lab",
+  authorizationContext: null,
+  autoContinueWarnings: false,
+  activeScopeRevisionId: null,
+  createdAt: "2026-08-12T12:00:00.000Z",
+  updatedAt: "2026-08-12T12:05:00.000Z",
+};
+
+const archivedEngagement = {
+  ...activeEngagement,
+  id: "10000000-0000-4000-8000-000000000002",
+  name: "Parked box",
+  kind: "ctf",
+  status: "archived",
+  description: null,
+  revision: 3,
+};
+
+const readyStatus = { version: 1, overall: "ready", developmentStorage: "ready" };
+
+function response(payload: unknown, status = 200): Response {
+  return {
+    json: async () => payload,
+    ok: status >= 200 && status < 300,
+    status,
+  } as Response;
+}
+
+function stubFetch(handler: (url: string, init?: RequestInit) => Promise<Response> | Response) {
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    return Promise.resolve(handler(url, init));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+const testQueryClients = new Set<QueryClient>();
+
+async function renderWorkspace(initialEntry = "/engagements") {
+  const router = createAppRouter(createMemoryHistory({ initialEntries: [initialEntry] }));
+  await router.load();
+  const queryClient = createAppQueryClient();
+  testQueryClients.add(queryClient);
+  const result = render(
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ThemeProvider>,
+  );
+  return { ...result, queryClient, router };
+}
+
+beforeEach(() => {
+  window.localStorage.clear();
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280, writable: true });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 900, writable: true });
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    })),
+  });
+  Object.defineProperty(window, "requestAnimationFrame", {
+    configurable: true,
+    value: vi.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }),
+  });
+  Object.defineProperty(window, "scrollTo", {
+    configurable: true,
+    value: vi.fn(),
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  for (const client of testQueryClients) client.clear();
+  testQueryClients.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("engagement workspace", () => {
+  it("shows a primary empty state without synthetic records", async () => {
+    stubFetch((url) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      return response([]);
+    });
+
+    await renderWorkspace();
+
+    expect(await screen.findByRole("heading", { name: "No engagements yet" })).toBeTruthy();
+    expect(screen.queryByText("Service sweep")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "New engagement" }).length).toBeGreaterThan(0);
+  });
+
+  it("announces initial loading inside the stable shell", async () => {
+    stubFetch(() => new Promise<Response>(() => undefined));
+    await renderWorkspace();
+
+    expect(screen.getAllByRole("status", { name: "Loading engagements" }).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("application-shell")).toBeTruthy();
+  });
+
+  it("shows a recoverable list error and retries", async () => {
+    const fetchMock = stubFetch((url) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      return { json: async () => ({ code: "storage_busy" }), ok: false, status: 503 } as Response;
+    });
+
+    await renderWorkspace();
+    expect(await screen.findByRole("heading", { name: "Engagements unavailable" })).toBeTruthy();
+    const engagementCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/engagements")).length;
+    const beforeRetry = engagementCalls();
+    for (const button of screen.getAllByRole("button", { name: "Retry" })) {
+      fireEvent.click(button);
+    }
+    await waitFor(() => expect(engagementCalls()).toBeGreaterThan(beforeRetry));
+  });
+
+  it("creates one engagement, closes only after success, and reveals the record", async () => {
+    const created = { ...activeEngagement, name: "Northstar lab" };
+    let list: unknown[] = [];
+    const keys: string[] = [];
+    stubFetch((url, init) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      if (url === "/api/v1/engagements" && init?.method === "POST") {
+        keys.push((init.headers as Record<string, string>)["Idempotency-Key"] ?? "");
+        list = [created];
+        return response(created, 201);
+      }
+      return response(list);
+    });
+
+    await renderWorkspace();
+    expect(await screen.findByRole("heading", { name: "No engagements yet" })).toBeTruthy();
+
+    const createButtons = screen.getAllByRole("button", { name: "New engagement" });
+    fireEvent.click(createButtons[0]!);
+    const dialog = await screen.findByRole("dialog", { name: "Start an engagement" });
+    expect(document.activeElement).toBe(screen.getByLabelText("Name"));
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Northstar lab" } });
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "lab" } });
+    fireEvent.submit(within(dialog).getByRole("button", { name: "Create engagement" }).closest("form")!);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Northstar lab" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getAllByText("Lab").length).toBeGreaterThan(0);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]?.length).toBeGreaterThanOrEqual(22);
+  });
+
+  it("keeps the dialog open and shows a local validation error", async () => {
+    stubFetch((url) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      return response([]);
+    });
+    await renderWorkspace();
+    fireEvent.click(screen.getAllByRole("button", { name: "New engagement" })[0]!);
+    const dialog = await screen.findByRole("dialog", { name: "Start an engagement" });
+    fireEvent.submit(within(dialog).getByRole("button", { name: "Create engagement" }).closest("form")!);
+    expect(await screen.findByText("Name must be between 1 and 120 characters.")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Start an engagement" })).toBeTruthy();
+    expect(screen.queryByText("Engagement created")).toBeNull();
+  });
+
+  it("shows a server failure without a success state", async () => {
+    stubFetch((url, init) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      if (init?.method === "POST") return response({ code: "storage_busy" }, 503);
+      return response([]);
+    });
+    await renderWorkspace();
+    fireEvent.click(screen.getAllByRole("button", { name: "New engagement" })[0]!);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Busy lab" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Create engagement" }).closest("form")!);
+    expect(await screen.findByText("Storage is busy. Try again.")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Busy lab" })).toBeNull();
+  });
+
+  it("closes the create dialog with Escape and restores focus", async () => {
+    stubFetch((url) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      return response([]);
+    });
+    await renderWorkspace();
+    const trigger = screen.getAllByRole("button", { name: "New engagement" })[0]!;
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Start an engagement" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start an engagement" })).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("archives an active engagement and reopens the archived result", async () => {
+    let current = { ...activeEngagement };
+    stubFetch((url, init) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      if (url.endsWith("/archive") && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ expectedRevision: current.revision });
+        current = { ...current, status: "archived", revision: current.revision + 1 };
+        return response(current);
+      }
+      if (url.endsWith("/reopen") && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ expectedRevision: current.revision });
+        current = { ...current, status: "active", revision: current.revision + 1 };
+        return response(current);
+      }
+      return response([current]);
+    });
+
+    await renderWorkspace(`/engagements/${activeEngagement.id}`);
+    expect(await screen.findByRole("heading", { level: 1, name: "Target lab" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Archive engagement" }));
+    expect(await screen.findByRole("button", { name: "Reopen engagement" })).toBeTruthy();
+    expect(screen.getAllByText("Archived").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Reopen engagement" }));
+    expect(await screen.findByRole("button", { name: "Archive engagement" })).toBeTruthy();
+  });
+
+  it("refreshes after a revision conflict and does not keep the stale action result", async () => {
+    const newer = { ...activeEngagement, revision: 5, name: "Target lab", description: "Newer note" };
+    let list = [activeEngagement];
+    stubFetch((url, init) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      if (url.endsWith("/archive") && init?.method === "POST") {
+        list = [newer];
+        return response(
+          {
+            code: "revision_conflict",
+            resourceType: "engagement",
+            resourceId: activeEngagement.id,
+            currentRevision: 5,
+          },
+          409,
+        );
+      }
+      return response(list);
+    });
+
+    await renderWorkspace(`/engagements/${activeEngagement.id}`);
+    expect(await screen.findByText("rev 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Archive engagement" }));
+    expect(
+      await screen.findByText("This engagement changed. Refreshing the latest revision."),
+    ).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("rev 5")).toBeTruthy());
+    expect(screen.getByText("Newer note")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive engagement" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reopen engagement" })).toBeNull();
+  });
+
+  it("lists archived engagements separately from active ones", async () => {
+    stubFetch((url) => {
+      if (url.includes("/system/status")) return response(readyStatus);
+      return response([activeEngagement, archivedEngagement]);
+    });
+    await renderWorkspace();
+    expect((await screen.findAllByText("Target lab")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Archived").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Parked box").length).toBeGreaterThan(0);
+  });
+});

@@ -53,6 +53,26 @@ function response(payload: unknown, options: { ok?: boolean; status?: number } =
   } as Response;
 }
 
+function isSystemStatusUrl(input: RequestInfo | URL): boolean {
+  return String(input).includes("/api/v1/system/status");
+}
+
+function stubWorkspaceFetch(
+  statusImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> | Response,
+) {
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (isSystemStatusUrl(input)) return Promise.resolve(statusImpl(input, init));
+    if (String(input).includes("/api/v1/engagements")) return Promise.resolve(response([]));
+    return Promise.reject(new Error(`unexpected fetch ${String(input)}`));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+function statusCallCount(fetchMock: ReturnType<typeof vi.fn>): number {
+  return fetchMock.mock.calls.filter(([input]) => isSystemStatusUrl(input as RequestInfo | URL)).length;
+}
+
 const readyStatus = { version: 1, overall: "ready", developmentStorage: "ready" };
 const notReadyStatus = {
   version: 1,
@@ -158,17 +178,16 @@ describe("App system readiness", () => {
   it("aborts the discarded StrictMode request, announces loading, then reports ready", async () => {
     const request = deferred<Response>();
     const signals: AbortSignal[] = [];
-    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+    const fetchMock = stubWorkspaceFetch((_url, init) => {
       if (init?.signal) signals.push(init.signal);
       return request.promise;
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     await renderApp("/", { strict: true });
     const loading = screen.getByRole("status", { name: "Checking system" });
     expect(loading.getAttribute("aria-live")).toBe("polite");
     expect(loading.getAttribute("aria-busy")).toBe("true");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(statusCallCount(fetchMock)).toBe(2);
     expect(signals[0]?.aborted).toBe(true);
     expect(signals[1]?.aborted).toBe(false);
 
@@ -177,10 +196,7 @@ describe("App system readiness", () => {
   });
 
   it("reports a valid 503 as a current not-ready state", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.resolve(response(notReadyStatus, { ok: false, status: 503 }))),
-    );
+    stubWorkspaceFetch(() => response(notReadyStatus, { ok: false, status: 503 }));
 
     await renderApp();
 
@@ -190,7 +206,7 @@ describe("App system readiness", () => {
   });
 
   it("distinguishes a no-response failure from not-ready", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
+    stubWorkspaceFetch(() => Promise.reject(new Error("offline")));
 
     await renderApp();
 
@@ -199,10 +215,7 @@ describe("App system readiness", () => {
   });
 
   it("reports responses that violate the shared contract", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.resolve(response({ ...readyStatus, path: "/private/data" }))),
-    );
+    stubWorkspaceFetch(() => response({ ...readyStatus, path: "/private/data" }));
 
     await renderApp();
 
@@ -213,11 +226,12 @@ describe("App system readiness", () => {
   it("retries in the mounted page and accepts a later success", async () => {
     const first = deferred<Response>();
     const second = deferred<Response>();
-    const fetchMock = vi
-      .fn<() => Promise<Response>>()
-      .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => second.promise);
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = stubWorkspaceFetch(
+      vi
+        .fn<() => Promise<Response>>()
+        .mockImplementationOnce(() => first.promise)
+        .mockImplementationOnce(() => second.promise),
+    );
 
     const { container } = await renderApp();
     const mountedPage = container.firstElementChild;
@@ -225,11 +239,11 @@ describe("App system readiness", () => {
     first.reject(new Error("offline"));
     expect(await screen.findByText("System unavailable")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(within(screen.getByText("System unavailable").closest("section")!).getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Checking system")).toBeTruthy();
     expect(container.firstElementChild).toBe(mountedPage);
     expect(screen.getByTestId("application-shell")).toBe(mountedShell);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(statusCallCount(fetchMock)).toBe(2));
 
     second.resolve(response(readyStatus));
     expect(await screen.findByText("System ready")).toBeTruthy();
@@ -238,19 +252,20 @@ describe("App system readiness", () => {
   it("preserves cached ready status with last-known wording after a network failure", async () => {
     const second = deferred<Response>();
     const third = deferred<Response>();
-    const fetchMock = vi
-      .fn<() => Promise<Response>>()
-      .mockResolvedValueOnce(response(readyStatus))
-      .mockImplementationOnce(() => second.promise)
-      .mockImplementationOnce(() => third.promise);
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = stubWorkspaceFetch(
+      vi
+        .fn<() => Promise<Response>>()
+        .mockResolvedValueOnce(response(readyStatus))
+        .mockImplementationOnce(() => second.promise)
+        .mockImplementationOnce(() => third.promise),
+    );
 
     await renderApp();
     expect(await screen.findByText("System ready")).toBeTruthy();
     const shell = screen.getByTestId("application-shell");
 
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(statusCallCount(fetchMock)).toBe(2));
     second.reject(new Error("GET /api?token=secret failed with body-secret"));
 
     const staleWarning = await screen.findByText("Last known: system ready");
@@ -260,18 +275,19 @@ describe("App system readiness", () => {
     fireEvent.click(
       within(staleWarning.closest("section")!).getByRole("button", { name: "Retry" }),
     );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(statusCallCount(fetchMock)).toBe(3));
     third.resolve(response(readyStatus));
     await waitFor(() => expect(screen.queryByText("Last known: system ready")).toBeNull());
     expect(screen.getByText("System ready")).toBeTruthy();
   });
 
   it("preserves cached status after a malformed refresh", async () => {
-    const fetchMock = vi
-      .fn<() => Promise<Response>>()
-      .mockResolvedValueOnce(response(readyStatus))
-      .mockResolvedValueOnce(response({ ...readyStatus, rawError: "/private/path" }));
-    vi.stubGlobal("fetch", fetchMock);
+    stubWorkspaceFetch(
+      vi
+        .fn<() => Promise<Response>>()
+        .mockResolvedValueOnce(response(readyStatus))
+        .mockResolvedValueOnce(response({ ...readyStatus, rawError: "/private/path" })),
+    );
 
     await renderApp();
     expect(await screen.findByText("System ready")).toBeTruthy();
@@ -282,11 +298,12 @@ describe("App system readiness", () => {
   });
 
   it("replaces cached ready data with a valid not-ready 503", async () => {
-    const fetchMock = vi
-      .fn<() => Promise<Response>>()
-      .mockResolvedValueOnce(response(readyStatus))
-      .mockResolvedValueOnce(response(notReadyStatus, { ok: false, status: 503 }));
-    vi.stubGlobal("fetch", fetchMock);
+    stubWorkspaceFetch(
+      vi
+        .fn<() => Promise<Response>>()
+        .mockResolvedValueOnce(response(readyStatus))
+        .mockResolvedValueOnce(response(notReadyStatus, { ok: false, status: 503 })),
+    );
 
     await renderApp();
     expect(await screen.findByText("System ready")).toBeTruthy();
@@ -879,7 +896,7 @@ describe("App theme preference", () => {
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
 
     fireEvent.click(screen.getByRole("link", { name: "Dashboard" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Application shell" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Workspace" })).toBeTruthy();
     expect(screen.getByTestId("application-shell")).toBe(shell);
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(screen.queryByRole("radio")).toBeNull();
@@ -891,36 +908,11 @@ describe("App theme preference", () => {
   });
 
   it("keeps empty and error actions accessible by name", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
+    stubWorkspaceFetch(() => Promise.reject(new Error("offline")));
     await renderApp();
 
     expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
-    expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
-  });
-});
-
-describe("App state gallery", () => {
-  it("keeps the application shell mounted while every synthetic state changes", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await renderApp();
-    const shell = screen.getByTestId("application-shell");
-
-    expect(screen.getByRole("status", { name: "Loading workspace overview" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Empty" }));
-    expect(screen.getByText("No workspace activity yet")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Filtered" }));
-    expect(screen.getByText("No results match this view")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Stale" }));
-    expect(screen.getByTestId("synthetic-stale-content")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Recoverable" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Retry" })[0]!);
-    expect(screen.getByText(/Retry attempts: 1/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Fatal" }));
-    expect(await screen.findByText("Blackglass hit a fatal error")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(screen.getByTestId("synthetic-stale-content")).toBeTruthy();
-    expect(screen.getByTestId("application-shell")).toBe(shell);
+    expect(await screen.findAllByRole("button", { name: "Retry" })).not.toHaveLength(0);
   });
 });
 
@@ -930,7 +922,7 @@ describe("Application routes", () => {
   });
 
   it.each([
-    ["/", "Application shell", "Dashboard"],
+    ["/", "Workspace", "Dashboard"],
     ["/engagements", "Engagements", "Engagements"],
     ["/plugins", "Plugins", "Plugins"],
     ["/settings", "Settings", "Settings"],
@@ -1015,7 +1007,7 @@ describe("Application routes", () => {
 
     const desktopSidebar = screen.getByRole("complementary", { name: "Primary" });
     expect(within(desktopSidebar).queryByRole("radio")).toBeNull();
-    expect(screen.queryByTestId("sidebar-actions")).toBeNull();
+    expect(within(desktopSidebar).getByRole("button", { name: "New engagement" })).toBeTruthy();
     expect(screen.queryByRole("radio")).toBeNull();
 
     window.innerWidth = 500;
@@ -1023,7 +1015,7 @@ describe("Application routes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     const dialog = await screen.findByRole("dialog", { name: "Blackglass navigation" });
     expect(within(dialog).queryByRole("radio")).toBeNull();
-    expect(within(dialog).queryByTestId("sidebar-actions")).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "New engagement" })).toBeTruthy();
     expect(screen.queryByRole("radio")).toBeNull();
   });
 
@@ -1060,11 +1052,11 @@ describe("Application routes", () => {
     ).toHaveLength(0);
   });
 
-  it("keeps synthetic work links as Dashboard hash anchors", async () => {
-    await renderApp("/plugins");
+  it("keeps unknown engagement paths inside the shell", async () => {
+    stubWorkspaceFetch(() => new Promise<Response>(() => undefined));
+    await renderApp("/engagements/10000000-0000-4000-8000-000000000099");
 
-    expect(screen.getByRole("link", { name: /Service sweep/ }).getAttribute("href")).toBe(
-      "/#active-service-sweep",
-    );
+    expect(await screen.findByRole("heading", { level: 1, name: "Engagements" })).toBeTruthy();
+    expect(screen.getByTestId("application-shell")).toBeTruthy();
   });
 });

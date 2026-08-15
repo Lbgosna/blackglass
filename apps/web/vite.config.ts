@@ -6,8 +6,12 @@ import { defineConfig } from "vite";
 const API_PORT = Number(process.env.BLACKGLASS_API_PORT ?? "3001");
 const WEB_PORT = Number(process.env.BLACKGLASS_WEB_PORT ?? "5173");
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [tanstackRouter({ target: "react" }), react(), tailwindcss()],
+  resolve:
+    command === "serve"
+      ? { conditions: ["development", "import", "module", "browser", "default"] }
+      : {},
   server: {
     host: "127.0.0.1",
     port: WEB_PORT,
@@ -21,4 +25,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
