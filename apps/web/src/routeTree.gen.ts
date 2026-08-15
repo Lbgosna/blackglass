@@ -14,6 +14,8 @@ import { Route as SplatRouteImport } from './routes/$'
 import { Route as EngagementsRouteImport } from './routes/engagements'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as EngagementsIndexRouteImport } from './routes/engagements.index'
+import { Route as EngagementsEngagementIdRouteImport } from './routes/engagements.$engagementId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,41 +42,77 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EngagementsIndexRoute = EngagementsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => EngagementsRoute,
+} as any)
+const EngagementsEngagementIdRoute = EngagementsEngagementIdRouteImport.update({
+  id: '/$engagementId',
+  path: '/$engagementId',
+  getParentRoute: () => EngagementsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
-  '/engagements': typeof EngagementsRoute
+  '/engagements': typeof EngagementsRouteWithChildren
   '/plugins': typeof PluginsRoute
   '/settings': typeof SettingsRoute
+  '/engagements/$engagementId': typeof EngagementsEngagementIdRoute
+  '/engagements/': typeof EngagementsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
-  '/engagements': typeof EngagementsRoute
   '/plugins': typeof PluginsRoute
   '/settings': typeof SettingsRoute
+  '/engagements/$engagementId': typeof EngagementsEngagementIdRoute
+  '/engagements': typeof EngagementsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
-  '/engagements': typeof EngagementsRoute
+  '/engagements': typeof EngagementsRouteWithChildren
   '/plugins': typeof PluginsRoute
   '/settings': typeof SettingsRoute
+  '/engagements/$engagementId': typeof EngagementsEngagementIdRoute
+  '/engagements/': typeof EngagementsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$' | '/engagements' | '/plugins' | '/settings'
+  fullPaths:
+    | '/'
+    | '/$'
+    | '/engagements'
+    | '/plugins'
+    | '/settings'
+    | '/engagements/$engagementId'
+    | '/engagements/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$' | '/engagements' | '/plugins' | '/settings'
-  id: '__root__' | '/' | '/$' | '/engagements' | '/plugins' | '/settings'
+  to:
+    | '/'
+    | '/$'
+    | '/plugins'
+    | '/settings'
+    | '/engagements/$engagementId'
+    | '/engagements'
+  id:
+    | '__root__'
+    | '/'
+    | '/$'
+    | '/engagements'
+    | '/plugins'
+    | '/settings'
+    | '/engagements/$engagementId'
+    | '/engagements/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
-  EngagementsRoute: typeof EngagementsRoute
+  EngagementsRoute: typeof EngagementsRouteWithChildren
   PluginsRoute: typeof PluginsRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -116,13 +154,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/engagements/': {
+      id: '/engagements/'
+      path: '/'
+      fullPath: '/engagements/'
+      preLoaderRoute: typeof EngagementsIndexRouteImport
+      parentRoute: typeof EngagementsRoute
+    }
+    '/engagements/$engagementId': {
+      id: '/engagements/$engagementId'
+      path: '/$engagementId'
+      fullPath: '/engagements/$engagementId'
+      preLoaderRoute: typeof EngagementsEngagementIdRouteImport
+      parentRoute: typeof EngagementsRoute
+    }
   }
 }
+
+interface EngagementsRouteChildren {
+  EngagementsEngagementIdRoute: typeof EngagementsEngagementIdRoute
+  EngagementsIndexRoute: typeof EngagementsIndexRoute
+}
+
+const EngagementsRouteChildren: EngagementsRouteChildren = {
+  EngagementsEngagementIdRoute: EngagementsEngagementIdRoute,
+  EngagementsIndexRoute: EngagementsIndexRoute,
+}
+
+const EngagementsRouteWithChildren = EngagementsRoute._addFileChildren(
+  EngagementsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
-  EngagementsRoute: EngagementsRoute,
+  EngagementsRoute: EngagementsRouteWithChildren,
   PluginsRoute: PluginsRoute,
   SettingsRoute: SettingsRoute,
 }

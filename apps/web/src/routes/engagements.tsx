@@ -1,17 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-import { RoutePage } from "../route-pages.js";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/engagements")({
-  component: EngagementsPage,
+  component: EngagementsLayout,
 });
 
-function EngagementsPage() {
-  return (
-    <RoutePage
-      eyebrow="Workspace"
-      title="Engagements"
-      description="Engagement pages will organize targets, runs, evidence, and reports here."
-    />
-  );
+function EngagementsLayout() {
+  return <Outlet />;
 }
