@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { engagementMutationMessage, isRevisionConflict } from "./engagements/errors.js";
 import { ENGAGEMENT_KIND_LABELS, ENGAGEMENT_STATUS_LABELS } from "./engagements/format.js";
@@ -19,9 +20,14 @@ export function StageHeader() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const selectedId = useSelectedEngagementId();
   const engagements = useEngagementsQuery();
+  const { clearNotice } = useEngagementWorkspace();
   const selected = selectedId
     ? engagements.data?.find((engagement) => engagement.id === selectedId)
     : undefined;
+
+  useEffect(() => {
+    clearNotice();
+  }, [clearNotice, pathname]);
 
   const crumbs = crumbsForPath(pathname, selected?.name);
 
@@ -80,6 +86,11 @@ function EngagementStageActions({ engagementId }: { engagementId: string }) {
   const reopen = useReopenEngagementMutation();
   const { announce } = useEngagementWorkspace();
 
+  useEffect(() => {
+    archive.reset();
+    reopen.reset();
+  }, [engagementId]);
+
   if (!engagement) return null;
 
   const pending = archive.isPending || reopen.isPending;
@@ -120,7 +131,7 @@ function EngagementStageActions({ engagementId }: { engagementId: string }) {
         {pending ? "Working" : isActive ? "Archive engagement" : "Reopen engagement"}
       </button>
       {error && (
-        <p className="m-0 max-w-48 truncate text-[11px] text-destructive" role="alert">
+        <p className="m-0 max-w-[14rem] text-[11px] leading-4 text-destructive" role="alert">
           {conflict
             ? "This engagement changed. Showing the latest revision."
             : engagementMutationMessage(error)}

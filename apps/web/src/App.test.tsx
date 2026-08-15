@@ -1059,4 +1059,46 @@ describe("Application routes", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Engagements" })).toBeTruthy();
     expect(screen.getByTestId("application-shell")).toBeTruthy();
   });
+
+  it("opens the most recently updated active engagement from the dashboard", async () => {
+    const older = {
+      contractVersion: 1,
+      id: "10000000-0000-4000-8000-000000000001",
+      revision: 1,
+      name: "Older lab",
+      kind: "lab",
+      status: "active",
+      description: null,
+      authorizationContext: null,
+      autoContinueWarnings: false,
+      activeScopeRevisionId: null,
+      createdAt: "2026-08-12T12:00:00.000Z",
+      updatedAt: "2026-08-12T12:00:00.000Z",
+    };
+    const newer = {
+      ...older,
+      id: "10000000-0000-4000-8000-000000000002",
+      name: "Newer lab",
+      createdAt: "2026-08-12T13:00:00.000Z",
+      updatedAt: "2026-08-12T13:00:00.000Z",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        if (isSystemStatusUrl(input)) return Promise.resolve(response(readyStatus));
+        if (String(input).includes("/api/v1/engagements")) {
+          return Promise.resolve(response([older, newer]));
+        }
+        return Promise.reject(new Error(`unexpected fetch ${String(input)}`));
+      }),
+    );
+
+    await renderApp("/");
+    const current = (await screen.findByRole("heading", { name: "Current engagement" })).closest(
+      "section",
+    );
+    expect(current).toBeTruthy();
+    expect(within(current!).getByRole("link", { name: "Newer lab" })).toBeTruthy();
+    expect(within(current!).queryByRole("link", { name: "Older lab" })).toBeNull();
+  });
 });

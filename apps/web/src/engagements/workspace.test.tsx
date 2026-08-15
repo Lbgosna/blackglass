@@ -338,5 +338,9 @@ describe("engagement workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /Targets and saved scope/ }));
     expect(screen.getByTestId("workspace-notice").textContent).toBe("Not connected yet");
     expect(screen.queryByText("Scope saved")).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "Dashboard" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Workspace" })).toBeTruthy();
+    expect(screen.getByTestId("workspace-notice").textContent).toBe("");
   });
 });

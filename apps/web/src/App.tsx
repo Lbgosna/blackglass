@@ -120,7 +120,7 @@ function SidebarActions({
           value={engagementFilter}
           placeholder="Filter engagements"
           aria-label="Filter engagements"
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-sidebar-foreground outline-none placeholder:text-sidebar-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-sidebar-foreground outline-none placeholder:text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           onChange={(event) => setEngagementFilter(event.target.value)}
         />
       </label>
@@ -246,7 +246,7 @@ export function DashboardPage() {
   const retrySystemStatus = () => void systemStatus.refetch();
   const records = engagements.data ?? [];
   const { active } = partitionEngagements(records);
-  const recent = active[0] ?? records[0];
+  const recent = mostRecentlyUpdated(active) ?? mostRecentlyUpdated(records);
 
   return (
     <main className="min-h-full bg-background px-4 py-5 sm:px-6">
@@ -327,6 +327,15 @@ export function DashboardPage() {
       </div>
     </main>
   );
+}
+
+function mostRecentlyUpdated(engagements: readonly { id: string; updatedAt: string }[]) {
+  return engagements.reduce<(typeof engagements)[number] | undefined>((current, engagement) => {
+    if (!current) return engagement;
+    if (engagement.updatedAt > current.updatedAt) return engagement;
+    if (engagement.updatedAt === current.updatedAt && engagement.id > current.id) return engagement;
+    return current;
+  }, undefined);
 }
 
 function EmptyEngagementPrompt({ onCreate }: { onCreate: () => void }) {

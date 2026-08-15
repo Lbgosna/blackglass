@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 interface EngagementWorkspaceContextValue {
   announce: (message: string) => void;
+  clearNotice: () => void;
   engagementFilter: string;
   notice: string | null;
   openCreate: () => void;
@@ -22,15 +23,19 @@ export function EngagementWorkspaceProvider({
   const announce = useCallback((message: string) => {
     setNotice(message);
   }, []);
+  const clearNotice = useCallback(() => {
+    setNotice(null);
+  }, []);
   const value = useMemo(
     () => ({
       announce,
+      clearNotice,
       engagementFilter,
       notice,
       openCreate,
       setEngagementFilter,
     }),
-    [announce, engagementFilter, notice, openCreate],
+    [announce, clearNotice, engagementFilter, notice, openCreate],
   );
 
   return (
