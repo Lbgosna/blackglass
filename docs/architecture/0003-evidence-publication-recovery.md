@@ -75,16 +75,18 @@ Empty artifacts are valid. The empty digest is `sha256:e3b0c44298fc1c149afbf4c89
 
 ### Crash recovery
 
-Interrupted states are explicit and are never silently promoted or repaired:
+Interrupted states are explicit and are never silently promoted or repaired. The grant row durably stores `putFinalized`, `acceptedBytes`, and `streamedDigest`. `putFinalized` becomes true only after the PUT has received its terminal byte count and the staging file plus staging directory have been fsynced. A mid-stream crash therefore cannot look finalized.
 
-| After crash | Durable file | Evidence row | Recovery |
+| After crash | Durable file | Grant / row | Recovery |
 | --- | --- | --- | --- |
-| mid-write or after staging fsync, before rename | staging file | grant `in_progress` or expired | `orphan_staging`; do not publish; do not delete |
-| after rename and published-dir fsync, before row commit | published file | none | `extra_artifact`; do not invent a row; do not serve |
+| mid-write (`putFinalized=false`) | staging file | grant `in_progress` or expired | `orphan_staging`; do not publish; do not delete |
+| PUT finalized, before rename (`putFinalized=true`) | staging file | grant `in_progress`, lease current | retry `complete` with the stored digest; still metadata-after-file |
+| PUT finalized, lease expired | staging file | grant `upload_interrupted` | `orphan_staging`; do not publish |
+| after rename and published-dir fsync, before row commit | published file | no evidence row | `extra_artifact`; do not invent a row; do not serve |
 | after row commit, file missing | none | row present | `missing`; do not recreate bytes |
 | after row commit, digest or size mismatch | file present | row present | `corrupt`; do not rewrite file or row |
 
-Control-plane restart scans staging. A staging file whose grant is expired, missing, or not `in_progress` is `orphan_staging`. In-flight grants whose leases expired become `upload_interrupted`. Restart never completes a PUT, never renames staging into published, and never deletes either tree. A still-current unexpired grant may retry `complete` after a transport failure if the staging file is already fsynced; that retry uses the streamed digest already bound to the grant and still follows metadata-after-file ordering. Downloads resolve only committed rows whose files pass the doctor existence and digest checks.
+Control-plane restart scans staging. A staging file whose grant is expired, missing, not `in_progress`, or `putFinalized=false` is `orphan_staging`. In-flight grants whose leases expired become `upload_interrupted`. Restart never infers `putFinalized` from file size, never renames an unfinalized staging file, and never deletes either tree. Only a persisted `putFinalized=true` grant with a still-current lease may retry `complete`. Downloads resolve only committed rows whose files pass the doctor existence and digest checks.
 
 ### Filesystem defenses
 
@@ -121,7 +123,7 @@ Quota exhaustion never deletes, truncates, or replaces an already published arti
 
 - Hitting `perArtifactBytes` while streaming stops new accepted bytes. The control plane then evaluates the retained prefix against `perRunPublishedBytes` and `totalPublishedBytes`. Only if those still have headroom does it publish with `completeness=truncated` and reason `artifact_quota_exceeded`, and drain the remainder so the child upload cannot deadlock.
 - If the retained prefix would exceed `perRunPublishedBytes` or `totalPublishedBytes`, the current upload is not published. The error is `run_quota_exceeded` or `total_quota_exceeded`. Staging remains unpublished. Published artifacts are unchanged.
-- In-flight reservations count against `maxInFlightStagingBytes` and the run/total headroom until the grant finalizes or expires.
+- In-flight reservations count against `maxInFlightStagingBytes` and the run/total headroom until the grant finalizes or expires. A grant that would exceed `maxInFlightStagingBytes` returns `staging_quota_exceeded`. A grant that would exceed `maxConcurrentUploadsPerRunner` returns `artifact_upload_in_progress`. Neither deletes already published artifacts.
 
 Completeness values are exclusive and must remain visible on the artifact row and download metadata:
 
@@ -134,7 +136,7 @@ Completeness values are exclusive and must remain visible on the artifact row an
 | `missing` | row exists and the file does not |
 | `corrupt` | row exists and size or digest does not match |
 
-Cancellation of a Run does not abort a PUT that already holds a grant: the runner should complete with `completeness=partial`. A dropped connection without complete leaves `orphan_staging` and the slot `incomplete`. Timeout or lease expiry does not publish. Failure and cancel preserve any already published artifacts from earlier slots of the same Run.
+Cancellation of a Run does not abort a PUT that already holds a grant: the runner should complete with `completeness=partial`. A dropped connection with `putFinalized=false` leaves `orphan_staging` and the slot `incomplete`. A dropped `complete` after `putFinalized=true` may retry while the lease is current. Timeout or lease expiry does not publish. Failure and cancel preserve any already published artifacts from earlier slots of the same Run.
 
 ### Raw evidence, observations, and redaction
 
@@ -152,7 +154,7 @@ Logs, structured events, and doctor output may include artifact IDs, sizes, dige
 
 ### Safe download
 
-Operator download is `GET /api/v1/engagements/{engagementId}/artifacts/{artifactId}/content`. The artifact must belong to that engagement. Runner credentials are rejected (`runner_route_forbidden` on operator routes; operator credentials remain forbidden on runner routes).
+Operator download is `GET /api/v1/engagements/{engagementId}/artifacts/{artifactId}/content`. The artifact must belong to that engagement. Runner credentials on that route return `operator_identity_required`. Operator credentials on runner upload routes return `runner_identity_required`.
 
 Successful responses always send:
 
@@ -165,9 +167,9 @@ Cache-Control: private, no-store
 
 `declaredContentType` is ignored, including `text/html` and `image/svg+xml`. Inline disposition is forbidden. `Range` is not implemented: a request that includes `Range` returns HTTP 400 `range_not_supported` and no body.
 
-`filename` is either a sanitized `originalFileName` or `artifact-{artifactId}-bin`. Sanitization keeps `[A-Za-z0-9_-]{1,128}` after discarding any path segment, and rejects empty, `.`, `..`, and any name containing `.` or `/`. Unsafe names are replaced, never echoed. The header value in fixtures uses the hyphenated `-bin` suffix so a future implementation does not emit an untrusted dotted extension as an executable hint.
+`filename` is `artifact-{artifactId}-bin` unless `originalFileName` is already a single segment matching `^[A-Za-z0-9_-]{1,128}$`. Names that are empty, `.`, or `..`, or that contain `.`, `/`, or `\`, are rejected wholesale. The implementation does not keep a leftover basename after stripping path segments. Unsafe names are replaced, never echoed. The hyphenated `-bin` suffix avoids emitting an untrusted dotted extension as an executable hint.
 
-`missing` and `corrupt` artifacts return their truthful codes and no file bytes.
+`missing` artifacts return `missing_artifact` and no file bytes. `corrupt` artifacts return `corrupt_artifact` and no file bytes.
 
 ### Doctor
 
@@ -264,8 +266,8 @@ Implement D3 through separate bounded issues in this order:
 - [Publication fixtures](./fixtures/d3/publication.json) pin generated IDs, digest and fsync order, no-replace, replay, and identity conflicts.
 - [Limit fixtures](./fixtures/d3/limits.json) pin quota numbers, partial upload, cancel, timeout, truncation, backpressure, and preservation of published artifacts.
 - [Path-defense fixtures](./fixtures/d3/path-defenses.json) pin traversal, absolute paths, symlinks, hardlinks, overwrite, rename races, and cross-filesystem refusal.
-- [Recovery fixtures](./fixtures/d3/recovery.json) pin orphan staging, missing files, extras, and no silent repair.
-- [Privacy and download fixtures](./fixtures/d3/privacy-download.json) pin raw versus redacted metadata, observation linkage, headers, names, and range refusal.
+- [Recovery fixtures](./fixtures/d3/recovery.json) pin orphan staging, missing files, extras, finalized complete retry, and no silent repair.
+- [Privacy and download fixtures](./fixtures/d3/privacy-download.json) pin raw versus redacted metadata, observation linkage, headers, names, range refusal, and truthful missing or corrupt downloads.
 - [Doctor fixtures](./fixtures/d3/doctor.json) pin healthy, missing, corrupt, wrong-owner, link-count, extra, orphan, and escape findings.
 - [Backup fixtures](./fixtures/d3/backup.json) pin a consistent snapshot, interrupted backup, empty restore, non-empty refusal, and consistency mismatch.
 - `node --test scripts/check-docs.test.mjs` checks the exact fixture file and case-ID set, fingerprints every critical input and exact outcome, and mutation-tests fail-closed behavior.

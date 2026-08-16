@@ -244,6 +244,7 @@ const requiredD3Cases = new Map([
   ["d3.backup.quiesces-publication", ["backup.json", "785943ae4af22b14f1c3590269408ce72d3ab2c2de32c3a17dc3aea33264e127"]],
   ["d3.backup.excludes-staging", ["backup.json", "5723e20ecb6f8250dacd28344310025ef71d00223713d242778b081fa7d37cdb"]],
   ["d3.backup.newer-schema-refused", ["backup.json", "6936cdc36e32dbc2b3a27339285ce225e819c0103f43e2db8fe00fdf874df61b"]],
+  ["d3.backup.destination-not-empty", ["backup.json", "6a81bf11047304c94a7cb5c048a986a5aacaefe3ca794e49606ec1e8b74c5aa5"]],
   ["d3.doctor.healthy", ["doctor.json", "ede9c77985a5e428586fbc1ae77c16a678f457d24f6c38bcd6e1c2fb2c03ed77"]],
   ["d3.doctor.missing", ["doctor.json", "4857188ac9d57463d23f64d2490d70af03493d1719b2b3350cba19959b9c992a"]],
   ["d3.doctor.corrupt-digest", ["doctor.json", "283752bee9892a0bf50dbe0279d1504376c60878e64e56648e88a7f0dd241a8b"]],
@@ -263,6 +264,7 @@ const requiredD3Cases = new Map([
   ["d3.limits.quota-preserves-published", ["limits.json", "dcbfab31070beee92400976e8bd1f3c2e24f019dc5f305320bf97097d0d6dc9c"]],
   ["d3.limits.streaming-backpressure", ["limits.json", "5a8213a662a0e68fa3f0a5309c54f036dcfa81f8f806f6bb50945ea2fc95ea73"]],
   ["d3.limits.lease-expiry-aborts-upload", ["limits.json", "edc53d5428a7b9bb746e59ee8d923a091b4e55a6eb02022a813ff48f289f9ac6"]],
+  ["d3.limits.inflight-reservation-refused", ["limits.json", "80dc77cf4e8dbeab53993aa7cc79039722dd3c1783c89d3d2b0f49a11789ab67"]],
   ["d3.path.traversal-rejected", ["path-defenses.json", "8e6faf06c06bfe87bceff0a74eee202ff4dfcf77115272ffc9846e6b382c61df"]],
   ["d3.path.absolute-path-rejected", ["path-defenses.json", "12c71b60136d887f80e847358b7c522c51f771034a853266f6b145bed1e1138c"]],
   ["d3.path.symlink-component-rejected", ["path-defenses.json", "03cfa63cd3de632385195f62284342dd4a237926d8d92b95a1bc20a177eaec21"]],
@@ -287,6 +289,7 @@ const requiredD3Cases = new Map([
   ["d3.download.range-not-supported", ["privacy-download.json", "c70be19c5380f91ceb2c43b9e1ac712b60ddf738e55ce67b45b2976292fb7fe9"]],
   ["d3.download.authorization-boundary", ["privacy-download.json", "c859523730c94775d07e2e1dde13e6d13a2ba1fd494d339b7f13f49c04b0a6a2"]],
   ["d3.download.missing-truthful", ["privacy-download.json", "000f27715977bbdbf8df26d925e13557c7fef2e3843051c42f15f0e222b85790"]],
+  ["d3.download.corrupt-truthful", ["privacy-download.json", "7b8b3282649fee1c5de160528640f5f88ddab7ae3c36dac3e7971b0ddb34d2ba"]],
   ["d3.publication.grant-authenticated-runner", ["publication.json", "2fe9d7c68f9055c4ba1446a22781b59b5d94731af442592afa511a5e065a40fb"]],
   ["d3.publication.operator-cannot-upload", ["publication.json", "c6e92bc1da2ec31dc01e15cfff60a8723deef9fec9d5cd027d2b7ca72f76886d"]],
   ["d3.publication.control-plane-generates-ids-and-paths", ["publication.json", "65ac75f96e386f191eb2652e9fcc0e80160ed611d2868b3bbe489c7d4c0bec22"]],
@@ -306,6 +309,7 @@ const requiredD3Cases = new Map([
   ["d3.recovery.no-silent-repair", ["recovery.json", "0e5564c30f70a29d46b00fb5f544c57d92f0282794508c34e2e2020d04d20f8c"]],
   ["d3.recovery.restart-inflight-upload", ["recovery.json", "27aa9be9a1f5b873ffde176768bdf9d0346f5721330cdd24cdc967e24131cac6"]],
   ["d3.recovery.extra-published-not-imported", ["recovery.json", "5cf01f1b0261c541b57c6f7c54b35e63a41864f4b017c16f32e337ad1ac3b25b"]],
+  ["d3.recovery.finalized-complete-retry", ["recovery.json", "8d498b8f7f7863187435107f3b43e6f45be789ea4fdfd192496a461550c2970c"]],
 ]);
 const forbiddenFixtureValue =
   /(?:-----BEGIN [A-Z ]+PRIVATE KEY-----|\bbearer\s+\S+|\bsk-[a-z0-9_-]{12,}|\bghp_[a-z0-9]{20,}|\bgithub_pat_[a-z0-9_]{20,}|\bxoxb-[a-z0-9-]{20,})/i;

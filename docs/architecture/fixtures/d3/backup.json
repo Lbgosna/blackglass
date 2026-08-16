@@ -123,6 +123,19 @@
         "code": "restore_schema_newer",
         "writes": 0
       }
+    },
+    {
+      "id": "d3.backup.destination-not-empty",
+      "description": "Backup refuses a destination that already contains files.",
+      "given": {
+        "destinationEmpty": false,
+        "existingManifest": true
+      },
+      "error": {
+        "code": "backup_destination_not_empty",
+        "writes": 0,
+        "existingPreserved": true
+      }
     }
   ]
 }

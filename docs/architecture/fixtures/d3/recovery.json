@@ -95,6 +95,24 @@
         "attachedToRun": false,
         "finding": "extra_artifact"
       }
+    },
+    {
+      "id": "d3.recovery.finalized-complete-retry",
+      "description": "A persisted putFinalized grant with a current lease may retry complete and still publishes only after the durable rename.",
+      "given": {
+        "putFinalized": true,
+        "acceptedBytes": 24,
+        "streamedDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "leaseCurrent": true,
+        "grantState": "in_progress",
+        "completeRetried": true
+      },
+      "expected": {
+        "published": true,
+        "rowInsertedAfterRename": true,
+        "inferredFromFileSize": false,
+        "artifactIdGeneratedByControlPlane": true
+      }
     }
   ]
 }

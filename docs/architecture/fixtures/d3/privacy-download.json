@@ -190,6 +190,20 @@
         "httpStatus": 409,
         "bodyBytes": 0
       }
+    },
+    {
+      "id": "d3.download.corrupt-truthful",
+      "description": "A corrupt artifact download reports corrupt and does not invent bytes.",
+      "given": {
+        "artifactId": "artifact-fixture-8",
+        "completeness": "corrupt",
+        "operatorAuthenticated": true
+      },
+      "error": {
+        "code": "corrupt_artifact",
+        "httpStatus": 409,
+        "bodyBytes": 0
+      }
     }
   ]
 }

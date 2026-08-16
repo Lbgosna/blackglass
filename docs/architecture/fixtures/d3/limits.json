@@ -167,6 +167,23 @@
         "published": false,
         "rowInserted": false
       }
+    },
+    {
+      "id": "d3.limits.inflight-reservation-refused",
+      "description": "A third concurrent upload or an in-flight reservation that would exceed staging headroom is refused before staging.",
+      "given": {
+        "currentInFlightStagingBytes": 268435456,
+        "currentConcurrentUploads": 2,
+        "incomingDeclaredSizeBytes": 65536,
+        "maxInFlightStagingBytes": 268435456,
+        "maxConcurrentUploadsPerRunner": 2
+      },
+      "error": {
+        "code": "staging_quota_exceeded",
+        "grantCreated": false,
+        "published": false,
+        "alreadyPublishedDeleted": false
+      }
     }
   ]
 }
