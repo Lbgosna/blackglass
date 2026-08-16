@@ -5,6 +5,7 @@ export * from "./action-snapshot.js";
 export * from "./engagement.js";
 export * from "./engagement-api.js";
 export * from "./operator-command.js";
+export * from "./runner-control.js";
 export {
   ReadinessSchema,
   SYSTEM_STATUS_VERSION,

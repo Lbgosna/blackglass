@@ -1,5 +1,16 @@
 export { normalizeTarget } from "./normalize-target.js";
 export {
+  acceptHeartbeat,
+  calculateSelfFenceDeadline,
+  evaluateRunEventSequence,
+  expireRunLease,
+  incrementFencingToken,
+  isTerminalRunState,
+  selectSseResume,
+  transitionRunState,
+  validateLeaseAuthority,
+} from "./runner-control.js";
+export {
   activateAction,
   addScopeAndRun,
   cancelAction,
