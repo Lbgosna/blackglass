@@ -8,6 +8,8 @@ import {
 import Fastify, { type FastifyInstance } from "fastify";
 import type { EngagementRepository, OperatorCommandRepository } from "@blackglass/db";
 
+import { registerActionMutationRoutes } from "./action-mutation-routes.js";
+import { registerActionRoutes } from "./action-routes.js";
 import { registerEngagementMutationRoutes } from "./engagement-mutation-routes.js";
 import { registerEngagementRoutes } from "./engagement-routes.js";
 
@@ -15,7 +17,11 @@ interface BuildAppOptions {
   getDevelopmentStorageReadiness: () => Readiness | Promise<Readiness>;
   engagementRepository: Pick<
     EngagementRepository,
-    "getEngagement" | "listEngagements" | "listScopeRevisions"
+    | "getEngagement"
+    | "listEngagements"
+    | "listScopeRevisions"
+    | "getAction"
+    | "retryActionContext"
   >;
   operatorCommandRepository?: Pick<
     OperatorCommandRepository,
@@ -48,8 +54,10 @@ export function buildApp({
   });
 
   registerEngagementRoutes(app, engagementRepository);
+  registerActionRoutes(app, engagementRepository);
   if (operatorCommandRepository !== undefined) {
     registerEngagementMutationRoutes(app, operatorCommandRepository);
+    registerActionMutationRoutes(app, operatorCommandRepository);
   }
 
   app.get("/health", async (_request, reply) => {
