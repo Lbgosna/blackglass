@@ -17,6 +17,9 @@ export const RunnerEventDigestSchema = z
   .regex(/^sha256:[0-9a-f]{64}$/);
 
 function fencingTokenIsInRange(value: string): boolean {
+  if (value.length > 19) {
+    return false;
+  }
   try {
     return BigInt(value) <= MAX_FENCING_TOKEN;
   } catch {
@@ -28,6 +31,7 @@ function fencingTokenIsInRange(value: string): boolean {
 // never lose precision in JSON or JavaScript.
 export const FencingTokenSchema = z
   .string()
+  .max(19)
   .regex(/^(0|[1-9][0-9]*)$/)
   .refine(fencingTokenIsInRange, { message: "fencing token out of range" });
 
@@ -258,25 +262,35 @@ export const EvaluateRunEventSequenceInputSchema = z.discriminatedUnion("kind", 
   }),
 ]);
 
-export const EvaluateRunEventSequenceResultSchema = z.discriminatedUnion("ok", [
-  z.strictObject({
-    ok: z.literal(true),
-    disposition: z.enum([
-      "accepted_event",
-      "accepted_completion",
-      "stored_event_replayed",
-      "stored_terminal_replayed",
-    ]),
-    eventId: RunnerSequenceSchema.nullable(),
-    acceptedSequence: RunnerSequenceSchema,
-    nextEventSequence: RunnerSequenceSchema,
-  }),
+const AcceptedRunEventSequenceResultSchema = z.strictObject({
+  ok: z.literal(true),
+  disposition: z.enum(["accepted_event", "accepted_completion"]),
+  eventId: z.null(),
+  acceptedSequence: RunnerSequenceSchema,
+  nextEventSequence: RunnerSequenceSchema,
+});
+
+const ReplayedRunEventSequenceResultSchema = z.strictObject({
+  ok: z.literal(true),
+  disposition: z.enum([
+    "stored_event_replayed",
+    "stored_terminal_replayed",
+  ]),
+  eventId: RunnerSequenceSchema,
+  acceptedSequence: RunnerSequenceSchema,
+  nextEventSequence: RunnerSequenceSchema.nullable(),
+});
+
+export const EvaluateRunEventSequenceResultSchema = z.union([
+  AcceptedRunEventSequenceResultSchema,
+  ReplayedRunEventSequenceResultSchema,
   z.strictObject({
     ok: z.literal(false),
     error: z.union([
       z.strictObject({ code: z.literal("invalid_runner_control_input") }),
       z.strictObject({ code: z.literal("event_replay_conflict") }),
       z.strictObject({ code: z.literal("run_already_terminal") }),
+      z.strictObject({ code: z.literal("event_sequence_exhausted") }),
       z.strictObject({
         code: z.literal("event_sequence_gap"),
         expectedSequence: RunnerSequenceSchema,
@@ -313,6 +327,18 @@ export const SelectSseResumeInputSchema = z
         code: "custom",
         message: "retained event exceeds watermark",
         path: ["retainedEventIds"],
+      });
+    }
+    // D2 retains at least the newest events per engagement. An engagement
+    // watermark therefore has a retained tail unless its stream is empty.
+    if (
+      (input.retainedEventIds.length === 0) !==
+      (input.currentWatermark === 0)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "retained events and engagement watermark disagree",
+        path: ["currentWatermark"],
       });
     }
   });

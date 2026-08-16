@@ -454,6 +454,57 @@ describe("runner control domain", () => {
     ).toEqual({ ok: false, error: { code: "run_already_terminal" } });
   });
 
+  it("fails closed at sequence exhaustion but preserves exact stored replay", () => {
+    expect(
+      evaluateRunEventSequence({
+        kind: "event",
+        lastAcceptedSequence: Number.MAX_SAFE_INTEGER,
+        presentedSequence: Number.MAX_SAFE_INTEGER,
+        presentedDigest: digestA,
+        storedAtSequence: {
+          kind: "event",
+          digest: digestA,
+          eventId: 71,
+          terminalKind: null,
+        },
+        currentTerminalKind: null,
+      }),
+    ).toEqual({
+      ok: true,
+      disposition: "stored_event_replayed",
+      eventId: 71,
+      acceptedSequence: Number.MAX_SAFE_INTEGER,
+      nextEventSequence: null,
+    });
+    expect(
+      evaluateRunEventSequence({
+        kind: "event",
+        lastAcceptedSequence: Number.MAX_SAFE_INTEGER,
+        presentedSequence: Number.MAX_SAFE_INTEGER,
+        presentedDigest: digestA,
+        storedAtSequence: null,
+        currentTerminalKind: null,
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "event_sequence_exhausted" },
+    });
+    expect(
+      evaluateRunEventSequence({
+        kind: "completion",
+        terminalKind: "failed",
+        lastAcceptedSequence: Number.MAX_SAFE_INTEGER - 1,
+        presentedSequence: Number.MAX_SAFE_INTEGER,
+        presentedDigest: digestA,
+        storedAtSequence: null,
+        currentTerminalKind: null,
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "event_sequence_exhausted" },
+    });
+  });
+
   it("implements ordered, expired, and future SSE cursors from D2", () => {
     const snapshotUrl =
       "/api/v1/engagements/engagement-fixture-2/snapshot";
@@ -491,6 +542,25 @@ describe("runner control domain", () => {
       ok: false,
       error: { code: "sse_cursor_ahead", currentWatermark: 43 },
     });
+    expect(
+      selectSseResume({
+        retainedEventIds: [],
+        lastEventId: 5,
+        currentWatermark: 43,
+        snapshotUrl,
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "invalid_runner_control_input" },
+    });
+    expect(
+      selectSseResume({
+        retainedEventIds: [],
+        lastEventId: 0,
+        currentWatermark: 0,
+        snapshotUrl,
+      }),
+    ).toEqual({ ok: true, deliveredEventIds: [] });
   });
 
   it("derives the conservative self-fence deadline from monotonic send time", () => {
@@ -514,6 +584,14 @@ describe("runner control domain", () => {
       cleanupStartsMonotonicMs: fixture.expected.cleanupStartsMonotonicMs,
       localFenceDeadlineMonotonicMs:
         fixture.expected.localFenceDeadlineMonotonicMs,
+    });
+    expect(
+      calculateSelfFenceDeadline({
+        heartbeatRequestSentMonotonicMs: Number.MAX_SAFE_INTEGER - 1,
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "invalid_runner_control_input" },
     });
   });
 

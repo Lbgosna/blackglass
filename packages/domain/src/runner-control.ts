@@ -296,12 +296,6 @@ export function evaluateRunEventSequence(
         },
       });
     }
-    if (parsed.data.lastAcceptedSequence === Number.MAX_SAFE_INTEGER) {
-      return freeze({
-        ok: false,
-        error: { code: "invalid_runner_control_input" },
-      });
-    }
     return freeze({
       ok: true,
       disposition:
@@ -310,7 +304,10 @@ export function evaluateRunEventSequence(
           : "stored_event_replayed",
       eventId: storedAtSequence.eventId,
       acceptedSequence: parsed.data.presentedSequence,
-      nextEventSequence: parsed.data.lastAcceptedSequence + 1,
+      nextEventSequence:
+        parsed.data.lastAcceptedSequence === Number.MAX_SAFE_INTEGER
+          ? null
+          : parsed.data.lastAcceptedSequence + 1,
     });
   }
 
@@ -320,7 +317,7 @@ export function evaluateRunEventSequence(
   if (parsed.data.lastAcceptedSequence === Number.MAX_SAFE_INTEGER) {
     return freeze({
       ok: false,
-      error: { code: "invalid_runner_control_input" },
+      error: { code: "event_sequence_exhausted" },
     });
   }
 
@@ -334,7 +331,7 @@ export function evaluateRunEventSequence(
   if (parsed.data.presentedSequence === Number.MAX_SAFE_INTEGER) {
     return freeze({
       ok: false,
-      error: { code: "invalid_runner_control_input" },
+      error: { code: "event_sequence_exhausted" },
     });
   }
 

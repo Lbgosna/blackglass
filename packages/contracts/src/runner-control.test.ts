@@ -4,6 +4,7 @@ import {
   AcceptHeartbeatInputSchema,
   AcceptHeartbeatResultSchema,
   EvaluateRunEventSequenceInputSchema,
+  EvaluateRunEventSequenceResultSchema,
   FencingTokenSchema,
   IncrementFenceResultSchema,
   LeaseAuthorityResultSchema,
@@ -60,6 +61,10 @@ describe("runner control contracts", () => {
       );
     },
   );
+
+  it("rejects an oversized fence before BigInt conversion", () => {
+    expect(FencingTokenSchema.safeParse("1".repeat(10_000)).success).toBe(false);
+  });
 
   it("rejects malformed digests, timestamps, and sequence counters", () => {
     expect(RunnerEventDigestSchema.safeParse(digest).success).toBe(true);
@@ -171,7 +176,7 @@ describe("runner control contracts", () => {
         ...input,
         retainedEventIds: [],
       }).success,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       SelectSseResumeInputSchema.safeParse({
         ...input,
@@ -218,5 +223,32 @@ describe("runner control contracts", () => {
         error: { code: "heartbeat_sequence_stale" },
       }).success,
     ).toBe(true);
+    expect(
+      EvaluateRunEventSequenceResultSchema.safeParse({
+        ok: true,
+        disposition: "accepted_event",
+        eventId: null,
+        acceptedSequence: 1,
+        nextEventSequence: 2,
+      }).success,
+    ).toBe(true);
+    expect(
+      EvaluateRunEventSequenceResultSchema.safeParse({
+        ok: true,
+        disposition: "stored_event_replayed",
+        eventId: 42,
+        acceptedSequence: Number.MAX_SAFE_INTEGER,
+        nextEventSequence: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      EvaluateRunEventSequenceResultSchema.safeParse({
+        ok: true,
+        disposition: "stored_event_replayed",
+        eventId: null,
+        acceptedSequence: 1,
+        nextEventSequence: 2,
+      }).success,
+    ).toBe(false);
   });
 });
