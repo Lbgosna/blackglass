@@ -129,6 +129,7 @@
       },
       "expected": {
         "rowInserted": true,
+        "publishedDirectoryFsyncBeforeRow": true,
         "destinationReplaced": false,
         "unmatchedExtraImported": false
       }

@@ -265,6 +265,7 @@ const requiredD3Cases = new Map([
   ["d3.limits.streaming-backpressure", ["limits.json", "5a8213a662a0e68fa3f0a5309c54f036dcfa81f8f806f6bb50945ea2fc95ea73"]],
   ["d3.limits.lease-expiry-aborts-upload", ["limits.json", "edc53d5428a7b9bb746e59ee8d923a091b4e55a6eb02022a813ff48f289f9ac6"]],
   ["d3.limits.inflight-reservation-refused", ["limits.json", "019cf94e95d06a7afdcdd62a38ae40a5c9789eac152dfb2b62a8147534b2c6fb"]],
+  ["d3.limits.concurrent-upload-limit", ["limits.json", "7f90bb919b2a7ae7671d91bc0152502b3e03ba6c3aac62cd4eaa7e83c8964e92"]],
   ["d3.path.traversal-rejected", ["path-defenses.json", "8e6faf06c06bfe87bceff0a74eee202ff4dfcf77115272ffc9846e6b382c61df"]],
   ["d3.path.absolute-path-rejected", ["path-defenses.json", "12c71b60136d887f80e847358b7c522c51f771034a853266f6b145bed1e1138c"]],
   ["d3.path.symlink-component-rejected", ["path-defenses.json", "03cfa63cd3de632385195f62284342dd4a237926d8d92b95a1bc20a177eaec21"]],
@@ -303,7 +304,7 @@ const requiredD3Cases = new Map([
   ["d3.publication.no-replace-existing-dest", ["publication.json", "eda1acf0cdfe1a25e49b436d144a12ff3f5e18c76dde00b43c21749b672e9afc"]],
   ["d3.publication.identity-unique-by-run-fence-sequence-slot", ["publication.json", "7a760e630335aa4ac9680c15012436999ed0286a324ea2d5fe6d98ddd9678db8"]],
   ["d3.publication.identical-replay", ["publication.json", "c22c3577aa096f04f016c008050dbcdad097adcad8bb4c6256d7d38342fe05b4"]],
-  ["d3.publication.digest-mismatch-not-published", ["publication.json", "110ad5ebe580291f284f0426d568db365e61ea20b469da9641d5478212ab1c48"]],
+  ["d3.publication.digest-mismatch-not-published", ["publication.json", "a9e3c9e96bf2e7fba9501265cdf46b5c6d08f070993681b390cbba57e0091599"]],
   ["d3.publication.digest-conflict-preserves-original", ["publication.json", "197ebc23de8745037bb1d493be0a6e61f47abb10a1910fdfc86019fff22fbd1e"]],
   ["d3.publication.no-shared-filesystem", ["publication.json", "e7a8f339826a2e1c2b9a3b5c8fe6653bb835fe9ad25ead56dd636c7469ce9b27"]],
   ["d3.publication.empty-artifact-allowed", ["publication.json", "a26ec245673c93f2124d1dd7aec28da0221f25a1f259aeb1b061b9ab9dabc49c"]],
@@ -315,7 +316,7 @@ const requiredD3Cases = new Map([
   ["d3.recovery.restart-inflight-upload", ["recovery.json", "27aa9be9a1f5b873ffde176768bdf9d0346f5721330cdd24cdc967e24131cac6"]],
   ["d3.recovery.extra-published-not-imported", ["recovery.json", "5cf01f1b0261c541b57c6f7c54b35e63a41864f4b017c16f32e337ad1ac3b25b"]],
   ["d3.recovery.finalized-complete-retry", ["recovery.json", "8d498b8f7f7863187435107f3b43e6f45be789ea4fdfd192496a461550c2970c"]],
-  ["d3.recovery.complete-after-rename-matches-grant", ["recovery.json", "adf896f1f9adc93a41ba48e1e520b360611321578c60dbea8ae2a9f1c7551efd"]],
+  ["d3.recovery.complete-after-rename-matches-grant", ["recovery.json", "dfdc9e6a7163f9ea7625983d6f50e59e833a7885b126c8d29fc406d588e80b72"]],
 ]);
 const forbiddenFixtureValue =
   /(?:-----BEGIN [A-Z ]+PRIVATE KEY-----|\bbearer\s+\S+|\bsk-[a-z0-9_-]{12,}|\bghp_[a-z0-9]{20,}|\bgithub_pat_[a-z0-9_]{20,}|\bxoxb-[a-z0-9-]{20,})/i;

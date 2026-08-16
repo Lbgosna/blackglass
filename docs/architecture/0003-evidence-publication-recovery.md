@@ -63,9 +63,9 @@ Publication order is:
 1. Authenticate and authorize the grant against the current lease and fence.
 2. Open `staging/{uploadId}` with `O_NOFOLLOW | O_CLOEXEC | O_WRONLY | O_CREAT | O_EXCL` and mode `0600` through a no-follow `openat` walk from the evidence root. Reject a pre-existing name.
 3. `fstat` the new descriptor: regular file, `nlink == 1`, owner is the control-plane user, mode `0600`, `st_dev` equals the evidence root, size `0`.
-4. Stream request bytes into that descriptor while updating SHA-256. Do not buffer the whole artifact. Pause reads when the write pipe or remaining quota headroom is exhausted (backpressure).
+4. Stream request bytes into that descriptor while updating SHA-256. Do not buffer the whole artifact. Pause reads when the write pipe or remaining grant reservation is exhausted (backpressure). The grant reservation is the minimum of remaining `perArtifactBytes` and remaining `maxInFlightStagingBytes` at admit time. Streaming cannot exceed that reservation.
 5. On complete: `fsync(fileFd)`, close, `fsync(stagingDirFd)`.
-6. Compare the streamed digest and size with any declared digest and size. A mismatch returns `artifact_digest_mismatch` and does not publish.
+6. Compare the streamed digest and size with any declared digest and size. A mismatch returns `artifact_digest_mismatch`, sets the grant to `upload_interrupted`, does not publish, and releases the identity so a later grant may use the same slot.
 7. `renameat2(stagingDirFd, uploadId, publishedDirFd, artifactId, RENAME_NOREPLACE)`. `EEXIST` is `artifact_already_published` and leaves the destination untouched. `EXDEV` is `cross_filesystem_staging`; there is no copy-then-unlink fallback.
 8. `fsync(publishedDirFd)`.
 9. Re-`fstat` the published file through a no-follow open: regular file, `nlink == 1`, owner, mode, device, size, and digest still match.
@@ -88,7 +88,7 @@ Interrupted states are explicit and are never silently promoted or repaired. The
 | after row commit, file missing | none | row present | `missing`; do not recreate bytes |
 | after row commit, digest or size mismatch | file present | row present | `corrupt`; do not rewrite file or row |
 
-Control-plane restart scans staging. A staging file whose grant is expired, missing, not `in_progress`, or `putFinalized=false` is `orphan_staging`. In-flight grants whose leases expired become `upload_interrupted`. Restart never infers `putFinalized` from file size, never renames an unfinalized staging file, and never deletes either tree. Only a persisted `putFinalized=true` grant with a still-current lease may retry `complete`. That retry may finish an already renamed destination whose digest matches the grant; it may not attach an unmatched extra file to a Run. Downloads resolve only committed rows whose files pass the doctor existence and digest checks.
+Control-plane restart scans staging. A staging file whose grant is expired, missing, not `in_progress`, or `putFinalized=false` is `orphan_staging`. In-flight grants whose leases expired become `upload_interrupted`. Restart never infers `putFinalized` from file size, never renames an unfinalized staging file, and never deletes either tree. Only a persisted `putFinalized=true` grant with a still-current lease may retry `complete`. That retry may finish an already renamed destination whose digest matches the grant. Before inserting the row it must `fsync(publishedDirFd)` again so a crash between rename and the first directory fsync cannot advertise undurable bytes. It may not attach an unmatched extra file to a Run. Downloads resolve only committed rows whose files pass the doctor existence and digest checks.
 
 An idle or absolute upload timeout sets the grant to `upload_interrupted` and returns `upload_timeout`. The leftover staging file is later reported as `orphan_staging` by doctor. Timeout does not publish.
 
@@ -127,9 +127,9 @@ Quota exhaustion never deletes, truncates, or replaces an already published arti
 
 - Hitting `perArtifactBytes` while streaming stops new accepted bytes. The control plane then evaluates the retained prefix against `perRunPublishedBytes` and `totalPublishedBytes`. Only if those still have headroom does it publish with `completeness=truncated` and reason `artifact_quota_exceeded`, and drain the remainder so the child upload cannot deadlock.
 - If the retained prefix would exceed `perRunPublishedBytes` or `totalPublishedBytes`, the current upload is not published. The error is `run_quota_exceeded` or `total_quota_exceeded`. Staging remains unpublished. Published artifacts are unchanged.
-- In-flight reservations count against `maxInFlightStagingBytes` and the run/total headroom until the grant finalizes or expires. Grant admission checks `maxConcurrentUploadsPerRunner` first (`artifact_upload_in_progress`), then `maxInFlightStagingBytes` (`staging_quota_exceeded`). Neither deletes already published artifacts.
+- In-flight reservations count against `maxInFlightStagingBytes` and the run/total headroom until the grant finalizes or expires. Grant admission checks `maxConcurrentUploadsPerRunner` first (`concurrent_upload_limit`), then `maxInFlightStagingBytes` (`staging_quota_exceeded`). A second grant for the same in-flight identity remains `artifact_upload_in_progress`. None of these delete already published artifacts.
 
-Completeness values are exclusive and must remain visible on the artifact row and download metadata:
+`complete`, `partial`, `truncated`, and `incomplete` are stored on the artifact or grant. `missing` and `corrupt` are read-time projections over a committed row and are never written back as a completeness update:
 
 | Value | Meaning |
 | --- | --- |

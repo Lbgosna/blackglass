@@ -161,8 +161,10 @@
       },
       "error": {
         "code": "artifact_digest_mismatch",
+        "grantState": "upload_interrupted",
         "published": false,
-        "rowInserted": false
+        "rowInserted": false,
+        "identityReleased": true
       }
     },
     {

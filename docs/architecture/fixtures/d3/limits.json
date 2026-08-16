@@ -185,6 +185,22 @@
         "published": false,
         "alreadyPublishedDeleted": false
       }
+    },
+    {
+      "id": "d3.limits.concurrent-upload-limit",
+      "description": "A grant above the per-runner concurrent upload cap is refused before staging.",
+      "given": {
+        "currentConcurrentUploads": 2,
+        "maxConcurrentUploadsPerRunner": 2,
+        "currentInFlightStagingBytes": 0,
+        "incomingDeclaredSizeBytes": 65536
+      },
+      "error": {
+        "code": "concurrent_upload_limit",
+        "grantCreated": false,
+        "published": false,
+        "alreadyPublishedDeleted": false
+      }
     }
   ]
 }
