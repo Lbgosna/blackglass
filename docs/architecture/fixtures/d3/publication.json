@@ -208,6 +208,25 @@
         "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "sizeBytes": 0
       }
+    },
+    {
+      "id": "d3.publication.same-upload-complete-replay",
+      "description": "A second complete on the same upload after a successful rename replays the stored artifact without requiring EEXIST.",
+      "given": {
+        "uploadId": "upload-fixture-3",
+        "artifactId": "artifact-fixture-2",
+        "stagingPresent": false,
+        "destinationExists": true,
+        "destDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "grantDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "renameErrno": "ENOENT"
+      },
+      "expected": {
+        "result": "stored_artifact_replayed",
+        "artifactId": "artifact-fixture-2",
+        "destinationReplaced": false,
+        "requiredEexist": false
+      }
     }
   ]
 }

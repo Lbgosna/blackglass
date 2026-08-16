@@ -204,6 +204,48 @@
         "httpStatus": 409,
         "bodyBytes": 0
       }
+    },
+    {
+      "id": "d3.download.safe-filename-preserved",
+      "description": "A single-segment original name matching the safe grammar is used as the download filename.",
+      "given": {
+        "artifactId": "artifact-fixture-11",
+        "originalFileName": "scan-results",
+        "operatorAuthenticated": true
+      },
+      "expected": {
+        "filename": "scan-results",
+        "generatedNameUsed": false
+      }
+    },
+    {
+      "id": "d3.download.engagement-mismatch",
+      "description": "An artifact from another engagement is indistinguishable from a missing artifact.",
+      "given": {
+        "routeEngagementId": "engagement-fixture-1",
+        "artifactEngagementId": "engagement-fixture-2",
+        "operatorAuthenticated": true
+      },
+      "error": {
+        "code": "artifact_not_found",
+        "httpStatus": 404,
+        "bodyBytes": 0,
+        "membershipLeaked": false
+      }
+    },
+    {
+      "id": "d3.privacy.parsed-input-metadata",
+      "description": "Machine-readable plugin output is a separate immutable slot and does not claim stream redaction.",
+      "given": {
+        "kind": "tool_parsed_input",
+        "redactionApplied": false
+      },
+      "expected": {
+        "redactionApplied": false,
+        "redactionBoundary": "none",
+        "rawBytesPreserved": true,
+        "replacesToolRaw": false
+      }
     }
   ]
 }

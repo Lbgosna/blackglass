@@ -113,6 +113,25 @@
         "inferredFromFileSize": false,
         "artifactIdGeneratedByControlPlane": true
       }
+    },
+    {
+      "id": "d3.recovery.complete-after-rename-matches-grant",
+      "description": "Retry complete after a durable rename inserts the row only when the destination matches the grant.",
+      "given": {
+        "putFinalized": true,
+        "stagingPresent": false,
+        "publishedPresent": true,
+        "destDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "grantDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "destNlink": 1,
+        "leaseCurrent": true,
+        "unknownExtra": false
+      },
+      "expected": {
+        "rowInserted": true,
+        "destinationReplaced": false,
+        "unmatchedExtraImported": false
+      }
     }
   ]
 }

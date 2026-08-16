@@ -61,9 +61,10 @@
       },
       "error": {
         "code": "upload_timeout",
+        "grantState": "upload_interrupted",
         "published": false,
         "completeness": "incomplete",
-        "stagingState": "orphan_staging"
+        "doctorFinding": "orphan_staging"
       }
     },
     {
@@ -173,7 +174,7 @@
       "description": "A third concurrent upload or an in-flight reservation that would exceed staging headroom is refused before staging.",
       "given": {
         "currentInFlightStagingBytes": 268435456,
-        "currentConcurrentUploads": 2,
+        "currentConcurrentUploads": 1,
         "incomingDeclaredSizeBytes": 65536,
         "maxInFlightStagingBytes": 268435456,
         "maxConcurrentUploadsPerRunner": 2

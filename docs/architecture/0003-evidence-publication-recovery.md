@@ -52,6 +52,8 @@ The grant body may include untrusted metadata only: `kind`, `declaredSizeBytes`,
 
 A grant is single-use. A second grant for an in-flight identity returns `artifact_upload_in_progress`. After publication, a later grant or complete for the same `(runId, fence, eventSequence, artifactSlot)` is an idempotent replay when size and digest match, and `artifact_identity_conflict` when they differ. The original file and row are left untouched.
 
+Two `complete` calls on the same `uploadId` are not two sources. The first successful `renameat2` removes the staging name. The loser sees a missing source and an existing destination: it must re-`fstat` that destination and return `stored_artifact_replayed` when digest and size match. It must not require `EEXIST` from `renameat2`. Distinct sources that collide on one destination still map `EEXIST` to `artifact_already_published`.
+
 ### Staging, hashing, fsync, and publication
 
 Staging and published directories must share `st_dev` with the evidence root. Startup refuses to serve evidence routes when those three directories are on different devices (`evidence_roots_cross_device`). SQLite may live on another device because backup copies the database as a file.
@@ -82,11 +84,13 @@ Interrupted states are explicit and are never silently promoted or repaired. The
 | mid-write (`putFinalized=false`) | staging file | grant `in_progress` or expired | `orphan_staging`; do not publish; do not delete |
 | PUT finalized, before rename (`putFinalized=true`) | staging file | grant `in_progress`, lease current | retry `complete` with the stored digest; still metadata-after-file |
 | PUT finalized, lease expired | staging file | grant `upload_interrupted` | `orphan_staging`; do not publish |
-| after rename and published-dir fsync, before row commit | published file | no evidence row | `extra_artifact`; do not invent a row; do not serve |
+| after rename and published-dir fsync, before row commit | published file, staging gone | grant `putFinalized=true`, no evidence row | retry `complete` inserts the row only if dest digest, size, device, and `nlink==1` match the grant; unknown extras stay `extra_artifact` |
 | after row commit, file missing | none | row present | `missing`; do not recreate bytes |
 | after row commit, digest or size mismatch | file present | row present | `corrupt`; do not rewrite file or row |
 
-Control-plane restart scans staging. A staging file whose grant is expired, missing, not `in_progress`, or `putFinalized=false` is `orphan_staging`. In-flight grants whose leases expired become `upload_interrupted`. Restart never infers `putFinalized` from file size, never renames an unfinalized staging file, and never deletes either tree. Only a persisted `putFinalized=true` grant with a still-current lease may retry `complete`. Downloads resolve only committed rows whose files pass the doctor existence and digest checks.
+Control-plane restart scans staging. A staging file whose grant is expired, missing, not `in_progress`, or `putFinalized=false` is `orphan_staging`. In-flight grants whose leases expired become `upload_interrupted`. Restart never infers `putFinalized` from file size, never renames an unfinalized staging file, and never deletes either tree. Only a persisted `putFinalized=true` grant with a still-current lease may retry `complete`. That retry may finish an already renamed destination whose digest matches the grant; it may not attach an unmatched extra file to a Run. Downloads resolve only committed rows whose files pass the doctor existence and digest checks.
+
+An idle or absolute upload timeout sets the grant to `upload_interrupted` and returns `upload_timeout`. The leftover staging file is later reported as `orphan_staging` by doctor. Timeout does not publish.
 
 ### Filesystem defenses
 
@@ -101,7 +105,7 @@ Every evidence open starts at the evidence-root directory descriptor and walks w
 - a rename that would leave the source device (`cross_filesystem_staging`);
 - a published directory whose device or inode no longer matches the startup-managed published directory.
 
-Directory descriptors used for `renameat2` are rechecked against the startup device and inode immediately before the rename. A replacement of `published/` after startup cannot retarget the already opened directory.
+Directory descriptors used for `renameat2` are rechecked against the startup device and inode immediately before the rename. A replacement of `published/` after startup returns `artifact_published_root_changed` and cannot retarget the already opened directory.
 
 Artifact replacement is impossible even when the new bytes have the same digest as an existing artifact. A matching digest on a different identity creates a second file. A matching identity with a different digest is `artifact_identity_conflict`.
 
@@ -123,7 +127,7 @@ Quota exhaustion never deletes, truncates, or replaces an already published arti
 
 - Hitting `perArtifactBytes` while streaming stops new accepted bytes. The control plane then evaluates the retained prefix against `perRunPublishedBytes` and `totalPublishedBytes`. Only if those still have headroom does it publish with `completeness=truncated` and reason `artifact_quota_exceeded`, and drain the remainder so the child upload cannot deadlock.
 - If the retained prefix would exceed `perRunPublishedBytes` or `totalPublishedBytes`, the current upload is not published. The error is `run_quota_exceeded` or `total_quota_exceeded`. Staging remains unpublished. Published artifacts are unchanged.
-- In-flight reservations count against `maxInFlightStagingBytes` and the run/total headroom until the grant finalizes or expires. A grant that would exceed `maxInFlightStagingBytes` returns `staging_quota_exceeded`. A grant that would exceed `maxConcurrentUploadsPerRunner` returns `artifact_upload_in_progress`. Neither deletes already published artifacts.
+- In-flight reservations count against `maxInFlightStagingBytes` and the run/total headroom until the grant finalizes or expires. Grant admission checks `maxConcurrentUploadsPerRunner` first (`artifact_upload_in_progress`), then `maxInFlightStagingBytes` (`staging_quota_exceeded`). Neither deletes already published artifacts.
 
 Completeness values are exclusive and must remain visible on the artifact row and download metadata:
 
@@ -146,7 +150,7 @@ Raw stream artifacts (`kind=stdout` or `kind=stderr`) arrive after D2 redaction.
 
 Tool artifacts (`kind=tool_raw`) store the bytes the tool wrote. Metadata records `redaction.applied=false`, `redaction.boundary=none`, and `rawBytesPreserved=true`. Target-derived secrets that appear in tool output remain in that artifact because stripping them would make the evidence untruthful. They are not copied into logs, events, SSE payloads, or error bodies.
 
-`kind=tool_parsed_input` is a separate artifact when a plugin emits machine-readable output as its own slot. It does not replace `tool_raw`.
+`kind=tool_parsed_input` is a separate artifact when a plugin emits machine-readable output as its own slot. It does not replace `tool_raw`. Its redaction metadata is the same as `tool_raw`: `redaction.applied=false`, `redaction.boundary=none`, and `rawBytesPreserved=true`.
 
 An observation stores `observationId`, `runId`, `artifactId`, `artifactDigest`, plugin identity, optional byte offset and length, and parser version. Re-parsing appends observations. It never mutates the artifact. A metadata document that sets `redaction.applied=true` and `rawBytesPreserved=true` is invalid (`redaction_raw_claim_invalid`).
 
@@ -154,7 +158,7 @@ Logs, structured events, and doctor output may include artifact IDs, sizes, dige
 
 ### Safe download
 
-Operator download is `GET /api/v1/engagements/{engagementId}/artifacts/{artifactId}/content`. The artifact must belong to that engagement. Runner credentials on that route return `operator_identity_required`. Operator credentials on runner upload routes return `runner_identity_required`.
+Operator download is `GET /api/v1/engagements/{engagementId}/artifacts/{artifactId}/content`. The artifact must belong to that engagement. Runner credentials on that route return `operator_identity_required`. Operator credentials on runner upload routes return `runner_identity_required`. An unknown artifact ID or an artifact that belongs to another engagement returns HTTP 404 `artifact_not_found` and no body, so membership is not leaked.
 
 Successful responses always send:
 

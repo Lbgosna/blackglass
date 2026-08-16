@@ -152,6 +152,22 @@
         "code": "evidence_roots_cross_device",
         "evidenceRoutesServed": false
       }
+    },
+    {
+      "id": "d3.path.published-root-replaced-after-startup",
+      "description": "A replaced published directory cannot retarget renameat2 after startup.",
+      "given": {
+        "startupPublishedDevice": 2049,
+        "startupPublishedInode": 8001,
+        "currentPublishedDevice": 2049,
+        "currentPublishedInode": 8002,
+        "replacementAfterStartup": true
+      },
+      "error": {
+        "code": "artifact_published_root_changed",
+        "published": false,
+        "retargeted": false
+      }
     }
   ]
 }
