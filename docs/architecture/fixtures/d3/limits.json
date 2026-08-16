@@ -1,0 +1,172 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d3-v1",
+  "kind": "limits",
+  "cases": [
+    {
+      "id": "d3.limits.quota-defaults",
+      "description": "The d3-v1 per-artifact, per-run, and total quota defaults are exact.",
+      "given": {
+        "profile": "d3-v1"
+      },
+      "expected": {
+        "perArtifactBytes": { "default": 67108864, "minimum": 65536, "maximum": 1073741824 },
+        "perRunPublishedBytes": { "default": 268435456, "minimum": 1048576, "maximum": 4294967296 },
+        "totalPublishedBytes": { "default": 34359738368, "minimum": 1073741824, "maximum": 1099511627776 },
+        "maxInFlightStagingBytes": 268435456,
+        "maxConcurrentUploadsPerRunner": 2,
+        "unlimitedSupported": false
+      }
+    },
+    {
+      "id": "d3.limits.partial-upload-not-published",
+      "description": "A dropped stream without complete leaves staging unpublished and the slot incomplete.",
+      "given": {
+        "bytesAccepted": 12,
+        "completeCalled": false,
+        "connectionDropped": true
+      },
+      "expected": {
+        "published": false,
+        "completeness": "incomplete",
+        "stagingState": "orphan_staging",
+        "rowInserted": false
+      }
+    },
+    {
+      "id": "d3.limits.cancellation-publishes-partial",
+      "description": "A granted upload completed after cancel publishes a labelled partial artifact.",
+      "given": {
+        "runState": "cancel_requested",
+        "grantCurrent": true,
+        "bytes": "synthetic-partial",
+        "completeness": "partial"
+      },
+      "expected": {
+        "published": true,
+        "completeness": "partial",
+        "digest": "sha256:da0956858bd070ba2552b29cc3a8321ce3b65a050f247eaa269d687b029cfd7b",
+        "sizeBytes": 17,
+        "alreadyPublishedPreserved": true
+      }
+    },
+    {
+      "id": "d3.limits.timeout-not-published",
+      "description": "Idle or absolute upload timeout does not publish staging bytes.",
+      "given": {
+        "idleSeconds": 31,
+        "idleTimeoutSeconds": 30,
+        "absoluteTimeoutSeconds": 600,
+        "completeCalled": false
+      },
+      "error": {
+        "code": "upload_timeout",
+        "published": false,
+        "completeness": "incomplete",
+        "stagingState": "orphan_staging"
+      }
+    },
+    {
+      "id": "d3.limits.truncation-labelled",
+      "description": "Hitting the per-artifact cap publishes a truncated prefix and does not pretend the tool finished.",
+      "given": {
+        "perArtifactBytes": 67108864,
+        "bytesOffered": 67108865,
+        "bytesAccepted": 67108864
+      },
+      "expected": {
+        "published": true,
+        "completeness": "truncated",
+        "reason": "artifact_quota_exceeded",
+        "sizeBytes": 67108864,
+        "remainderDiscarded": true
+      }
+    },
+    {
+      "id": "d3.limits.per-artifact-quota",
+      "description": "A declared size above the per-artifact maximum is rejected before staging.",
+      "given": {
+        "declaredSizeBytes": 1073741825,
+        "perArtifactBytesMaximum": 1073741824
+      },
+      "error": {
+        "code": "artifact_quota_exceeded",
+        "grantCreated": false,
+        "published": false
+      }
+    },
+    {
+      "id": "d3.limits.per-run-quota",
+      "description": "A new artifact that would exceed the run quota is not published.",
+      "given": {
+        "publishedRunBytes": 268435456,
+        "incomingSizeBytes": 1,
+        "perRunPublishedBytes": 268435456
+      },
+      "error": {
+        "code": "run_quota_exceeded",
+        "published": false,
+        "alreadyPublishedBytes": 268435456,
+        "alreadyPublishedDeleted": false
+      }
+    },
+    {
+      "id": "d3.limits.total-quota",
+      "description": "A new artifact that would exceed the total store quota is not published.",
+      "given": {
+        "publishedTotalBytes": 34359738368,
+        "incomingSizeBytes": 1,
+        "totalPublishedBytes": 34359738368
+      },
+      "error": {
+        "code": "total_quota_exceeded",
+        "published": false,
+        "alreadyPublishedDeleted": false
+      }
+    },
+    {
+      "id": "d3.limits.quota-preserves-published",
+      "description": "Quota failure leaves every already published artifact readable and unmodified.",
+      "given": {
+        "existingArtifactId": "artifact-fixture-4",
+        "existingDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "quotaFailure": "run_quota_exceeded"
+      },
+      "expected": {
+        "existingPublished": true,
+        "existingDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "existingDeleted": false,
+        "existingReplaced": false
+      }
+    },
+    {
+      "id": "d3.limits.streaming-backpressure",
+      "description": "The control plane pauses request reads at the write or quota high-water mark.",
+      "given": {
+        "unackedWriteBytes": 262144,
+        "remainingQuotaBytes": 4096,
+        "incomingChunkBytes": 32768
+      },
+      "expected": {
+        "readPaused": true,
+        "acceptedBytesAtPause": 4096,
+        "bufferUnbounded": false
+      }
+    },
+    {
+      "id": "d3.limits.lease-expiry-aborts-upload",
+      "description": "An expired lease cannot finish publication of an in-flight upload.",
+      "given": {
+        "leaseExpired": true,
+        "bytesAccepted": 8,
+        "completeCalled": true
+      },
+      "error": {
+        "code": "lease_expired",
+        "httpStatus": 409,
+        "published": false,
+        "rowInserted": false
+      }
+    }
+  ]
+}

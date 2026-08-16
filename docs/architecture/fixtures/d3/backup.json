@@ -1,0 +1,128 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d3-v1",
+  "kind": "backup",
+  "cases": [
+    {
+      "id": "d3.backup.clean-consistent",
+      "description": "A complete backup copies a consistent SQLite snapshot and every published artifact digest.",
+      "given": {
+        "protocol": "blackglass-backup-v1",
+        "destinationEmpty": true,
+        "publishedArtifacts": [
+          {
+            "artifactId": "artifact-fixture-8",
+            "sizeBytes": 34,
+            "digest": "sha256:b28f2cd8491591f333fd0ba71b87984c43d509cd416766465109f4f082e43f0b"
+          }
+        ],
+        "includeStaging": false
+      },
+      "expected": {
+        "state": "complete",
+        "incompleteMarker": false,
+        "sqliteCopied": true,
+        "artifactCount": 1,
+        "hardlinksUsed": false
+      }
+    },
+    {
+      "id": "d3.backup.interrupted-detectable",
+      "description": "An interrupted backup keeps an incomplete marker and cannot be restored.",
+      "given": {
+        "incompleteMarker": true,
+        "manifestState": "started",
+        "copyFinished": false
+      },
+      "error": {
+        "code": "backup_incomplete",
+        "restoreAllowed": false
+      }
+    },
+    {
+      "id": "d3.backup.restore-empty-dest",
+      "description": "Restore into an empty data directory verifies digests then writes sqlite and published files.",
+      "given": {
+        "destinationEmpty": true,
+        "backupState": "complete",
+        "sqliteDigestMatches": true,
+        "artifactDigestsMatch": true
+      },
+      "expected": {
+        "restored": true,
+        "ownerReapplied": true,
+        "directoryMode": "0700",
+        "fileMode": "0600",
+        "incompleteMarker": false
+      }
+    },
+    {
+      "id": "d3.backup.restore-non-empty-refused",
+      "description": "Restore refuses a destination that already contains sqlite or evidence files.",
+      "given": {
+        "destinationEmpty": false,
+        "existingSqlite": true,
+        "backupState": "complete"
+      },
+      "error": {
+        "code": "restore_destination_not_empty",
+        "writes": 0,
+        "existingPreserved": true
+      }
+    },
+    {
+      "id": "d3.backup.consistency-mismatch-refused",
+      "description": "A backup whose sqlite or artifact digest does not match the manifest is not restored.",
+      "given": {
+        "destinationEmpty": true,
+        "backupState": "complete",
+        "sqliteDigestMatches": false,
+        "artifactDigestsMatch": true
+      },
+      "error": {
+        "code": "restore_consistency_mismatch",
+        "writes": 0
+      }
+    },
+    {
+      "id": "d3.backup.quiesces-publication",
+      "description": "The backup lock rejects new publication until the snapshot finishes.",
+      "given": {
+        "backupLockHeld": true,
+        "grantRequested": true
+      },
+      "error": {
+        "code": "storage_backup_quiesced",
+        "httpStatus": 503,
+        "grantCreated": false,
+        "published": false
+      }
+    },
+    {
+      "id": "d3.backup.excludes-staging",
+      "description": "In-flight staging files are not part of a consistent backup.",
+      "given": {
+        "stagingPresent": true,
+        "publishedCount": 1
+      },
+      "expected": {
+        "stagingCopied": false,
+        "publishedCopied": true
+      }
+    },
+    {
+      "id": "d3.backup.newer-schema-refused",
+      "description": "A backup from a newer schema version cannot be restored into an older binary.",
+      "given": {
+        "backupSchemaVersion": 9,
+        "runningSchemaVersion": 3,
+        "destinationEmpty": true,
+        "backupState": "complete"
+      },
+      "error": {
+        "code": "restore_schema_newer",
+        "writes": 0
+      }
+    }
+  ]
+}

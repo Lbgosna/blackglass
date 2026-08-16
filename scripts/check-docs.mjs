@@ -224,6 +224,89 @@ const requiredD2Cases = new Map([
   ["d2.state.one-terminal-winner", ["state-machine.json", "660514b69c01deebbdded428bf269c4cad6c87ececc1c45c680c3ec841089a4c"]],
   ["d2.state.identical-terminal-replay", ["state-machine.json", "3de944c48be1c1a7c4dd63a67007727fed32a16cdfbbe17f5197de9dd8c02a6a"]],
 ]);
+const d3FixtureVersion = 1;
+const d3Profile = "d3-v1";
+const d3FixtureFiles = new Map([
+  ["publication.json", "publication"],
+  ["limits.json", "limits"],
+  ["path-defenses.json", "path-defenses"],
+  ["recovery.json", "recovery"],
+  ["privacy-download.json", "privacy-download"],
+  ["doctor.json", "doctor"],
+  ["backup.json", "backup"],
+]);
+const requiredD3Cases = new Map([
+  ["d3.backup.clean-consistent", ["backup.json", "3b089af4720a0921dd633c63f724203ec594a0079f1e891008d5783cd1d63d07"]],
+  ["d3.backup.interrupted-detectable", ["backup.json", "5bcc702796167ef77a6ccc013ab55ecdd2df7ded5e6dcbc71ba3fa629778f2dc"]],
+  ["d3.backup.restore-empty-dest", ["backup.json", "e39d687f2abb147db9a943618d37e94c78e1f939f68015c13694dcafcb46a3db"]],
+  ["d3.backup.restore-non-empty-refused", ["backup.json", "5edcbd40a55f94beeff4c61e8991a5495247de73748dc718083b0e4b688c9919"]],
+  ["d3.backup.consistency-mismatch-refused", ["backup.json", "d2f81e929246556bdfb2ff9eb05fbc14f8ce9460ac1b1b5fba122c8b0d006fe3"]],
+  ["d3.backup.quiesces-publication", ["backup.json", "785943ae4af22b14f1c3590269408ce72d3ab2c2de32c3a17dc3aea33264e127"]],
+  ["d3.backup.excludes-staging", ["backup.json", "5723e20ecb6f8250dacd28344310025ef71d00223713d242778b081fa7d37cdb"]],
+  ["d3.backup.newer-schema-refused", ["backup.json", "6936cdc36e32dbc2b3a27339285ce225e819c0103f43e2db8fe00fdf874df61b"]],
+  ["d3.doctor.healthy", ["doctor.json", "ede9c77985a5e428586fbc1ae77c16a678f457d24f6c38bcd6e1c2fb2c03ed77"]],
+  ["d3.doctor.missing", ["doctor.json", "4857188ac9d57463d23f64d2490d70af03493d1719b2b3350cba19959b9c992a"]],
+  ["d3.doctor.corrupt-digest", ["doctor.json", "283752bee9892a0bf50dbe0279d1504376c60878e64e56648e88a7f0dd241a8b"]],
+  ["d3.doctor.wrong-owner", ["doctor.json", "541ffe06d40febf6eaf61d05502c6ddeefa7e080cd52b8c2d0e7f8a076e5d114"]],
+  ["d3.doctor.link-count", ["doctor.json", "5a765a4125fad8e818d8dcefaa3ab5ba95e22b12121e25adaf423702c7b23fbd"]],
+  ["d3.doctor.extra-published", ["doctor.json", "ac7be2aed42ab233442db392e0787e065d52fef8b4466e5af09ddb67ac52a5d5"]],
+  ["d3.doctor.orphan-staging", ["doctor.json", "e0c0eb93844232f9a39369af4ce21da3c23742b4e2ea6f1f58ff588ae9525286"]],
+  ["d3.doctor.path-escape", ["doctor.json", "ae90c10831a54d7bb4c533fe730600ffaa5ae28d97daa8532fde32578fe95314"]],
+  ["d3.limits.quota-defaults", ["limits.json", "75c195519c059f2a882f9adbef90c82eb8cb591ac19e207d4d23b892a26157cc"]],
+  ["d3.limits.partial-upload-not-published", ["limits.json", "80fcf06fbba2806e75b2b4d8c91979bf2346e643e2d9ebef66b633f1eb5edd74"]],
+  ["d3.limits.cancellation-publishes-partial", ["limits.json", "7c9219d45b94d765771baad9d430751ed567f7b3748369e39670f753b03c2e35"]],
+  ["d3.limits.timeout-not-published", ["limits.json", "cbac80d8fad5df79436f3f93e1ca0cb39a5871e89029d22ddf403fb82324ffa1"]],
+  ["d3.limits.truncation-labelled", ["limits.json", "b212dd18ffd19000743029986263472121a3340f74f590143049cecf694f526b"]],
+  ["d3.limits.per-artifact-quota", ["limits.json", "b0c0591dc0febad604b829f09f003cc2d271ff83382779797482ffebdf074464"]],
+  ["d3.limits.per-run-quota", ["limits.json", "2c3195e582b082984697f2f2f1b3156c2ab1c46ccddcd5eedd3595362faa3b44"]],
+  ["d3.limits.total-quota", ["limits.json", "9639662f1e71d1371626ff2859061d1a517bccfc4530105aeef3868667bc4f9a"]],
+  ["d3.limits.quota-preserves-published", ["limits.json", "dcbfab31070beee92400976e8bd1f3c2e24f019dc5f305320bf97097d0d6dc9c"]],
+  ["d3.limits.streaming-backpressure", ["limits.json", "5a8213a662a0e68fa3f0a5309c54f036dcfa81f8f806f6bb50945ea2fc95ea73"]],
+  ["d3.limits.lease-expiry-aborts-upload", ["limits.json", "edc53d5428a7b9bb746e59ee8d923a091b4e55a6eb02022a813ff48f289f9ac6"]],
+  ["d3.path.traversal-rejected", ["path-defenses.json", "8e6faf06c06bfe87bceff0a74eee202ff4dfcf77115272ffc9846e6b382c61df"]],
+  ["d3.path.absolute-path-rejected", ["path-defenses.json", "12c71b60136d887f80e847358b7c522c51f771034a853266f6b145bed1e1138c"]],
+  ["d3.path.symlink-component-rejected", ["path-defenses.json", "03cfa63cd3de632385195f62284342dd4a237926d8d92b95a1bc20a177eaec21"]],
+  ["d3.path.symlink-file-rejected", ["path-defenses.json", "df6a1ca86a4e784d1a15940f18878b4404d84c49c52bd78eb62f994859f63a7a"]],
+  ["d3.path.hardlink-rejected", ["path-defenses.json", "766869ea17818314e3aac79e295f6f8a5e73cde0f3945b040dbbd0f3838d1e2c"]],
+  ["d3.path.overwrite-rejected", ["path-defenses.json", "ab48998d0ea8b62569890d8ad0e65aaf4daa9324272ef224865a9be1a1211687"]],
+  ["d3.path.rename-race-noreplace", ["path-defenses.json", "ae95227cd0db1018c3382d9729a11c9acb46285836e631f67f3c14ffb069209d"]],
+  ["d3.path.cross-filesystem-rejected", ["path-defenses.json", "101b791bfcc36448dfef48724adc4a73165d1bcddf5485fab189087a3f1c0a68"]],
+  ["d3.path.o-nofollow-and-regular-file", ["path-defenses.json", "236a1dd071ee7e13e572f2688ea00fe3de96f5ba9208a76d2b025e63a4cd9060"]],
+  ["d3.path.link-count-must-be-one", ["path-defenses.json", "48c9bfec22e6268af066b9f3e2570ba6248012c0da36c0c62f2983aa85541c67"]],
+  ["d3.path.same-device-staging-and-published", ["path-defenses.json", "a37e75a4a28d41d48a94c275a7e82630682bf3fe802df975fd4b41122cb0e742"]],
+  ["d3.privacy.immutable-raw-bound-to-run", ["privacy-download.json", "629d74269b867f6cc0a6e294fd750db5cd5ecd799894607199233656946eb136"]],
+  ["d3.privacy.parsed-observation-linkage", ["privacy-download.json", "7971a3ac58eedff92654e509b80791b2337727b3f69b2c74e602dd6b59bf8812"]],
+  ["d3.privacy.parser-cannot-rewrite-raw", ["privacy-download.json", "2e63c6f40885740419779a887fc263f646941893ebc45399cada89c5979c9cf7"]],
+  ["d3.privacy.redacted-stream-metadata", ["privacy-download.json", "3ba7130664cd3e509a2be35aaf0367ff9b58a619648ab2e6058d004f8f5bc965"]],
+  ["d3.privacy.raw-tool-metadata", ["privacy-download.json", "a95fb1bf66456dab51975bcfcfee118667e5c43c1ac7a95126a98a7b8d0a4839"]],
+  ["d3.privacy.logs-exclude-bytes", ["privacy-download.json", "6159248442219114f825c85b9dd8b31b27b2ebe6eab735c8672bd3735fa810e6"]],
+  ["d3.privacy.redaction-cannot-claim-raw-preserved", ["privacy-download.json", "3e67f8412f808e50f20403794d71583898fb9f71e8fec4d84e23a92262662ae9"]],
+  ["d3.download.safe-headers", ["privacy-download.json", "f3a1c2e7235c9125188064300af7957240a9ea43c7819acda586df22d8504c02"]],
+  ["d3.download.untrusted-content-type-ignored", ["privacy-download.json", "6385d85954ba36d5fb7ec1888feed6b349e76953b166ce03afc5ff80475378e4"]],
+  ["d3.download.unsafe-filename-replaced", ["privacy-download.json", "1debb4ed95f79301ce43acc62c5403ac7724ccc328766bd24caa1f7f6c9816ba"]],
+  ["d3.download.range-not-supported", ["privacy-download.json", "c70be19c5380f91ceb2c43b9e1ac712b60ddf738e55ce67b45b2976292fb7fe9"]],
+  ["d3.download.authorization-boundary", ["privacy-download.json", "c859523730c94775d07e2e1dde13e6d13a2ba1fd494d339b7f13f49c04b0a6a2"]],
+  ["d3.download.missing-truthful", ["privacy-download.json", "000f27715977bbdbf8df26d925e13557c7fef2e3843051c42f15f0e222b85790"]],
+  ["d3.publication.grant-authenticated-runner", ["publication.json", "2fe9d7c68f9055c4ba1446a22781b59b5d94731af442592afa511a5e065a40fb"]],
+  ["d3.publication.operator-cannot-upload", ["publication.json", "c6e92bc1da2ec31dc01e15cfff60a8723deef9fec9d5cd027d2b7ca72f76886d"]],
+  ["d3.publication.control-plane-generates-ids-and-paths", ["publication.json", "65ac75f96e386f191eb2652e9fcc0e80160ed611d2868b3bbe489c7d4c0bec22"]],
+  ["d3.publication.caller-supplied-path-ignored", ["publication.json", "a50ab8ce09d63dc62d34a084309e2383f87ba829dd4f790e90c999d59aa7b090"]],
+  ["d3.publication.successful-upload-digest-fsync", ["publication.json", "ee689d3b3f394b6fd8ee0f008214ff82ae03e76b696432d96857765425a8f46c"]],
+  ["d3.publication.metadata-after-durable-file", ["publication.json", "ac9f0ab17237efe37df2bd51420e57e1b71c829c10b207a4d6c865b57b085325"]],
+  ["d3.publication.no-replace-existing-dest", ["publication.json", "eda1acf0cdfe1a25e49b436d144a12ff3f5e18c76dde00b43c21749b672e9afc"]],
+  ["d3.publication.identity-unique-by-run-fence-sequence-slot", ["publication.json", "7a760e630335aa4ac9680c15012436999ed0286a324ea2d5fe6d98ddd9678db8"]],
+  ["d3.publication.identical-replay", ["publication.json", "c22c3577aa096f04f016c008050dbcdad097adcad8bb4c6256d7d38342fe05b4"]],
+  ["d3.publication.digest-mismatch-not-published", ["publication.json", "110ad5ebe580291f284f0426d568db365e61ea20b469da9641d5478212ab1c48"]],
+  ["d3.publication.digest-conflict-preserves-original", ["publication.json", "197ebc23de8745037bb1d493be0a6e61f47abb10a1910fdfc86019fff22fbd1e"]],
+  ["d3.publication.no-shared-filesystem", ["publication.json", "e7a8f339826a2e1c2b9a3b5c8fe6653bb835fe9ad25ead56dd636c7469ce9b27"]],
+  ["d3.publication.empty-artifact-allowed", ["publication.json", "a26ec245673c93f2124d1dd7aec28da0221f25a1f259aeb1b061b9ab9dabc49c"]],
+  ["d3.recovery.orphan-staging-not-published", ["recovery.json", "554284089faca9b723095914f561b6e2ed07e6ef517ccc01762590460e68da7e"]],
+  ["d3.recovery.committed-metadata-missing-file", ["recovery.json", "79604c53b8d1e7a1f6cae4a3f7aa2d94d79a4394ac69c5107e38976d05562d90"]],
+  ["d3.recovery.crash-after-rename-before-row", ["recovery.json", "8fc7c2efef779c02e8737edb01c2d2cf35d6486885ccc7604549a93269bbeb50"]],
+  ["d3.recovery.no-silent-repair", ["recovery.json", "0e5564c30f70a29d46b00fb5f544c57d92f0282794508c34e2e2020d04d20f8c"]],
+  ["d3.recovery.restart-inflight-upload", ["recovery.json", "27aa9be9a1f5b873ffde176768bdf9d0346f5721330cdd24cdc967e24131cac6"]],
+  ["d3.recovery.extra-published-not-imported", ["recovery.json", "5cf01f1b0261c541b57c6f7c54b35e63a41864f4b017c16f32e337ad1ac3b25b"]],
+]);
 const forbiddenFixtureValue =
   /(?:-----BEGIN [A-Z ]+PRIVATE KEY-----|\bbearer\s+\S+|\bsk-[a-z0-9_-]{12,}|\bghp_[a-z0-9]{20,}|\bgithub_pat_[a-z0-9_]{20,}|\bxoxb-[a-z0-9-]{20,})/i;
 const ipv4Like = /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
@@ -780,6 +863,131 @@ export async function checkD2Fixtures(repositoryRoot) {
   return errors;
 }
 
+export async function checkD3Fixtures(repositoryRoot) {
+  const fixtureDirectory = path.join(repositoryRoot, "docs", "architecture", "fixtures", "d3");
+  const errors = [];
+  const caseIds = new Map();
+
+  if (!(await exists(fixtureDirectory))) {
+    return ["docs/architecture/fixtures/d3: missing D3 fixture directory"];
+  }
+
+  const fixtureEntries = await readdir(fixtureDirectory, { withFileTypes: true });
+  for (const entry of fixtureEntries) {
+    if (entry.isFile() && entry.name.endsWith(".json") && !d3FixtureFiles.has(entry.name)) {
+      errors.push(`docs/architecture/fixtures/d3/${entry.name}: unexpected D3 fixture file`);
+    }
+  }
+
+  for (const [fileName, expectedKind] of d3FixtureFiles) {
+    const fixturePath = path.join(fixtureDirectory, fileName);
+    const relativePath = path.relative(repositoryRoot, fixturePath);
+
+    if (!(await exists(fixturePath))) {
+      errors.push(`${relativePath}: missing required D3 fixture file`);
+      continue;
+    }
+
+    let fixture;
+    try {
+      fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    } catch (error) {
+      errors.push(`${relativePath}: invalid JSON: ${error.message}`);
+      continue;
+    }
+
+    if (!isRecord(fixture)) {
+      errors.push(`${relativePath}: fixture root must be an object`);
+      continue;
+    }
+    if (fixture.fixtureVersion !== d3FixtureVersion) {
+      errors.push(`${relativePath}: fixtureVersion must be ${d3FixtureVersion}`);
+    }
+    if (fixture.profile !== d3Profile) {
+      errors.push(`${relativePath}: profile must be ${d3Profile}`);
+    }
+    if (fixture.kind !== expectedKind) {
+      errors.push(`${relativePath}: kind must be ${expectedKind}`);
+    }
+    if (!Array.isArray(fixture.cases) || fixture.cases.length === 0) {
+      errors.push(`${relativePath}: cases must be a non-empty array`);
+      continue;
+    }
+
+    for (const [index, fixtureCase] of fixture.cases.entries()) {
+      const caseLocation = `${relativePath}: cases[${index}]`;
+      if (!isRecord(fixtureCase)) {
+        errors.push(`${caseLocation} must be an object`);
+        continue;
+      }
+
+      if (typeof fixtureCase.id !== "string" || !/^d3\.[a-z0-9.-]+$/.test(fixtureCase.id)) {
+        errors.push(`${caseLocation}.id must be a stable d3 case ID`);
+      } else if (caseIds.has(fixtureCase.id)) {
+        errors.push(
+          `${caseLocation}.id duplicates ${fixtureCase.id} from ${caseIds.get(fixtureCase.id)}`,
+        );
+      } else {
+        caseIds.set(fixtureCase.id, caseLocation);
+      }
+
+      if (typeof fixtureCase.description !== "string" || fixtureCase.description.trim() === "") {
+        errors.push(`${caseLocation}.description must be a non-empty string`);
+      }
+      if (!isRecord(fixtureCase.given) || Object.keys(fixtureCase.given).length === 0) {
+        errors.push(`${caseLocation}.given must be a non-empty object`);
+      }
+
+      const hasExpected = Object.hasOwn(fixtureCase, "expected");
+      const hasError = Object.hasOwn(fixtureCase, "error");
+      if (hasExpected === hasError) {
+        errors.push(`${caseLocation} must contain exactly one of expected or error`);
+      } else {
+        const outcomeName = hasExpected ? "expected" : "error";
+        const outcome = fixtureCase[outcomeName];
+        if (!isRecord(outcome) || Object.keys(outcome).length === 0) {
+          errors.push(`${caseLocation}.${outcomeName} must be a non-empty object`);
+        }
+        if (hasError && (typeof outcome?.code !== "string" || outcome.code.trim() === "")) {
+          errors.push(`${caseLocation}.error.code must be a non-empty string`);
+        }
+      }
+
+      errors.push(...fixtureContentErrors(fixtureCase, caseLocation));
+
+      if (typeof fixtureCase.id === "string") {
+        const required = requiredD3Cases.get(fixtureCase.id);
+        if (!required) {
+          errors.push(`${caseLocation}.id is not a required d3-v1 case`);
+        } else {
+          const [requiredFileName, requiredFingerprint] = required;
+          if (fileName !== requiredFileName) {
+            errors.push(`${caseLocation}.id must be in ${requiredFileName}`);
+          }
+          if (hasExpected !== hasError) {
+            const fingerprint = d2CaseFingerprint(fixtureCase);
+            if (fingerprint !== requiredFingerprint) {
+              errors.push(
+                `${caseLocation}: ${fixtureCase.id} critical given fields or exact outcome changed`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (const [requiredId, [requiredFileName]] of requiredD3Cases) {
+    if (!caseIds.has(requiredId)) {
+      errors.push(
+        `docs/architecture/fixtures/d3/${requiredFileName}: missing required D3 case ${requiredId}`,
+      );
+    }
+  }
+
+  return errors;
+}
+
 export async function checkDocumentation(repositoryRoot) {
   const errors = [];
 
@@ -821,6 +1029,17 @@ export async function checkDocumentation(repositoryRoot) {
   );
   if ((await exists(d2AdrPath)) || (await exists(d2FixtureDirectory))) {
     errors.push(...(await checkD2Fixtures(repositoryRoot)));
+  }
+
+  const d3FixtureDirectory = path.join(repositoryRoot, "docs", "architecture", "fixtures", "d3");
+  const d3AdrPath = path.join(
+    repositoryRoot,
+    "docs",
+    "architecture",
+    "0003-evidence-publication-recovery.md",
+  );
+  if ((await exists(d3AdrPath)) || (await exists(d3FixtureDirectory))) {
+    errors.push(...(await checkD3Fixtures(repositoryRoot)));
   }
 
   return errors;

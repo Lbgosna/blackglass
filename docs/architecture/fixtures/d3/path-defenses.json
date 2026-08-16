@@ -1,0 +1,157 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d3-v1",
+  "kind": "path-defenses",
+  "cases": [
+    {
+      "id": "d3.path.traversal-rejected",
+      "description": "Traversal segments cannot escape the managed evidence root.",
+      "given": {
+        "requestedSegment": "..",
+        "evidenceRoot": "/var/lib/blackglass/evidence"
+      },
+      "error": {
+        "code": "artifact_path_rejected",
+        "openedOutsideRoot": false,
+        "published": false
+      }
+    },
+    {
+      "id": "d3.path.absolute-path-rejected",
+      "description": "An absolute caller path cannot choose the staging or published file.",
+      "given": {
+        "requestedPath": "/tmp/fixture-owned",
+        "generatedPathOnly": true
+      },
+      "error": {
+        "code": "artifact_path_rejected",
+        "requestedPathOpened": false,
+        "published": false
+      }
+    },
+    {
+      "id": "d3.path.symlink-component-rejected",
+      "description": "A symlink directory component is not followed.",
+      "given": {
+        "pathComponent": "published",
+        "symlink": true,
+        "openFlags": ["O_NOFOLLOW", "O_CLOEXEC"]
+      },
+      "error": {
+        "code": "artifact_symlink_rejected",
+        "followed": false,
+        "published": false
+      }
+    },
+    {
+      "id": "d3.path.symlink-file-rejected",
+      "description": "A symlink at the staging or published name is not opened for write.",
+      "given": {
+        "stagingName": "upload-fixture-4",
+        "symlink": true,
+        "linkDestination": "/tmp/fixture-owned"
+      },
+      "error": {
+        "code": "artifact_symlink_rejected",
+        "followed": false,
+        "published": false
+      }
+    },
+    {
+      "id": "d3.path.hardlink-rejected",
+      "description": "A staging or published file with nlink other than 1 is rejected.",
+      "given": {
+        "nlink": 2,
+        "regularFile": true
+      },
+      "error": {
+        "code": "artifact_hardlink_rejected",
+        "published": false,
+        "destinationReplaced": false
+      }
+    },
+    {
+      "id": "d3.path.overwrite-rejected",
+      "description": "O_EXCL create and no-replace rename refuse an overwrite.",
+      "given": {
+        "destinationExists": true,
+        "createFlags": ["O_CREAT", "O_EXCL", "O_NOFOLLOW", "O_WRONLY"],
+        "renameFlags": "RENAME_NOREPLACE"
+      },
+      "error": {
+        "code": "artifact_already_published",
+        "overwritten": false
+      }
+    },
+    {
+      "id": "d3.path.rename-race-noreplace",
+      "description": "Two publishes racing the same destination leave exactly one winner and never replace.",
+      "given": {
+        "destination": "/var/lib/blackglass/evidence/published/artifact-fixture-5",
+        "concurrentRenames": 2,
+        "renameFlags": "RENAME_NOREPLACE"
+      },
+      "expected": {
+        "winners": 1,
+        "loserCode": "artifact_already_published",
+        "destinationReplaced": false
+      }
+    },
+    {
+      "id": "d3.path.cross-filesystem-rejected",
+      "description": "Staging and published directories on different devices cannot publish by copy.",
+      "given": {
+        "stagingDevice": 2049,
+        "publishedDevice": 2050,
+        "renameResult": "EXDEV"
+      },
+      "error": {
+        "code": "cross_filesystem_staging",
+        "copyFallbackUsed": false,
+        "published": false
+      }
+    },
+    {
+      "id": "d3.path.o-nofollow-and-regular-file",
+      "description": "Every evidence open is no-follow and requires a regular file owned by the control plane.",
+      "given": {
+        "openFlags": ["O_NOFOLLOW", "O_CLOEXEC"],
+        "fileType": "regular",
+        "ownerUid": 992,
+        "controlPlaneUid": 992,
+        "mode": "0600"
+      },
+      "expected": {
+        "accepted": true,
+        "symlinkFollowed": false,
+        "ownerMatched": true
+      }
+    },
+    {
+      "id": "d3.path.link-count-must-be-one",
+      "description": "Create, write, and rename each require nlink 1.",
+      "given": {
+        "nlinkAfterCreate": 1,
+        "nlinkAfterWrite": 1,
+        "nlinkAfterRename": 1
+      },
+      "expected": {
+        "accepted": true,
+        "requiredNlink": 1
+      }
+    },
+    {
+      "id": "d3.path.same-device-staging-and-published",
+      "description": "Startup refuses evidence routes when staging and published are not the same device as the evidence root.",
+      "given": {
+        "evidenceRootDevice": 2049,
+        "stagingDevice": 2049,
+        "publishedDevice": 2051
+      },
+      "error": {
+        "code": "evidence_roots_cross_device",
+        "evidenceRoutesServed": false
+      }
+    }
+  ]
+}

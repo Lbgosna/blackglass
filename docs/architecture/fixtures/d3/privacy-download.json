@@ -1,0 +1,195 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d3-v1",
+  "kind": "privacy-download",
+  "cases": [
+    {
+      "id": "d3.privacy.immutable-raw-bound-to-run",
+      "description": "A published raw artifact stays bound to its Run and cannot be rewritten by a later run.",
+      "given": {
+        "artifactId": "artifact-fixture-8",
+        "runId": "run-fixture-3",
+        "kind": "tool_raw",
+        "laterRunId": "run-fixture-4",
+        "writeAttempt": true
+      },
+      "expected": {
+        "immutable": true,
+        "boundRunId": "run-fixture-3",
+        "laterRunMutated": false,
+        "replaced": false
+      }
+    },
+    {
+      "id": "d3.privacy.parsed-observation-linkage",
+      "description": "An observation references artifact ID plus digest and does not copy artifact bytes.",
+      "given": {
+        "observationId": "observation-fixture-1",
+        "runId": "run-fixture-3",
+        "artifactId": "artifact-fixture-8",
+        "artifactDigest": "sha256:b28f2cd8491591f333fd0ba71b87984c43d509cd416766465109f4f082e43f0b",
+        "byteOffset": 0,
+        "byteLength": 34,
+        "parserVersion": "nmap-xml-v1"
+      },
+      "expected": {
+        "storesBytes": false,
+        "requiresDigestMatch": true,
+        "artifactRewritten": false
+      }
+    },
+    {
+      "id": "d3.privacy.parser-cannot-rewrite-raw",
+      "description": "A parser update appends observations and cannot replace the raw artifact.",
+      "given": {
+        "artifactId": "artifact-fixture-8",
+        "originalDigest": "sha256:b28f2cd8491591f333fd0ba71b87984c43d509cd416766465109f4f082e43f0b",
+        "parserVersionAfter": "nmap-xml-v2"
+      },
+      "expected": {
+        "artifactDigestUnchanged": true,
+        "observationAppended": true,
+        "rawReplaced": false
+      }
+    },
+    {
+      "id": "d3.privacy.redacted-stream-metadata",
+      "description": "Stdout and stderr artifacts record the runner-stream redaction boundary and do not claim raw preservation.",
+      "given": {
+        "kind": "stdout",
+        "redactionApplied": true,
+        "redactionBoundary": "runner_stream"
+      },
+      "expected": {
+        "redactionApplied": true,
+        "redactionBoundary": "runner_stream",
+        "rawBytesPreserved": false,
+        "immutable": true
+      }
+    },
+    {
+      "id": "d3.privacy.raw-tool-metadata",
+      "description": "Tool artifacts store the bytes the tool wrote and label that raw bytes were preserved.",
+      "given": {
+        "kind": "tool_raw",
+        "redactionApplied": false,
+        "bytes": "<nmaprun fixture=\"true\"></nmaprun>"
+      },
+      "expected": {
+        "redactionApplied": false,
+        "redactionBoundary": "none",
+        "rawBytesPreserved": true,
+        "digest": "sha256:b28f2cd8491591f333fd0ba71b87984c43d509cd416766465109f4f082e43f0b"
+      }
+    },
+    {
+      "id": "d3.privacy.logs-exclude-bytes",
+      "description": "Logs and events store IDs, sizes, and digests rather than artifact bytes or unsanitized names.",
+      "given": {
+        "artifactBytes": "synthetic-evidence-bytes",
+        "originalFileName": "../../secret-name"
+      },
+      "expected": {
+        "loggedFields": ["artifactId", "sizeBytes", "digest", "completeness"],
+        "bytesLogged": false,
+        "originalFileNameLogged": false,
+        "credentialLogged": false
+      }
+    },
+    {
+      "id": "d3.privacy.redaction-cannot-claim-raw-preserved",
+      "description": "Redacted evidence cannot claim that original raw bytes were preserved.",
+      "given": {
+        "redactionApplied": true,
+        "rawBytesPreserved": true
+      },
+      "error": {
+        "code": "redaction_raw_claim_invalid",
+        "published": false
+      }
+    },
+    {
+      "id": "d3.download.safe-headers",
+      "description": "Downloads always use attachment octet-stream, nosniff, and no-store.",
+      "given": {
+        "artifactId": "artifact-fixture-8",
+        "operatorAuthenticated": true
+      },
+      "expected": {
+        "headers": {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": "attachment; filename=\"artifact-fixture-8-bin\"",
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "private, no-store"
+        },
+        "inline": false
+      }
+    },
+    {
+      "id": "d3.download.untrusted-content-type-ignored",
+      "description": "Declared content type is never sent as the download Content-Type.",
+      "given": {
+        "declaredContentType": "text/html",
+        "operatorAuthenticated": true
+      },
+      "expected": {
+        "contentType": "application/octet-stream",
+        "declaredContentTypeSent": false
+      }
+    },
+    {
+      "id": "d3.download.unsafe-filename-replaced",
+      "description": "Traversal, dotted, or empty original names are replaced with a generated safe name.",
+      "given": {
+        "artifactId": "artifact-fixture-9",
+        "originalFileName": "../index-html"
+      },
+      "expected": {
+        "filename": "artifact-fixture-9-bin",
+        "originalFileNameEmitted": false
+      }
+    },
+    {
+      "id": "d3.download.range-not-supported",
+      "description": "Range requests are refused in v0.1 and return no body.",
+      "given": {
+        "rangeHeader": "bytes=0-10",
+        "operatorAuthenticated": true
+      },
+      "error": {
+        "code": "range_not_supported",
+        "httpStatus": 400,
+        "bodyBytes": 0
+      }
+    },
+    {
+      "id": "d3.download.authorization-boundary",
+      "description": "Runner credentials cannot download operator evidence, and artifacts must belong to the engagement.",
+      "given": {
+        "route": "/api/v1/engagements/engagement-fixture-1/artifacts/artifact-fixture-8/content",
+        "runnerAuthenticated": true,
+        "operatorAuthenticated": false,
+        "artifactEngagementId": "engagement-fixture-1"
+      },
+      "error": {
+        "code": "operator_identity_required",
+        "httpStatus": 403,
+        "bodyBytes": 0
+      }
+    },
+    {
+      "id": "d3.download.missing-truthful",
+      "description": "A missing artifact download reports missing and does not invent bytes.",
+      "given": {
+        "artifactId": "artifact-fixture-6",
+        "completeness": "missing",
+        "operatorAuthenticated": true
+      },
+      "error": {
+        "code": "missing_artifact",
+        "httpStatus": 409,
+        "bodyBytes": 0
+      }
+    }
+  ]
+}
