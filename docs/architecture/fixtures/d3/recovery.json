@@ -1,0 +1,138 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d3-v1",
+  "kind": "recovery",
+  "cases": [
+    {
+      "id": "d3.recovery.orphan-staging-not-published",
+      "description": "Restart leaves an orphan staging file unpublished and does not invent an evidence row.",
+      "given": {
+        "stagingPath": "/var/lib/blackglass/evidence/staging/upload-fixture-5",
+        "grantState": "expired",
+        "evidenceRow": false,
+        "controlPlaneRestarted": true
+      },
+      "expected": {
+        "published": false,
+        "rowInserted": false,
+        "stagingDeleted": false,
+        "finding": "orphan_staging",
+        "autoPromoted": false
+      }
+    },
+    {
+      "id": "d3.recovery.committed-metadata-missing-file",
+      "description": "A committed row whose published file is gone is missing and is not recreated.",
+      "given": {
+        "artifactId": "artifact-fixture-6",
+        "rowPresent": true,
+        "filePresent": false,
+        "digest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f"
+      },
+      "expected": {
+        "completeness": "missing",
+        "bytesRecreated": false,
+        "rowDeleted": false,
+        "downloadBody": false,
+        "finding": "missing_artifact"
+      }
+    },
+    {
+      "id": "d3.recovery.crash-after-rename-before-row",
+      "description": "A published file without a row is extra evidence and is not imported.",
+      "given": {
+        "publishedPath": "/var/lib/blackglass/evidence/published/artifact-fixture-7",
+        "fileDurable": true,
+        "rowPresent": false
+      },
+      "expected": {
+        "finding": "extra_artifact",
+        "rowInvented": false,
+        "served": false,
+        "fileDeleted": false
+      }
+    },
+    {
+      "id": "d3.recovery.no-silent-repair",
+      "description": "Doctor and restart never rewrite, restat-as-repair, or delete evidence to look healthy.",
+      "given": {
+        "findings": ["orphan_staging", "missing_artifact", "corrupt_artifact", "extra_artifact"],
+        "repairRequested": false
+      },
+      "expected": {
+        "silentRepair": false,
+        "bytesRewritten": false,
+        "rowsDeleted": false,
+        "statusRemainsTruthful": true
+      }
+    },
+    {
+      "id": "d3.recovery.restart-inflight-upload",
+      "description": "An in-flight grant whose lease expired during restart becomes an interrupted unpublished upload.",
+      "given": {
+        "grantState": "in_progress",
+        "leaseExpired": true,
+        "stagingPresent": true,
+        "controlPlaneRestarted": true
+      },
+      "expected": {
+        "grantState": "upload_interrupted",
+        "published": false,
+        "completeRetriedAutomatically": false,
+        "finding": "orphan_staging"
+      }
+    },
+    {
+      "id": "d3.recovery.extra-published-not-imported",
+      "description": "An unmatched published file cannot be attached to a Run by digest coincidence.",
+      "given": {
+        "extraDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "matchingRunSlot": true,
+        "rowPresent": false
+      },
+      "expected": {
+        "imported": false,
+        "attachedToRun": false,
+        "finding": "extra_artifact"
+      }
+    },
+    {
+      "id": "d3.recovery.finalized-complete-retry",
+      "description": "A persisted putFinalized grant with a current lease may retry complete and still publishes only after the durable rename.",
+      "given": {
+        "putFinalized": true,
+        "acceptedBytes": 24,
+        "streamedDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "leaseCurrent": true,
+        "grantState": "in_progress",
+        "completeRetried": true
+      },
+      "expected": {
+        "published": true,
+        "rowInsertedAfterRename": true,
+        "inferredFromFileSize": false,
+        "artifactIdGeneratedByControlPlane": true
+      }
+    },
+    {
+      "id": "d3.recovery.complete-after-rename-matches-grant",
+      "description": "Retry complete after a durable rename inserts the row only when the destination matches the grant.",
+      "given": {
+        "putFinalized": true,
+        "stagingPresent": false,
+        "publishedPresent": true,
+        "destDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "grantDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "destNlink": 1,
+        "leaseCurrent": true,
+        "unknownExtra": false
+      },
+      "expected": {
+        "rowInserted": true,
+        "publishedDirectoryFsyncBeforeRow": true,
+        "destinationReplaced": false,
+        "unmatchedExtraImported": false
+      }
+    }
+  ]
+}
