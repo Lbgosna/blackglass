@@ -166,6 +166,11 @@ describe("engagement query routes", () => {
         getEngagement: () => ({ ok: false, error: { code } }),
         listEngagements: () => ({ ok: false, error: { code } }),
         listScopeRevisions: () => ({ ok: false, error: { code } }),
+        getAction: () => ({ ok: false, error: { code: "action_not_found" as const } }),
+        retryActionContext: () => ({
+          ok: false,
+          error: { code: "action_not_found" as const },
+        }),
       },
       getDevelopmentStorageReadiness: () => "ready",
     });
@@ -230,6 +235,11 @@ describe("engagement query routes", () => {
         getEngagement: () => ({ ok: true, value: { marker } as never }),
         listEngagements: () => ({ ok: true, value: [{ marker }] as never }),
         listScopeRevisions: () => ({ ok: true, value: [{ marker }] as never }),
+        getAction: () => ({ ok: false, error: { code: "action_not_found" as const } }),
+        retryActionContext: () => ({
+          ok: false,
+          error: { code: "action_not_found" as const },
+        }),
       },
       getDevelopmentStorageReadiness: () => "ready",
     });
@@ -252,6 +262,12 @@ describe("engagement query routes", () => {
           throw new Error(marker);
         },
         listScopeRevisions() {
+          throw new Error(marker);
+        },
+        getAction() {
+          throw new Error(marker);
+        },
+        retryActionContext() {
           throw new Error(marker);
         },
       },

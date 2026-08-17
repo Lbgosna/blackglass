@@ -25,6 +25,18 @@ const emptyEngagementRepository = {
   listScopeRevisions() {
     return { ok: true as const, value: [] };
   },
+  getAction() {
+    return {
+      ok: false as const,
+      error: { code: "action_not_found" as const },
+    };
+  },
+  retryActionContext() {
+    return {
+      ok: false as const,
+      error: { code: "action_not_found" as const },
+    };
+  },
 };
 
 function createApp(readiness: "ready" | "not_ready" = "ready") {

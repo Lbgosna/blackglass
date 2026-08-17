@@ -4,6 +4,10 @@ import { request as httpRequest } from "node:http";
 import path from "node:path";
 
 import {
+  JsonValueSchema,
+  MAX_CANONICAL_JSON_BYTES,
+} from "@blackglass/contracts";
+import {
   EngagementRepository,
   OperatorCommandRepository,
   openEngagementDatabase,
@@ -53,6 +57,19 @@ async function fixture() {
 
 const headers = (key: string) => ({ "idempotency-key": key });
 const key = (suffix: string) => `fixture-idempotency-${suffix.padEnd(12, "0")}`;
+
+function rawNestedArrayJson(leafJson: string, depth: number): string {
+  return `${"[".repeat(depth)}${leafJson}${"]".repeat(depth)}`;
+}
+
+function jsonParseThrows(value: unknown): boolean {
+  try {
+    JsonValueSchema.safeParse(value);
+    return false;
+  } catch (error) {
+    return error instanceof RangeError;
+  }
+}
 
 async function sendDuplicateKeyRequest(
   port: number,
@@ -207,12 +224,189 @@ describe("engagement mutation routes", () => {
       .toHaveLength(1);
   });
 
+  it("replays omitted create-engagement defaults and strips unknown fields from the digest", async () => {
+    const { app, database } = await fixture();
+    const omittedKey = key("omit-null");
+    const omitted = { name: "Target lab", kind: "lab", autoContinueWarnings: false };
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(omittedKey),
+      payload: omitted,
+    });
+    expect(created.statusCode).toBe(201);
+    expect(
+      database.sqlite
+        .prepare("select request_digest from operator_command_idempotency where idempotency_key = ?")
+        .pluck()
+        .get(omittedKey),
+    ).toBe("sha256:b8a1a7e36d9307ad76be0324867dc33bed145bd6553a5782ce594e4c1a29a8cf");
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(omittedKey),
+        payload: { ...omitted, description: null, authorizationContext: null },
+      }),
+    ).toMatchObject({ statusCode: 201, body: created.body });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements?ignored=true",
+        headers: headers(omittedKey),
+        payload: { ...omitted, extra: true },
+      }),
+    ).toMatchObject({ statusCode: 201, body: created.body });
+
+    const unknownKey = key("unknown-create");
+    const unknownCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(unknownKey),
+      payload: { ...omitted, extra: true },
+    });
+    expect(unknownCreate).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(unknownKey),
+        payload: omitted,
+      }),
+    ).toMatchObject({ statusCode: 400, body: unknownCreate.body });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(omittedKey),
+        payload: { ...omitted, name: "Other lab", extra: true },
+      }),
+    ).toMatchObject({ statusCode: 409, body: '{"code":"idempotency_conflict"}' });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/engagements",
+        headers: headers(omittedKey),
+        payload: { ...omitted, autoContinueWarnings: "false", extra: true },
+      }),
+    ).toMatchObject({ statusCode: 409, body: '{"code":"idempotency_conflict"}' });
+
+    const reservedIpRule = {
+      id: "reserved-ip",
+      kind: "ip",
+      target: {
+        kind: "ip",
+        normalizationProfile: "d1-v1",
+        family: 4,
+        address: "192.0.2.20",
+        zone: null,
+      },
+    };
+    const scopeKey = key("unknown-scope");
+    const scope = await app.inject({
+      method: "POST",
+      url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+      headers: headers(scopeKey),
+      payload: { expectedRevision: 1, rules: [reservedIpRule] },
+    });
+    expect(scope.statusCode).toBe(201);
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+        headers: headers(scopeKey),
+        payload: {
+          expectedRevision: 1,
+          extra: true,
+          rules: [
+            {
+              ...reservedIpRule,
+              extra: true,
+              target: { ...reservedIpRule.target, extra: true },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ statusCode: 201, body: scope.body });
+
+    const nestedUnknownKey = key("nested-unknown");
+    const nestedUnknown = await app.inject({
+      method: "POST",
+      url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+      headers: headers(nestedUnknownKey),
+      payload: {
+        expectedRevision: 2,
+        extra: true,
+        rules: [
+          {
+            ...reservedIpRule,
+            extra: true,
+            target: { ...reservedIpRule.target, extra: true },
+          },
+        ],
+      },
+    });
+    expect(nestedUnknown).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/engagements/${created.json().id}/scope-revisions`,
+        headers: headers(nestedUnknownKey),
+        payload: { expectedRevision: 2, rules: [reservedIpRule] },
+      }),
+    ).toMatchObject({ statusCode: 400, body: nestedUnknown.body });
+    expect(
+      database.sqlite
+        .prepare("select count(*) from engagements")
+        .pluck()
+        .get(),
+    ).toBe(1);
+  });
+
+  it("rejects a deeply nested declared field as a fixed invalid request", async () => {
+    const { app, database, engagementRepository } = await fixture();
+    const marker = "SENSITIVE_NESTING_MARKER";
+    const depth = 32_768;
+    const body = `{"name":${rawNestedArrayJson(JSON.stringify(marker), depth)},"kind":"lab","autoContinueWarnings":false}`;
+    expect(Buffer.byteLength(body)).toBeLessThan(MAX_CANONICAL_JSON_BYTES);
+    const parsed = JSON.parse(body);
+    expect(jsonParseThrows(parsed)).toBe(true);
+
+    const commandKey = key("deep-json");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: {
+        ...headers(commandKey),
+        "content-type": "application/json",
+      },
+      payload: body,
+    });
+    expect(response).toMatchObject({
+      statusCode: 400,
+      body: '{"code":"invalid_request"}',
+    });
+    expect(response.body).not.toContain(marker);
+    expect(
+      database.sqlite
+        .prepare("select count(*) from operator_command_idempotency")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(engagementRepository.listEngagements()).toEqual({ ok: true, value: [] });
+  });
+
   it("rejects malformed transport before lookup and does not reserve its key", async () => {
     const { app, database } = await fixture();
     const commandKey = key("invalid-transport");
     for (const request of [
       { headers: {}, payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false } },
-      { headers: headers(commandKey), payload: { name: " Target lab", kind: "lab", autoContinueWarnings: false } },
       { headers: headers("short"), payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false } },
     ]) {
       const response = await app.inject({
@@ -250,7 +444,7 @@ describe("engagement mutation routes", () => {
       database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
     ).toBe(0);
     const missingId = "10000000-0000-4000-8000-000000000099";
-    for (const queryRequest of [
+    for (const [index, queryRequest] of [
       {
         method: "POST" as const,
         url: "/api/v1/engagements?ignored=true",
@@ -276,16 +470,13 @@ describe("engagement mutation routes", () => {
         url: `/api/v1/engagements/${missingId}/scope-revisions?ignored=true`,
         payload: { expectedRevision: 1, rules: [] },
       },
-    ]) {
+    ].entries()) {
       expect(
         await app.inject({
           ...queryRequest,
-          headers: headers(commandKey),
+          headers: headers(key(`query-${index}`)),
         }),
       ).toMatchObject({ statusCode: 400, body: '{"code":"invalid_request"}' });
-      expect(
-        database.sqlite.prepare("select count(*) from operator_command_idempotency").pluck().get(),
-      ).toBe(0);
     }
     expect(
       await app.inject({
@@ -521,34 +712,71 @@ describe("engagement mutation routes", () => {
     expect(await app.inject(request)).toMatchObject({ statusCode: 201 });
   }, 10_000);
 
-  it("does not reflect malformed stored command responses", async () => {
+  it("replays stored command JSON exactly and does not reflect non-JSON bodies", async () => {
     const marker = "SENSITIVE_STORED_MARKER";
-    const app = buildApp({
+    const staleApp = buildApp({
       engagementRepository: {
         getEngagement: () => ({ ok: false, error: { code: "engagement_not_found" } }),
         listEngagements: () => ({ ok: true, value: [] }),
         listScopeRevisions: () => ({ ok: true, value: [] }),
+        getAction: () => ({ ok: false, error: { code: "action_not_found" } }),
+        retryActionContext: () => ({
+          ok: false,
+          error: { code: "action_not_found" },
+        }),
       },
       operatorCommandRepository: {
         executeOperatorCommand: () => ({
           ok: true,
           disposition: "replayed",
-          response: { status: 201, bodyJson: JSON.stringify({ marker }) },
+          response: { status: 201, bodyJson: '{"stale":true}' },
         }),
       },
       getDevelopmentStorageReadiness: () => "ready",
     });
-    apps.push(app);
-    const response = await app.inject({
+    apps.push(staleApp);
+    const replayed = await staleApp.inject({
+      method: "POST",
+      url: "/api/v1/engagements",
+      headers: headers(key("stale-response")),
+      payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
+    });
+    expect(replayed).toMatchObject({
+      statusCode: 201,
+      body: '{"stale":true}',
+    });
+
+    const brokenApp = buildApp({
+      engagementRepository: {
+        getEngagement: () => ({ ok: false, error: { code: "engagement_not_found" } }),
+        listEngagements: () => ({ ok: true, value: [] }),
+        listScopeRevisions: () => ({ ok: true, value: [] }),
+        getAction: () => ({ ok: false, error: { code: "action_not_found" } }),
+        retryActionContext: () => ({
+          ok: false,
+          error: { code: "action_not_found" },
+        }),
+      },
+      operatorCommandRepository: {
+        executeOperatorCommand: () => ({
+          ok: true,
+          disposition: "replayed",
+          response: { status: 201, bodyJson: `{"marker":"${marker}"` },
+        }),
+      },
+      getDevelopmentStorageReadiness: () => "ready",
+    });
+    apps.push(brokenApp);
+    const broken = await brokenApp.inject({
       method: "POST",
       url: "/api/v1/engagements",
       headers: headers(key("malformed-response")),
       payload: { name: "Target lab", kind: "lab", autoContinueWarnings: false },
     });
-    expect(response).toMatchObject({
+    expect(broken).toMatchObject({
       statusCode: 500,
       body: '{"code":"invalid_persisted_data"}',
     });
-    expect(response.body).not.toContain(marker);
+    expect(broken.body).not.toContain(marker);
   });
 });

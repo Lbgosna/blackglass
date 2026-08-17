@@ -110,6 +110,8 @@ Permanent invariants:
 
 Required before M3 evidence publication and completed before M9 backup/restore.
 
+Status: accepted in [ADR-0003](./0003-evidence-publication-recovery.md).
+
 Decide:
 
 - staging, hashing, fsync, and atomic publication flow;

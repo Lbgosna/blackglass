@@ -1,0 +1,121 @@
+{
+  "fixtureVersion": 1,
+  "profile": "d3-v1",
+  "kind": "doctor",
+  "cases": [
+    {
+      "id": "d3.doctor.healthy",
+      "description": "Doctor reports healthy when every row matches a regular managed file.",
+      "given": {
+        "rowCount": 1,
+        "filePresent": true,
+        "sizeBytes": 24,
+        "digest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "ownerUid": 992,
+        "controlPlaneUid": 992,
+        "mode": "0600",
+        "nlink": 1,
+        "insideManagedRoot": true
+      },
+      "expected": {
+        "finding": "healthy",
+        "repairAttempted": false
+      }
+    },
+    {
+      "id": "d3.doctor.missing",
+      "description": "A row without a file is missing and is not repaired.",
+      "given": {
+        "rowPresent": true,
+        "filePresent": false
+      },
+      "expected": {
+        "finding": "missing_artifact",
+        "bytesRecreated": false,
+        "rowDeleted": false
+      }
+    },
+    {
+      "id": "d3.doctor.corrupt-digest",
+      "description": "A size or digest mismatch is corrupt and the file is not rewritten.",
+      "given": {
+        "rowDigest": "sha256:6e434b5e9602095dd093e45276d34b32cf0071edf1cccf811b7b6a3df226c69f",
+        "fileDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "rowSizeBytes": 24,
+        "fileSizeBytes": 24
+      },
+      "expected": {
+        "finding": "corrupt_artifact",
+        "fileRewritten": false,
+        "rowUpdated": false
+      }
+    },
+    {
+      "id": "d3.doctor.wrong-owner",
+      "description": "A published file owned by another user is unsafe and is not chowned.",
+      "given": {
+        "ownerUid": 0,
+        "controlPlaneUid": 992,
+        "mode": "0600"
+      },
+      "expected": {
+        "finding": "unsafe_ownership",
+        "ownerChanged": false
+      }
+    },
+    {
+      "id": "d3.doctor.link-count",
+      "description": "A published file with nlink other than 1 is unsafe and is not unlinked.",
+      "given": {
+        "nlink": 2,
+        "regularFile": true
+      },
+      "expected": {
+        "finding": "unsafe_link_count",
+        "linksRemoved": false,
+        "fileDeleted": false
+      }
+    },
+    {
+      "id": "d3.doctor.extra-published",
+      "description": "A published file without a row is extra and is not imported.",
+      "given": {
+        "filePresent": true,
+        "rowPresent": false,
+        "path": "/var/lib/blackglass/evidence/published/artifact-fixture-10"
+      },
+      "expected": {
+        "finding": "extra_artifact",
+        "rowInvented": false,
+        "fileDeleted": false
+      }
+    },
+    {
+      "id": "d3.doctor.orphan-staging",
+      "description": "A staging file without an in-progress grant is an orphan and is not published.",
+      "given": {
+        "stagingPresent": true,
+        "grantState": "expired"
+      },
+      "expected": {
+        "finding": "orphan_staging",
+        "published": false,
+        "stagingDeleted": false
+      }
+    },
+    {
+      "id": "d3.doctor.path-escape",
+      "description": "A row whose path leaves the managed root is a fatal containment failure.",
+      "given": {
+        "relativePath": "published/../../outside",
+        "insideManagedRoot": false
+      },
+      "expected": {
+        "finding": "path_escape",
+        "served": false,
+        "fatal": true,
+        "repairAttempted": false
+      }
+    }
+  ]
+}

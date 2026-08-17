@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   checkD1Fixtures,
   checkD2Fixtures,
+  checkD3Fixtures,
   checkDocumentation,
   localMarkdownTargets,
 } from "./check-docs.mjs";
@@ -26,6 +27,15 @@ const d2FixtureKinds = new Map([
   ["runner-identity.json", "runner-identity"],
   ["lease-events.json", "lease-events"],
   ["process-supervision.json", "process-supervision"],
+]);
+const d3FixtureKinds = new Map([
+  ["publication.json", "publication"],
+  ["limits.json", "limits"],
+  ["path-defenses.json", "path-defenses"],
+  ["recovery.json", "recovery"],
+  ["privacy-download.json", "privacy-download"],
+  ["doctor.json", "doctor"],
+  ["backup.json", "backup"],
 ]);
 const requiredMalformedTargetCases = [
   {
@@ -78,6 +88,17 @@ async function copyD2FixtureSuite(root) {
   await mkdir(path.dirname(fixtureDirectory), { recursive: true });
   await cp(
     path.join(repositoryRoot, "docs", "architecture", "fixtures", "d2"),
+    fixtureDirectory,
+    { recursive: true },
+  );
+  return fixtureDirectory;
+}
+
+async function copyD3FixtureSuite(root) {
+  const fixtureDirectory = path.join(root, "docs", "architecture", "fixtures", "d3");
+  await mkdir(path.dirname(fixtureDirectory), { recursive: true });
+  await cp(
+    path.join(repositoryRoot, "docs", "architecture", "fixtures", "d3"),
     fixtureDirectory,
     { recursive: true },
   );
@@ -641,6 +662,132 @@ test("reports malformed, missing, misplaced, and unexpected D2 fixtures", async 
   assert.ok(
     errors.some((error) =>
       error.includes("missing required D2 case d2.state.action-transition-matrix"),
+    ),
+  );
+});
+
+test("accepts the complete pinned d3-v1 fixture suite", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  await copyD3FixtureSuite(root);
+
+  assert.deepEqual(await checkD3Fixtures(root), []);
+  assert.deepEqual(await checkDocumentation(root), []);
+});
+
+test("requires the D3 fixture suite when the accepted ADR marker exists", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const architectureDirectory = path.join(root, "docs", "architecture");
+  await mkdir(architectureDirectory, { recursive: true });
+  await writeFile(
+    path.join(architectureDirectory, "0003-evidence-publication-recovery.md"),
+    "# ADR-0003\n\nStatus: accepted\n",
+    "utf8",
+  );
+
+  assert.deepEqual(await checkDocumentation(root), [
+    "docs/architecture/fixtures/d3: missing D3 fixture directory",
+  ]);
+});
+
+test("reports D3 version, profile, kind, shape, duplicate IDs, and unexpected cases", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD3FixtureSuite(root);
+  const publicationPath = path.join(fixtureDirectory, "publication.json");
+  const publicationFixture = JSON.parse(await readFile(publicationPath, "utf8"));
+  publicationFixture.fixtureVersion = 2;
+  publicationFixture.profile = "d3-v2";
+  publicationFixture.kind = "other";
+  publicationFixture.cases[1].id = publicationFixture.cases[0].id;
+  publicationFixture.cases.push({
+    id: "d3.publication.unpinned-case",
+    description: "Synthetic unpinned case.",
+    given: { accepted: true },
+    expected: { accepted: true },
+  });
+  await writeFile(publicationPath, `${JSON.stringify(publicationFixture, null, 2)}\n`, "utf8");
+
+  const errors = await checkD3Fixtures(root);
+  assert.ok(errors.some((error) => error.includes("fixtureVersion must be 1")));
+  assert.ok(errors.some((error) => error.includes("profile must be d3-v1")));
+  assert.ok(errors.some((error) => error.includes("kind must be publication")));
+  assert.ok(
+    errors.some((error) =>
+      error.includes("duplicates d3.publication.grant-authenticated-runner"),
+    ),
+  );
+  assert.ok(errors.some((error) => error.includes("is not a required d3-v1 case")));
+  assert.ok(
+    errors.some((error) =>
+      error.includes("missing required D3 case d3.publication.operator-cannot-upload"),
+    ),
+  );
+});
+
+test("pins every D3 case critical input field", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD3FixtureSuite(root);
+
+  for (const fileName of d3FixtureKinds.keys()) {
+    const fixturePath = path.join(fixtureDirectory, fileName);
+    const validFixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    for (const [index, fixtureCase] of validFixture.cases.entries()) {
+      const mutatedFixture = structuredClone(validFixture);
+      mutatedFixture.cases[index].given.validatorMutation = true;
+      await writeFile(fixturePath, `${JSON.stringify(mutatedFixture, null, 2)}\n`, "utf8");
+
+      const errors = await checkD3Fixtures(root);
+      assert.ok(
+        errors.some((error) =>
+          error.includes(`${fixtureCase.id} critical given fields or exact outcome changed`),
+        ),
+        `${fixtureCase.id} input mutation was not rejected`,
+      );
+    }
+    await writeFile(fixturePath, `${JSON.stringify(validFixture, null, 2)}\n`, "utf8");
+  }
+});
+
+test("pins every D3 case exact outcome", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD3FixtureSuite(root);
+
+  for (const fileName of d3FixtureKinds.keys()) {
+    const fixturePath = path.join(fixtureDirectory, fileName);
+    const validFixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    for (const [index, fixtureCase] of validFixture.cases.entries()) {
+      const mutatedFixture = structuredClone(validFixture);
+      const outcomeName = Object.hasOwn(fixtureCase, "expected") ? "expected" : "error";
+      mutatedFixture.cases[index][outcomeName].validatorMutation = true;
+      await writeFile(fixturePath, `${JSON.stringify(mutatedFixture, null, 2)}\n`, "utf8");
+
+      const errors = await checkD3Fixtures(root);
+      assert.ok(
+        errors.some((error) =>
+          error.includes(`${fixtureCase.id} critical given fields or exact outcome changed`),
+        ),
+        `${fixtureCase.id} outcome mutation was not rejected`,
+      );
+    }
+    await writeFile(fixturePath, `${JSON.stringify(validFixture, null, 2)}\n`, "utf8");
+  }
+});
+
+test("reports malformed, missing, misplaced, and unexpected D3 fixtures", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "blackglass-docs-"));
+  const fixtureDirectory = await copyD3FixtureSuite(root);
+  await writeFile(path.join(fixtureDirectory, "publication.json"), "{\n", "utf8");
+  await writeFile(
+    path.join(fixtureDirectory, "unexpected.json"),
+    '{"fixtureVersion":1}\n',
+    "utf8",
+  );
+
+  const errors = await checkD3Fixtures(root);
+  assert.ok(errors.some((error) => error.includes("unexpected.json: unexpected D3 fixture file")));
+  assert.ok(errors.some((error) => error.includes("publication.json: invalid JSON")));
+  assert.ok(
+    errors.some((error) =>
+      error.includes("missing required D3 case d3.publication.grant-authenticated-runner"),
     ),
   );
 });
