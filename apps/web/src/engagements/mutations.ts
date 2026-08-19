@@ -1,4 +1,5 @@
 import {
+  ActionResponseSchema,
   AppendScopeRevisionRequestSchema,
   CreateEngagementRequestSchema,
   EngagementMutationResponseSchema,
@@ -6,6 +7,7 @@ import {
   type CreateEngagementInput,
   type Engagement,
   type EngagementWithActiveScope,
+  type PersistedAction,
   type SavedScopeRule,
   type ScopeRevision,
 } from "@blackglass/contracts";
@@ -94,6 +96,18 @@ export async function sendScopeRevisionMutation(
   },
 ): Promise<ScopeRevision> {
   return sendOperatorMutation(url, init, ScopeRevisionMutationResponseSchema);
+}
+
+export async function sendActionMutation(
+  url: string,
+  init: {
+    body: unknown;
+    idempotencyKey: string;
+    method?: "POST" | "PATCH";
+    signal?: AbortSignal;
+  },
+): Promise<PersistedAction> {
+  return sendOperatorMutation(url, init, ActionResponseSchema);
 }
 
 export async function createEngagementRequest(

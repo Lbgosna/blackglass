@@ -84,7 +84,7 @@ function EngagementStageActions({ engagementId }: { engagementId: string }) {
   const engagement = engagements.data?.find((item) => item.id === engagementId);
   const archive = useArchiveEngagementMutation();
   const reopen = useReopenEngagementMutation();
-  const { announce } = useEngagementWorkspace();
+  const { requestFocusRuns } = useEngagementWorkspace();
 
   useEffect(() => {
     archive.reset();
@@ -106,7 +106,7 @@ function EngagementStageActions({ engagementId }: { engagementId: string }) {
       <button
         type="button"
         className="inline-flex min-h-11 items-center rounded-md px-2 text-[13px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => announce("Not connected yet")}
+        onClick={() => requestFocusRuns()}
       >
         New run
       </button>

@@ -125,6 +125,7 @@ beforeEach(() => {
     configurable: true,
     value: vi.fn(),
   });
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
@@ -360,12 +361,11 @@ describe("engagement workspace", () => {
     expect(screen.getAllByText(/Scope is context, not authorization/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "New run" }));
-    await waitFor(() =>
-      expect(screen.getByTestId("workspace-notice").textContent).toBe("Not connected yet"),
-    );
-    expect(screen.queryByText("Run queued")).toBeNull();
+    expect(document.activeElement).toBe(await screen.findByLabelText("Targets"));
+    expect(screen.getByTestId("workspace-notice").textContent).toBe("");
+    expect(screen.getByRole("heading", { name: "Runs" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Evidence/ }));
     expect(screen.getByTestId("workspace-notice").textContent).toBe("Not connected yet");
     expect(screen.queryByText("Scope saved")).toBeNull();
 
