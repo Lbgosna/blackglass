@@ -399,3 +399,75 @@ export const commandJsonV1CancelActionDigest = digestProjection({
   query: CommandJsonV1EmptyObjectDigestSchema,
   body: objectProjection(CommandJsonV1CancelActionBodyDigestSchema),
 });
+
+export const CommandJsonV1StartEnrollmentChallengeBodyDigestSchema = z.object({
+  name: jsonField,
+  installationFingerprint: jsonField,
+});
+
+export const CommandJsonV1EnrollmentChallengeIdPathDigestSchema = z.object({
+  challengeId: jsonField,
+});
+
+export const CommandJsonV1ConfirmEnrollmentBodyDigestSchema = z.object({
+  ownerConfirmed: jsonField,
+});
+
+export const CommandJsonV1RunnerIdPathDigestSchema = z.object({
+  runnerId: jsonField,
+});
+
+export const CommandJsonV1RevokeRunnerBodyDigestSchema = z.object({
+  expectedRevision: jsonField,
+});
+
+export const CommandJsonV1RunnerLeaseIdPathDigestSchema = z.object({
+  leaseId: jsonField,
+});
+
+export const CommandJsonV1RunnerAppendStartedBodyDigestSchema = z.object({
+  runId: jsonField,
+  sessionId: jsonField,
+  fence: jsonField,
+  sequence: jsonField,
+  payload: jsonField,
+});
+
+export const CommandJsonV1RunnerCompleteBodyDigestSchema = z.object({
+  runId: jsonField,
+  sessionId: jsonField,
+  fence: jsonField,
+  sequence: jsonField,
+  terminalKind: jsonField,
+  reason: jsonField,
+});
+
+export const commandJsonV1StartEnrollmentChallengeDigest = digestProjection({
+  path: CommandJsonV1EmptyObjectDigestSchema,
+  query: CommandJsonV1EmptyObjectDigestSchema,
+  body: objectProjection(CommandJsonV1StartEnrollmentChallengeBodyDigestSchema),
+});
+
+export const commandJsonV1ConfirmEnrollmentDigest = digestProjection({
+  path: CommandJsonV1EnrollmentChallengeIdPathDigestSchema,
+  query: CommandJsonV1EmptyObjectDigestSchema,
+  body: objectProjection(CommandJsonV1ConfirmEnrollmentBodyDigestSchema),
+});
+
+export const commandJsonV1RevokeRunnerDigest = digestProjection({
+  path: CommandJsonV1RunnerIdPathDigestSchema,
+  query: CommandJsonV1EmptyObjectDigestSchema,
+  body: objectProjection(CommandJsonV1RevokeRunnerBodyDigestSchema),
+});
+
+export const commandJsonV1RunnerAppendStartedDigest = digestProjection({
+  path: CommandJsonV1RunnerLeaseIdPathDigestSchema,
+  query: CommandJsonV1EmptyObjectDigestSchema,
+  body: objectProjection(CommandJsonV1RunnerAppendStartedBodyDigestSchema),
+});
+
+export const commandJsonV1RunnerCompleteDigest = digestProjection({
+  path: CommandJsonV1RunnerLeaseIdPathDigestSchema,
+  query: CommandJsonV1EmptyObjectDigestSchema,
+  body: objectProjection(CommandJsonV1RunnerCompleteBodyDigestSchema),
+});

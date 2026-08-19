@@ -628,6 +628,154 @@ export type ActionWarningAcknowledgmentRow =
   typeof actionWarningAcknowledgments.$inferSelect;
 export type ActionCoveredDestinationRow =
   typeof actionCoveredDestinations.$inferSelect;
+export const runnerIdentities = sqliteTable(
+  "runner_identities",
+  {
+    id: text("id").primaryKey(),
+    contractVersion: integer("contract_version").notNull(),
+    revision: integer("revision").notNull(),
+    name: text("name").notNull(),
+    installationFingerprint: text("installation_fingerprint").notNull(),
+    status: text("status", { enum: ["enabled", "revoked"] }).notNull(),
+    saltHex: text("salt_hex").notNull(),
+    verifierHex: text("verifier_hex").notNull(),
+    kdf: text("kdf").notNull(),
+    costN: integer("cost_n").notNull(),
+    blockSizeR: integer("block_size_r").notNull(),
+    parallelizationP: integer("parallelization_p").notNull(),
+    verifierBytes: integer("verifier_bytes").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    revokedAt: text("revoked_at"),
+  },
+  (table) => [
+    check("runner_identity_contract_version", sql`${table.contractVersion} = 1`),
+    check("runner_identity_revision_positive", sql`${table.revision} >= 1`),
+    check(
+      "runner_identity_id_length",
+      sql`length(${table.id}) between 1 and 255`,
+    ),
+    check(
+      "runner_identity_name_length",
+      sql`length(${table.name}) between 1 and 120 and ${table.name} = trim(${table.name})`,
+    ),
+    check(
+      "runner_identity_fingerprint",
+      sql`length(${table.installationFingerprint}) = 71 and ${table.installationFingerprint} glob 'sha256:[0-9a-f]*' and ${table.installationFingerprint} not glob 'sha256:*[^0-9a-f]*'`,
+    ),
+    check(
+      "runner_identity_status",
+      sql`${table.status} in ('enabled', 'revoked')`,
+    ),
+    check(
+      "runner_identity_salt_hex",
+      sql`length(${table.saltHex}) = 64 and ${table.saltHex} not glob '*[^0-9a-f]*'`,
+    ),
+    check(
+      "runner_identity_verifier_hex",
+      sql`length(${table.verifierHex}) = 64 and ${table.verifierHex} not glob '*[^0-9a-f]*'`,
+    ),
+    check("runner_identity_kdf", sql`${table.kdf} = 'scrypt'`),
+    check("runner_identity_cost_n", sql`${table.costN} = 16384`),
+    check("runner_identity_block_size_r", sql`${table.blockSizeR} = 8`),
+    check("runner_identity_parallelization_p", sql`${table.parallelizationP} = 1`),
+    check("runner_identity_verifier_bytes", sql`${table.verifierBytes} = 32`),
+    check(
+      "runner_identity_revoked_at",
+      sql`(${table.status} = 'enabled' and ${table.revokedAt} is null) or (${table.status} = 'revoked' and ${table.revokedAt} is not null)`,
+    ),
+    uniqueIndex("runner_identity_one_enabled")
+      .on(table.status)
+      .where(sql`${table.status} = 'enabled'`),
+    index("runner_identity_status_created_idx").on(table.status, table.createdAt),
+  ],
+);
+
+export const runnerEnrollmentChallenges = sqliteTable(
+  "runner_enrollment_challenges",
+  {
+    id: text("id").primaryKey(),
+    contractVersion: integer("contract_version").notNull(),
+    name: text("name").notNull(),
+    installationFingerprint: text("installation_fingerprint").notNull(),
+    createdAt: text("created_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at"),
+  },
+  (table) => [
+    check(
+      "runner_enrollment_challenge_contract_version",
+      sql`${table.contractVersion} = 1`,
+    ),
+    check(
+      "runner_enrollment_challenge_id_length",
+      sql`length(${table.id}) between 1 and 255`,
+    ),
+    check(
+      "runner_enrollment_challenge_name_length",
+      sql`length(${table.name}) between 1 and 120 and ${table.name} = trim(${table.name})`,
+    ),
+    check(
+      "runner_enrollment_challenge_fingerprint",
+      sql`length(${table.installationFingerprint}) = 71 and ${table.installationFingerprint} glob 'sha256:[0-9a-f]*' and ${table.installationFingerprint} not glob 'sha256:*[^0-9a-f]*'`,
+    ),
+    index("runner_enrollment_challenge_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export const runnerSessions = sqliteTable(
+  "runner_sessions",
+  {
+    sessionId: text("session_id").primaryKey(),
+    contractVersion: integer("contract_version").notNull(),
+    runnerId: text("runner_id")
+      .notNull()
+      .references(() => runnerIdentities.id, { onDelete: "restrict" }),
+    protocol: text("protocol").notNull(),
+    installationFingerprint: text("installation_fingerprint").notNull(),
+    registryDigest: text("registry_digest"),
+    eventSchemasJson: text("event_schemas_json").notNull(),
+    current: integer("current", { mode: "boolean" }).notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check("runner_session_contract_version", sql`${table.contractVersion} = 1`),
+    check(
+      "runner_session_id_length",
+      sql`length(${table.sessionId}) between 1 and 255`,
+    ),
+    check(
+      "runner_session_runner_id_length",
+      sql`length(${table.runnerId}) between 1 and 255`,
+    ),
+    check(
+      "runner_session_protocol",
+      sql`${table.protocol} = 'runner-control-v1'`,
+    ),
+    check(
+      "runner_session_fingerprint",
+      sql`length(${table.installationFingerprint}) = 71 and ${table.installationFingerprint} glob 'sha256:[0-9a-f]*' and ${table.installationFingerprint} not glob 'sha256:*[^0-9a-f]*'`,
+    ),
+    check(
+      "runner_session_registry_digest",
+      sql`${table.registryDigest} is null or (length(${table.registryDigest}) = 71 and ${table.registryDigest} glob 'sha256:[0-9a-f]*' and ${table.registryDigest} not glob 'sha256:*[^0-9a-f]*')`,
+    ),
+    check(
+      "runner_session_event_schemas_json",
+      sql`json_valid(${table.eventSchemasJson}) and length(cast(${table.eventSchemasJson} as blob)) <= 1048576`,
+    ),
+    check("runner_session_current_boolean", sql`${table.current} in (0, 1)`),
+    uniqueIndex("runner_session_current_runner_unique")
+      .on(table.runnerId)
+      .where(sql`${table.current} = 1`),
+    index("runner_session_runner_created_idx").on(table.runnerId, table.createdAt),
+  ],
+);
+
 export type RunRow = typeof runs.$inferSelect;
 export type RunLeaseRow = typeof runLeases.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;
+export type RunnerIdentityRow = typeof runnerIdentities.$inferSelect;
+export type RunnerEnrollmentChallengeRow =
+  typeof runnerEnrollmentChallenges.$inferSelect;
+export type RunnerSessionRow = typeof runnerSessions.$inferSelect;

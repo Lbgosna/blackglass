@@ -5,13 +5,24 @@ import {
   SystemStatusResponseSchema,
   type Readiness,
 } from "@blackglass/contracts";
-import Fastify, { type FastifyInstance } from "fastify";
-import type { EngagementRepository, OperatorCommandRepository } from "@blackglass/db";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from "fastify";
+import type {
+  EngagementRepository,
+  OperatorCommandRepository,
+  RunRepository,
+  RunnerRepository,
+} from "@blackglass/db";
 
 import { registerActionMutationRoutes } from "./action-mutation-routes.js";
 import { registerActionRoutes } from "./action-routes.js";
 import { registerEngagementMutationRoutes } from "./engagement-mutation-routes.js";
 import { registerEngagementRoutes } from "./engagement-routes.js";
+import { registerRunnerAuthHook, stripAuthorizationHeader } from "./runner-http.js";
+import { registerRunnerEnrollmentRoutes } from "./runner-enrollment-routes.js";
+import { registerRunnerControlRoutes } from "./runner-routes.js";
 
 interface BuildAppOptions {
   getDevelopmentStorageReadiness: () => Readiness | Promise<Readiness>;
@@ -22,19 +33,58 @@ interface BuildAppOptions {
     | "listScopeRevisions"
     | "getAction"
     | "retryActionContext"
-  >;
+  > &
+    Partial<Pick<EngagementRepository, "withWriteTx">>;
   operatorCommandRepository?: Pick<
     OperatorCommandRepository,
     "executeOperatorCommand"
   >;
+  runRepository?: Pick<
+    RunRepository,
+    "acquireLease" | "heartbeat" | "appendEvent" | "completeRun"
+  >;
+  runnerRepository?: Pick<
+    RunnerRepository,
+    | "authenticate"
+    | "startEnrollmentChallenge"
+    | "confirmEnrollment"
+    | "revoke"
+    | "acceptHandshake"
+    | "requireAcceptedSession"
+  >;
+  logger?: FastifyServerOptions["logger"];
+  now?: () => Date;
 }
 
 export function buildApp({
   engagementRepository,
   getDevelopmentStorageReadiness,
   operatorCommandRepository,
+  runRepository,
+  runnerRepository,
+  logger = false,
+  now,
 }: BuildAppOptions): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger:
+      logger === false || logger === undefined
+        ? false
+        : {
+            ...(typeof logger === "object" ? logger : {}),
+            serializers: {
+              ...(typeof logger === "object" ? logger.serializers : undefined),
+              req(request) {
+                return {
+                  method: request.method,
+                  url: request.url,
+                  headers: stripAuthorizationHeader(
+                    (request.headers ?? {}) as Record<string, unknown>,
+                  ),
+                };
+              },
+            },
+          },
+  });
 
   app.setErrorHandler((error, _request, reply) => {
     const clientError =
@@ -53,11 +103,36 @@ export function buildApp({
       );
   });
 
+  registerRunnerAuthHook(app, runnerRepository);
   registerEngagementRoutes(app, engagementRepository);
   registerActionRoutes(app, engagementRepository);
   if (operatorCommandRepository !== undefined) {
     registerEngagementMutationRoutes(app, operatorCommandRepository);
     registerActionMutationRoutes(app, operatorCommandRepository);
+    if (runnerRepository !== undefined) {
+      registerRunnerEnrollmentRoutes(
+        app,
+        operatorCommandRepository,
+        runnerRepository,
+      );
+    }
+  }
+  const withWriteTx = engagementRepository.withWriteTx;
+  if (
+    operatorCommandRepository !== undefined &&
+    runRepository !== undefined &&
+    runnerRepository !== undefined &&
+    withWriteTx !== undefined
+  ) {
+    registerRunnerControlRoutes(app, {
+      commandRepository: operatorCommandRepository,
+      engagementRepository: {
+        withWriteTx: withWriteTx.bind(engagementRepository),
+      },
+      runRepository,
+      runnerRepository,
+      ...(now === undefined ? {} : { now }),
+    });
   }
 
   app.get("/health", async (_request, reply) => {
