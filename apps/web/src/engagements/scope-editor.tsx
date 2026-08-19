@@ -29,11 +29,9 @@ const emptyDraft: DraftScopeRuleInput = {
 export function SavedScopeEditor({
   archived,
   engagementId,
-  expectedRevision,
 }: {
   archived: boolean;
   engagementId: string;
-  expectedRevision: number;
 }) {
   const detail = useEngagementDetailQuery(engagementId);
   const retry = () => void detail.refetch();
@@ -65,7 +63,7 @@ export function SavedScopeEditor({
           <ScopeEditorBody
             archived={archived}
             engagementId={engagementId}
-            expectedRevision={expectedRevision}
+            expectedRevision={detail.data.engagement.revision}
             revision={detail.data.activeScopeRevision}
           />
         </StaleDataState>
@@ -74,7 +72,7 @@ export function SavedScopeEditor({
         <ScopeEditorBody
           archived={archived}
           engagementId={engagementId}
-          expectedRevision={expectedRevision}
+          expectedRevision={detail.data.engagement.revision}
           revision={detail.data.activeScopeRevision}
         />
       ) : null}
@@ -215,6 +213,7 @@ function ScopeEditorBody({
               autoComplete="off"
               spellCheck={false}
               disabled={archived}
+              aria-invalid={fieldErrors.rawTarget !== undefined}
               className={cn(fieldClassName(fieldErrors.rawTarget !== undefined), "font-mono")}
               onChange={(event) =>
                 setFields((current) => ({ ...current, rawTarget: event.target.value }))
@@ -234,6 +233,7 @@ function ScopeEditorBody({
               autoComplete="off"
               spellCheck={false}
               disabled={archived}
+              aria-invalid={fieldErrors.portRanges !== undefined}
               className={cn(fieldClassName(fieldErrors.portRanges !== undefined), "font-mono")}
               onChange={(event) =>
                 setFields((current) => ({ ...current, portRanges: event.target.value }))

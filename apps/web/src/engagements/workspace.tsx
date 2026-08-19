@@ -240,7 +240,6 @@ function EngagementDetail({ engagement }: { engagement: Engagement }) {
       <SavedScopeEditor
         archived={displayed.status === "archived"}
         engagementId={displayed.id}
-        expectedRevision={displayed.revision}
       />
       <div className="mt-5 grid gap-4 border-t border-border pt-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
         <dl className="grid gap-3 text-[13px]">
