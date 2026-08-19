@@ -12,9 +12,11 @@ import {
 } from "./errors.js";
 import { createIdempotencyKey, createIntentKeyHolder, requestFingerprint } from "./idempotency.js";
 import {
+  appendScopeRevisionRequest,
   archiveEngagementRequest,
   createEngagementRequest,
   reopenEngagementRequest,
+  sendEngagementMutation,
   upsertEngagementInCache,
   useCreateEngagementMutation,
 } from "./mutations.js";
@@ -252,5 +254,68 @@ describe("engagement mutations", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     client.clear();
+  });
+});
+
+describe("scope revision mutations", () => {
+  const scopeRevision = {
+    contractVersion: 1 as const,
+    id: "20000000-0000-4000-8000-000000000010",
+    engagementId: engagement.id,
+    version: 1,
+    rules: [
+      {
+        id: "30000000-0000-4000-8000-000000000001",
+        kind: "ip" as const,
+        target: {
+          kind: "ip" as const,
+          normalizationProfile: "d1-v1" as const,
+          family: 4 as const,
+          address: "198.51.100.10",
+          zone: null,
+        },
+      },
+    ],
+    createdAt: "2026-08-12T12:07:00.000Z",
+  };
+
+  it("posts canonical rules and does not parse the response as an engagement", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(response(scopeRevision, 201)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      appendScopeRevisionRequest(
+        engagement.id,
+        { expectedRevision: 1, rules: scopeRevision.rules },
+        "scope-key-0000000000001",
+      ),
+    ).resolves.toEqual(scopeRevision);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/engagements/${engagement.id}/scope-revisions`,
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "Idempotency-Key": "scope-key-0000000000001",
+        },
+        body: JSON.stringify({
+          expectedRevision: 1,
+          rules: scopeRevision.rules,
+        }),
+      }),
+    );
+
+    await expect(
+      sendEngagementMutation(
+        `/api/v1/engagements/${engagement.id}/scope-revisions`,
+        {
+          body: { expectedRevision: 1, rules: scopeRevision.rules },
+          idempotencyKey: "wrong-parser-0000000002",
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "invalid_persisted_data",
+    });
   });
 });

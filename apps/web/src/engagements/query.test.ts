@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAppQueryClient } from "../query-client.js";
-import { ENGAGEMENTS_QUERY_ERROR_MESSAGE, EngagementsQueryError } from "./errors.js";
+import {
+  ENGAGEMENT_DETAIL_QUERY_ERROR_MESSAGE,
+  ENGAGEMENTS_QUERY_ERROR_MESSAGE,
+  EngagementDetailQueryError,
+  EngagementsQueryError,
+} from "./errors.js";
 import {
   ENGAGEMENTS_QUERY_KEY,
+  engagementDetailQueryKey,
+  engagementDetailQueryOptions,
   engagementsQueryOptions,
   partitionEngagements,
 } from "./query.js";
@@ -106,6 +113,67 @@ describe("engagementsQueryOptions", () => {
     expect(error.message).toBe(ENGAGEMENTS_QUERY_ERROR_MESSAGE);
     expect(error.message).not.toContain("secret");
     expect(error.cause).toBeUndefined();
+  });
+});
+
+describe("engagementDetailQueryOptions", () => {
+  it("fetches and validates the detail contract with the active scope", async () => {
+    const detail = { engagement, activeScopeRevision: null };
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return Promise.resolve(response(detail));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createAppQueryClient();
+
+    await expect(client.fetchQuery(engagementDetailQueryOptions(engagement.id))).resolves.toEqual(
+      detail,
+    );
+    expect(engagementDetailQueryOptions(engagement.id).queryKey).toEqual(
+      engagementDetailQueryKey(engagement.id),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/engagements/${engagement.id}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    client.clear();
+  });
+
+  it("rejects extra fields and hides network details", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          response({
+            engagement: { ...engagement, secret: "/private/path" },
+            activeScopeRevision: null,
+          }),
+        ),
+      ),
+    );
+    const client = createAppQueryClient();
+    await expect(client.fetchQuery(engagementDetailQueryOptions(engagement.id))).rejects.toMatchObject({
+      name: "EngagementDetailQueryError",
+      message: ENGAGEMENT_DETAIL_QUERY_ERROR_MESSAGE,
+    });
+    expect(ENGAGEMENT_DETAIL_QUERY_ERROR_MESSAGE).not.toContain("secret");
+    client.clear();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new Error("GET /api?token=secret failed at /private/path"))),
+    );
+    const retryClient = createAppQueryClient();
+    try {
+      await retryClient.fetchQuery(engagementDetailQueryOptions(engagement.id));
+      throw new Error("Expected the engagement detail query to fail.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EngagementDetailQueryError);
+      expect((error as Error).message).toBe(ENGAGEMENT_DETAIL_QUERY_ERROR_MESSAGE);
+      expect((error as Error).message).not.toContain("secret");
+    } finally {
+      retryClient.clear();
+    }
   });
 });
 
