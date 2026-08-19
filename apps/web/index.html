@@ -6,9 +6,13 @@
     <script>
       (() => {
         let preference = "system";
+        let family = "smoked";
+        const families = ["smoked", "void", "instrument", "grove", "ember", "iris"];
         try {
           const stored = localStorage.getItem("blackglass.theme");
           if (stored === "light" || stored === "dark" || stored === "system") preference = stored;
+          const storedFamily = localStorage.getItem("blackglass.themeFamily");
+          if (storedFamily && families.includes(storedFamily)) family = storedFamily;
         } catch {}
         const resolved =
           preference === "system"
@@ -18,6 +22,7 @@
             : preference;
         document.documentElement.dataset.theme = resolved;
         document.documentElement.dataset.themePreference = preference;
+        document.documentElement.dataset.themeFamily = family;
         document.documentElement.style.colorScheme = resolved;
 
         const number = (key, fallback) => {

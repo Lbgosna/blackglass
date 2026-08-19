@@ -36,20 +36,28 @@ export {
   type SidebarShelfProps,
 } from "./sidebar-work-list.js";
 export {
+  DEFAULT_THEME_FAMILY,
+  THEME_FAMILIES,
+  THEME_FAMILY_STORAGE_KEY,
   THEME_MEDIA_QUERY,
   THEME_STORAGE_KEY,
   ThemeProvider,
   applyTheme,
   initializeTheme,
   listenForSystemTheme,
+  listenForThemeFamilyStorage,
   listenForThemeStorage,
+  parseThemeFamily,
   parseThemePreference,
+  readThemeFamily,
   readThemePreference,
   resolveTheme,
+  storeThemeFamily,
   storeThemePreference,
   suppressThemeTransitions,
   useTheme,
   type ResolvedTheme,
+  type ThemeFamily,
   type ThemePreference,
 } from "./theme.js";
 export { usePointerResize, type PointerResizeOptions } from "./use-pointer-resize.js";

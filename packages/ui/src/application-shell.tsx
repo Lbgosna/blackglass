@@ -340,7 +340,7 @@ export function ApplicationShell({
             aria-keyshortcuts="Control+B Meta+B"
             aria-label={desktopSidebarOpen ? "Hide sidebar" : "Show sidebar"}
             aria-pressed={desktopSidebarOpen}
-            className="shell-sidebar-toggle hidden size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
+            className="shell-sidebar-toggle hidden size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:inline-flex md:size-8"
             onClick={() => setDesktopSidebarOpen((current) => !current)}
             title={`${desktopSidebarOpen ? "Hide" : "Show"} sidebar (Mod+B)`}
           >
@@ -350,7 +350,7 @@ export function ApplicationShell({
               <PanelLeftOpen className="size-4" aria-hidden="true" />
             )}
           </button>
-          <div className="flex min-h-11 min-w-0 flex-1 items-center">{stageHeader}</div>
+          <div className="flex min-h-11 min-w-0 flex-1 items-center md:min-h-8">{stageHeader}</div>
         </header>
 
         <div className="min-h-0 flex-1 overflow-auto" data-testid="workspace-scroll-region">
@@ -387,7 +387,7 @@ export function ApplicationShell({
               <button
                 type="button"
                 aria-label="Expand console"
-                className="inline-flex size-11 items-center justify-center rounded-md outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="inline-flex size-11 items-center justify-center rounded-md outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:size-8"
                 onClick={() => setDesktopConsoleCollapsed(false)}
               >
                 <ChevronUp className="size-5" aria-hidden="true" />
@@ -398,7 +398,7 @@ export function ApplicationShell({
               <button
                 type="button"
                 aria-label="Collapse console"
-                className="absolute top-0 right-2 z-20 inline-flex size-11 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="absolute top-0 right-2 z-20 inline-flex size-11 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:size-8"
                 onClick={() => setDesktopConsoleCollapsed(true)}
               >
                 <ChevronDown className="size-5" aria-hidden="true" />

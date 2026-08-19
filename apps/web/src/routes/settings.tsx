@@ -5,6 +5,7 @@ import {
   resolveTheme,
   useTheme,
   type ResolvedTheme,
+  type ThemeFamily,
   type ThemePreference,
 } from "@blackglass/ui";
 import { createFileRoute } from "@tanstack/react-router";
@@ -20,41 +21,27 @@ interface ThemeOption {
   value: ThemePreference;
 }
 
+interface ThemeFamilyOption {
+  darkLabel: string;
+  label: string;
+  lightLabel: string;
+  value: ThemeFamily;
+}
+
 const themeOptions: ReadonlyArray<ThemeOption> = [
   { label: "System", description: "Follow this device's appearance.", value: "system" },
   { label: "Light", description: "Keep the workspace light.", value: "light" },
   { label: "Dark", description: "Keep the workspace dark.", value: "dark" },
 ];
 
-function ThemeMiniature({ theme }: { theme: ThemePreference }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="appearance-preview relative block h-28 overflow-hidden rounded-lg border"
-      data-preview-theme={theme}
-    >
-      <span className="appearance-preview-sidebar absolute inset-y-0 left-0 w-[29%] border-r p-2">
-        <span className="appearance-preview-brand mb-3 block h-1.5 w-8 rounded-full" />
-        <span className="appearance-preview-sidebar-line mb-1.5 block h-1.5 w-full rounded-full" />
-        <span className="appearance-preview-sidebar-line block h-1.5 w-4/5 rounded-full" />
-      </span>
-      <span className="appearance-preview-workspace absolute inset-y-0 right-0 w-[71%] p-2.5">
-        <span className="appearance-preview-heading mb-2 block h-2 w-1/2 rounded-full" />
-        <span className="appearance-preview-surface block rounded-md border p-2">
-          <span className="appearance-preview-copy mb-1.5 block h-1.5 w-4/5 rounded-full" />
-          <span className="appearance-preview-copy block h-1.5 w-3/5 rounded-full" />
-          <span className="mt-3 flex items-center justify-between gap-2">
-            <span className="appearance-preview-status flex items-center gap-1">
-              <span className="block size-1.5 rounded-full" />
-              <span className="block h-1.5 w-5 rounded-full" />
-            </span>
-            <span className="appearance-preview-action block h-4 w-9 rounded-sm" />
-          </span>
-        </span>
-      </span>
-    </span>
-  );
-}
+const themeFamilies: ReadonlyArray<ThemeFamilyOption> = [
+  { value: "smoked", label: "Smoked lime", darkLabel: "Smoked lime dark", lightLabel: "Smoked lime light" },
+  { value: "void", label: "Void", darkLabel: "Void dark", lightLabel: "Void light" },
+  { value: "instrument", label: "Instrument", darkLabel: "Instrument dark", lightLabel: "Instrument light" },
+  { value: "grove", label: "Grove", darkLabel: "Grove dark", lightLabel: "Grove light" },
+  { value: "ember", label: "Ember", darkLabel: "Ember dark", lightLabel: "Ember light" },
+  { value: "iris", label: "Iris", darkLabel: "Iris dark", lightLabel: "Iris light" },
+];
 
 function useSystemResolvedTheme(): ResolvedTheme {
   const [resolved, setResolved] = useState<ResolvedTheme>(() =>
@@ -72,16 +59,14 @@ function useSystemResolvedTheme(): ResolvedTheme {
   return resolved;
 }
 
-function ThemeControl() {
+function SchemeControl() {
   const { preference, setPreference } = useTheme();
   const systemResolved = useSystemResolvedTheme();
 
   return (
     <fieldset className="m-0 border-0 p-0">
-      <legend className="mb-3 text-xs font-bold tracking-widest text-muted-foreground uppercase">
-        Theme
-      </legend>
-      <div className="appearance-theme-options grid gap-3">
+      <legend className="mb-2 text-[13px] font-semibold text-foreground">Scheme</legend>
+      <div className="appearance-scheme-options">
         {themeOptions.map((option) => {
           const selected = preference === option.value;
           const descriptionId = `theme-${option.value}-description`;
@@ -100,41 +85,20 @@ function ThemeControl() {
               />
               <span
                 className={cn(
-                  "block h-full rounded-xl border border-border bg-background p-2.5 text-foreground outline-none transition-[border-color,box-shadow,background-color] duration-150 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-card motion-reduce:transition-none",
-                  selected && "border-primary bg-accent/40 shadow-sm ring-1 ring-primary",
+                  "flex h-full min-h-11 items-center rounded-[10px] border border-transparent bg-accent px-3 py-2 text-foreground outline-none transition-[border-color,box-shadow,background-color] duration-150 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background motion-reduce:transition-none md:min-h-8",
+                  selected && "border-primary",
                 )}
                 data-selected={selected ? "true" : "false"}
               >
-                <ThemeMiniature theme={option.value} />
-                <span className="flex min-h-11 items-center gap-2 px-1 pt-2.5">
+                <span className="min-w-0 flex-1">
+                  <span className="text-[13px] font-semibold">{option.label}</span>
                   <span
-                    aria-hidden="true"
-                    className={cn(
-                      "flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-black",
-                      selected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-input bg-card",
-                    )}
+                    id={descriptionId}
+                    className="mt-0.5 block text-xs leading-4 text-muted-foreground"
                   >
-                    {selected ? "✓" : null}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-                      <span className="text-sm font-bold">{option.label}</span>
-                      {selected ? (
-                        <span className="text-[10px] font-extrabold tracking-wider text-foreground uppercase">
-                          Selected
-                        </span>
-                      ) : null}
-                    </span>
-                    <span
-                      id={descriptionId}
-                      className="mt-0.5 block text-xs leading-4 text-muted-foreground"
-                    >
-                      {option.value === "system"
-                        ? `Currently ${systemResolved}`
-                        : option.description}
-                    </span>
+                    {option.value === "system"
+                      ? `Currently ${systemResolved}`
+                      : option.description}
                   </span>
                 </span>
               </span>
@@ -146,11 +110,64 @@ function ThemeControl() {
   );
 }
 
+function ThemeFamilyGrid() {
+  const { family, preference, setAppearance } = useTheme();
+  const systemResolved = useSystemResolvedTheme();
+  const resolvedScheme = preference === "system" ? systemResolved : preference;
+
+  return (
+    <div>
+      <h3 className="m-0 text-[13px] font-semibold text-foreground">Themes</h3>
+      <p className="mt-1 mb-3 text-[12px] leading-5 text-muted-foreground">
+        Left bubble is dark. Right bubble is light.
+      </p>
+      <div className="appearance-theme-grid">
+        {themeFamilies.map((option) => {
+          const selected = family === option.value;
+          return (
+            <div
+              key={option.value}
+              className={cn(
+                "rounded-xl bg-accent px-3.5 pt-4 pb-3 text-left text-accent-foreground",
+                selected && "shadow-[inset_0_0_0_1px_var(--primary)]",
+              )}
+              data-selected={selected ? "true" : "false"}
+              data-theme-family={option.value}
+            >
+              <div className="mb-4 flex gap-3.5">
+                <button
+                  type="button"
+                  aria-label={option.darkLabel}
+                  aria-pressed={selected && resolvedScheme === "dark"}
+                  className="theme-orb shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  data-orb={`${option.value}-dark`}
+                  data-on={selected && resolvedScheme === "dark" ? "true" : "false"}
+                  onClick={() => setAppearance({ family: option.value, preference: "dark" })}
+                />
+                <button
+                  type="button"
+                  aria-label={option.lightLabel}
+                  aria-pressed={selected && resolvedScheme === "light"}
+                  className="theme-orb shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  data-orb={`${option.value}-light`}
+                  data-on={selected && resolvedScheme === "light" ? "true" : "false"}
+                  onClick={() => setAppearance({ family: option.value, preference: "light" })}
+                />
+              </div>
+              <span className="text-[13px]">{option.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage() {
   return (
     <main className="min-h-full bg-background px-4 py-5 sm:px-6">
       <div className="mx-auto w-full max-w-4xl">
-        <header className="mb-5">
+        <header className="mb-4">
           <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-primary uppercase">
             Blackglass
           </p>
@@ -164,15 +181,18 @@ function SettingsPage() {
 
         <section
           aria-labelledby="appearance-heading"
-          className="appearance-settings rounded-[10px] border border-border bg-background p-4 text-foreground"
+          className="appearance-settings text-foreground"
         >
-          <h2 id="appearance-heading" className="m-0 text-lg font-bold">
+          <h2 id="appearance-heading" className="m-0 text-[13px] font-semibold">
             Appearance
           </h2>
-          <p className="mt-2 mb-5 max-w-xl text-sm leading-6 text-muted-foreground">
-            Choose a light or dark theme, or follow your system setting.
+          <p className="mt-1 mb-4 max-w-xl text-[13px] leading-5 text-muted-foreground">
+            Choose a theme family, then lock light or dark, or follow your system setting.
           </p>
-          <ThemeControl />
+          <div className="grid gap-5">
+            <SchemeControl />
+            <ThemeFamilyGrid />
+          </div>
         </section>
       </div>
     </main>

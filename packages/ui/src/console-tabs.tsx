@@ -16,13 +16,13 @@ export function ConsoleTabs({ panels }: { panels: readonly ConsolePanel[] }) {
       <Tabs.List
         activateOnFocus
         aria-label="Console views"
-        className="flex min-h-11 shrink-0 items-end gap-0.5 px-2"
+        className="flex min-h-11 shrink-0 items-end gap-0.5 px-2 md:min-h-8"
       >
         {panels.map((panel) => (
           <Tabs.Tab
             key={panel.value}
             value={panel.value}
-            className="relative inline-flex min-h-11 items-center px-3 text-[13px] font-semibold text-muted-foreground outline-none after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-primary after:opacity-0 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[active]:text-foreground data-[active]:after:opacity-100"
+            className="relative inline-flex min-h-11 items-center px-3 text-[13px] font-semibold text-muted-foreground outline-none after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-primary after:opacity-0 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[active]:text-foreground data-[active]:after:opacity-100 md:min-h-8"
           >
             {panel.label}
           </Tabs.Tab>

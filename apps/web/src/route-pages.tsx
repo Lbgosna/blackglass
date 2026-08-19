@@ -41,7 +41,7 @@ export function UnknownRoutePage() {
         </p>
         <Link
           to="/"
-          className="mt-6 inline-flex min-h-11 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-6 inline-flex min-h-11 items-center rounded-md bg-primary px-4 text-[13px] font-semibold text-primary-foreground outline-none hover:brightness-[1.06] focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
         >
           Return to Dashboard
         </Link>

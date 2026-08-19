@@ -181,7 +181,7 @@ export function CreateEngagementDialog({ onOpenChange, open }: CreateEngagementD
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="relative w-full max-w-[520px] rounded-[10px] border border-border bg-popover/92 p-5 text-popover-foreground shadow-lg backdrop-blur-glass"
+        className="relative w-full max-w-[520px] rounded-[10px] border border-border bg-popover p-5 text-popover-foreground shadow-[0_24px_64px_rgba(0,0,0,0.6)] backdrop-blur-glass"
         data-keybinding-capture=""
         onKeyDown={onDialogKeyDown}
       >
@@ -341,7 +341,7 @@ function Field({
 
 function fieldClassName(invalid: boolean) {
   return cn(
-    "min-h-11 w-full rounded-md border bg-transparent px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "min-h-11 w-full rounded-md border bg-transparent px-2.5 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8",
     invalid ? "border-destructive" : "border-input",
   );
 }

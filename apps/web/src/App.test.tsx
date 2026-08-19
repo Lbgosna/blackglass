@@ -4,6 +4,7 @@ import {
   CONSOLE_HEIGHT_STORAGE_KEY,
   SIDEBAR_OPEN_STORAGE_KEY,
   SIDEBAR_WIDTH_STORAGE_KEY,
+  THEME_FAMILY_STORAGE_KEY,
   THEME_STORAGE_KEY,
   ThemeProvider,
 } from "@blackglass/ui";
@@ -147,6 +148,7 @@ beforeEach(() => {
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 900, writable: true });
   document.documentElement.className = "";
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.themeFamily;
   delete document.documentElement.dataset.themePreference;
   media = createMediaHarness();
   Object.defineProperty(window, "matchMedia", {
@@ -811,7 +813,7 @@ describe("App theme preference", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("shows a text, icon, border, and native checked state for every selection", async () => {
+  it("shows native checked state for every scheme selection", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
     await renderApp("/settings");
 
@@ -821,8 +823,6 @@ describe("App theme preference", () => {
       expect(radio.checked).toBe(true);
       const selectedCard = radio.closest("label")?.querySelector("[data-selected]");
       expect(selectedCard?.getAttribute("data-selected")).toBe("true");
-      expect(selectedCard?.textContent).toContain("Selected");
-      expect(selectedCard?.textContent).toContain("✓");
       for (const other of ["Light", "Dark", "System"].filter(
         (candidate) => candidate !== preference,
       )) {
@@ -831,9 +831,88 @@ describe("App theme preference", () => {
           .closest("label")
           ?.querySelector("[data-selected]");
         expect(otherCard?.getAttribute("data-selected")).toBe("false");
-        expect(otherCard?.textContent).not.toContain("✓");
       }
     }
+  });
+
+  it("persists theme family separately from scheme and applies both to the document", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    await renderApp("/settings");
+
+    expect(document.documentElement.dataset.themeFamily).toBe("smoked");
+    fireEvent.click(screen.getByRole("button", { name: "Void dark" }));
+    expect(document.documentElement.dataset.themeFamily).toBe("void");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.dataset.themePreference).toBe("dark");
+    expect(window.localStorage.getItem(THEME_FAMILY_STORAGE_KEY)).toBe("void");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(screen.getByRole("button", { name: "Void dark" }).getAttribute("data-on")).toBe("true");
+    expect(screen.getByRole("button", { name: "Smoked lime dark" }).getAttribute("data-on")).toBe(
+      "false",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ember light" }));
+    expect(document.documentElement.dataset.themeFamily).toBe("ember");
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(window.localStorage.getItem(THEME_FAMILY_STORAGE_KEY)).toBe("ember");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect((screen.getByRole("radio", { name: "Light" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("keeps family when the scheme radios change", async () => {
+    window.localStorage.setItem(THEME_FAMILY_STORAGE_KEY, "iris");
+    window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    await renderApp("/settings");
+
+    expect(document.documentElement.dataset.themeFamily).toBe("iris");
+    fireEvent.click(screen.getByRole("radio", { name: "Light" }));
+    expect(document.documentElement.dataset.themeFamily).toBe("iris");
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(window.localStorage.getItem(THEME_FAMILY_STORAGE_KEY)).toBe("iris");
+
+    fireEvent.click(screen.getByRole("radio", { name: "System" }));
+    expect(document.documentElement.dataset.themeFamily).toBe("iris");
+    expect(document.documentElement.dataset.themePreference).toBe("system");
+  });
+
+  it("falls back to smoked for invalid or unreadable family storage", async () => {
+    window.localStorage.setItem(THEME_FAMILY_STORAGE_KEY, "mint");
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    const first = await renderApp("/settings");
+    expect(document.documentElement.dataset.themeFamily).toBe("smoked");
+    first.unmount();
+
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    await renderApp("/settings");
+    expect(document.documentElement.dataset.themeFamily).toBe("smoked");
+  });
+
+  it("synchronizes valid family storage events and ignores malformed values", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    await renderApp("/settings");
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: THEME_FAMILY_STORAGE_KEY, newValue: "grove" }),
+      );
+    });
+    expect(document.documentElement.dataset.themeFamily).toBe("grove");
+    expect(
+      screen.getByRole("button", { name: "Grove light" }).closest("[data-theme-family]")?.getAttribute(
+        "data-selected",
+      ),
+    ).toBe("true");
+    expect(screen.getByRole("button", { name: "Grove light" }).getAttribute("data-on")).toBe("true");
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: THEME_FAMILY_STORAGE_KEY, newValue: "mint" }),
+      );
+    });
+    expect(document.documentElement.dataset.themeFamily).toBe("grove");
   });
 
   it("leaves radio arrow navigation and Tab exit to native browser behavior", async () => {
@@ -984,11 +1063,11 @@ describe("Application routes", () => {
     ).toBe("page");
   });
 
-  it("renders one Appearance card and one native theme control set on direct Settings entry", async () => {
+  it("renders one Appearance section, scheme radios, and the theme orb grid on direct Settings entry", async () => {
     await renderApp("/settings");
 
     expect(screen.getAllByRole("region", { name: "Appearance" })).toHaveLength(1);
-    expect(screen.getAllByRole("group", { name: "Theme" })).toHaveLength(1);
+    expect(screen.getAllByRole("group", { name: "Scheme" })).toHaveLength(1);
     const radios = screen.getAllByRole("radio") as HTMLInputElement[];
     expect(radios).toHaveLength(3);
     for (const label of ["Light", "Dark", "System"]) {
@@ -999,7 +1078,14 @@ describe("Application routes", () => {
       radio.focus();
       expect(document.activeElement).toBe(radio);
     }
-    expect(screen.getByText("Choose a light or dark theme, or follow your system setting.")).toBeTruthy();
+    expect(
+      screen.getByText("Choose a theme family, then lock light or dark, or follow your system setting."),
+    ).toBeTruthy();
+    expect(screen.getByText("Left bubble is dark. Right bubble is light.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Smoked lime dark" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Iris light" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create theme" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Import theme" })).toBeNull();
   });
 
   it("does not render theme controls or an action spacer in desktop or mobile navigation", async () => {

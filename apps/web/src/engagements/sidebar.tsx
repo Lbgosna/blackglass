@@ -46,7 +46,7 @@ export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }
         <p className="m-0 text-xs text-sidebar-muted-foreground">Engagements could not be loaded.</p>
         <button
           type="button"
-          className="mt-2 inline-flex min-h-11 items-center text-xs font-bold text-sidebar-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold text-sidebar-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
           onClick={() => void engagements.refetch()}
         >
           Retry
@@ -75,7 +75,7 @@ export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }
         </p>
         <button
           type="button"
-          className="mt-2 inline-flex min-h-11 items-center text-xs font-bold text-sidebar-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold text-sidebar-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
           onClick={openCreate}
         >
           New engagement
@@ -91,7 +91,7 @@ export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }
           Showing the last successful engagement list.
           <button
             type="button"
-            className="ml-2 min-h-11 font-bold underline outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="ml-2 min-h-11 font-semibold underline outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
             onClick={() => void engagements.refetch()}
           >
             Refresh
@@ -111,7 +111,7 @@ export function EngagementSidebarList({ onNavigate }: { onNavigate: () => void }
             </p>
             <button
               type="button"
-              className="mt-2 inline-flex min-h-11 items-center text-xs font-bold text-sidebar-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold text-sidebar-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
               onClick={openCreate}
             >
               New engagement
