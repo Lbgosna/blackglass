@@ -22,6 +22,13 @@
       "when": 1786558393349,
       "tag": "0002_action_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787123974309,
+      "tag": "0003_run_persistence",
+      "breakpoints": true
     }
   ]
 }
