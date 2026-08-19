@@ -1,8 +1,13 @@
 import {
+  AppendScopeRevisionRequestSchema,
   CreateEngagementRequestSchema,
   EngagementMutationResponseSchema,
+  ScopeRevisionMutationResponseSchema,
   type CreateEngagementInput,
   type Engagement,
+  type EngagementWithActiveScope,
+  type SavedScopeRule,
+  type ScopeRevision,
 } from "@blackglass/contracts";
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
@@ -13,12 +18,16 @@ import {
   parseEngagementMutationError,
 } from "./errors.js";
 import { createIdempotencyKey, createIntentKeyHolder, requestFingerprint } from "./idempotency.js";
-import { ENGAGEMENTS_QUERY_KEY } from "./query.js";
+import { ENGAGEMENTS_QUERY_KEY, engagementDetailQueryKey } from "./query.js";
 
 const SUCCESS_STATUSES = new Set([200, 201]);
 const ERROR_STATUSES = new Set([400, 404, 409, 500, 503]);
 
-export async function sendEngagementMutation(
+interface MutationSuccessSchema<T> {
+  safeParse(value: unknown): { success: true; data: T } | { success: false };
+}
+
+async function sendOperatorMutation<T>(
   url: string,
   init: {
     body: unknown;
@@ -26,7 +35,8 @@ export async function sendEngagementMutation(
     method?: "POST" | "PATCH";
     signal?: AbortSignal;
   },
-): Promise<Engagement> {
+  successSchema: MutationSuccessSchema<T>,
+): Promise<T> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -54,12 +64,36 @@ export async function sendEngagementMutation(
   }
 
   if (SUCCESS_STATUSES.has(response.status)) {
-    const parsed = EngagementMutationResponseSchema.safeParse(payload);
+    const parsed = successSchema.safeParse(payload);
     if (!parsed.success) throw new EngagementMutationClientError("invalid_persisted_data");
     return parsed.data;
   }
 
   throw parseEngagementMutationError(payload);
+}
+
+export async function sendEngagementMutation(
+  url: string,
+  init: {
+    body: unknown;
+    idempotencyKey: string;
+    method?: "POST" | "PATCH";
+    signal?: AbortSignal;
+  },
+): Promise<Engagement> {
+  return sendOperatorMutation(url, init, EngagementMutationResponseSchema);
+}
+
+export async function sendScopeRevisionMutation(
+  url: string,
+  init: {
+    body: unknown;
+    idempotencyKey: string;
+    method?: "POST" | "PATCH";
+    signal?: AbortSignal;
+  },
+): Promise<ScopeRevision> {
+  return sendOperatorMutation(url, init, ScopeRevisionMutationResponseSchema);
 }
 
 export async function createEngagementRequest(
@@ -101,6 +135,20 @@ export async function reopenEngagementRequest(
   });
 }
 
+export async function appendScopeRevisionRequest(
+  engagementId: string,
+  input: { expectedRevision: number; rules: readonly SavedScopeRule[] },
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<ScopeRevision> {
+  const body = AppendScopeRevisionRequestSchema.parse(input);
+  return sendScopeRevisionMutation(`/api/v1/engagements/${engagementId}/scope-revisions`, {
+    body,
+    idempotencyKey,
+    ...(signal ? { signal } : {}),
+  });
+}
+
 export function upsertEngagementInCache(queryClient: QueryClient, engagement: Engagement) {
   queryClient.setQueryData<Engagement[]>(ENGAGEMENTS_QUERY_KEY, (current) => {
     if (current === undefined) return [engagement];
@@ -114,6 +162,40 @@ export function upsertEngagementInCache(queryClient: QueryClient, engagement: En
     const next = current.slice();
     next[index] = engagement;
     return next;
+  });
+}
+
+function applyScopeRevisionToCaches(
+  queryClient: QueryClient,
+  engagementId: string,
+  revision: ScopeRevision,
+  expectedRevision: number,
+) {
+  queryClient.setQueryData<EngagementWithActiveScope>(
+    engagementDetailQueryKey(engagementId),
+    (current) => {
+      if (current === undefined) return current;
+      return {
+        engagement: {
+          ...current.engagement,
+          revision: expectedRevision + 1,
+          activeScopeRevisionId: revision.id,
+          updatedAt: revision.createdAt,
+        },
+        activeScopeRevision: revision,
+      };
+    },
+  );
+
+  const listed = queryClient
+    .getQueryData<Engagement[]>(ENGAGEMENTS_QUERY_KEY)
+    ?.find((item) => item.id === engagementId);
+  if (listed === undefined) return;
+  upsertEngagementInCache(queryClient, {
+    ...listed,
+    revision: expectedRevision + 1,
+    activeScopeRevisionId: revision.id,
+    updatedAt: revision.createdAt,
   });
 }
 
@@ -156,6 +238,9 @@ export function useArchiveEngagementMutation() {
     onSuccess: (engagement, input) => {
       upsertEngagementInCache(queryClient, engagement);
       keys.current.reset(`archive:${input.engagementId}:${input.expectedRevision}`);
+      void queryClient.invalidateQueries({
+        queryKey: engagementDetailQueryKey(input.engagementId),
+      });
     },
     onError: (error) => handleLifecycleError(queryClient, error),
   });
@@ -177,6 +262,57 @@ export function useReopenEngagementMutation() {
     onSuccess: (engagement, input) => {
       upsertEngagementInCache(queryClient, engagement);
       keys.current.reset(`reopen:${input.engagementId}:${input.expectedRevision}`);
+      void queryClient.invalidateQueries({
+        queryKey: engagementDetailQueryKey(input.engagementId),
+      });
+    },
+    onError: (error) => handleLifecycleError(queryClient, error),
+  });
+}
+
+export function useAppendScopeRevisionMutation() {
+  const queryClient = useQueryClient();
+  const keys = useRef(createIntentKeyHolder());
+
+  return useMutation({
+    mutationFn: (input: {
+      engagementId: string;
+      expectedRevision: number;
+      rules: readonly SavedScopeRule[];
+    }) => {
+      const body = AppendScopeRevisionRequestSchema.parse({
+        expectedRevision: input.expectedRevision,
+        rules: input.rules,
+      });
+      const intent = requestFingerprint({
+        engagementId: input.engagementId,
+        expectedRevision: body.expectedRevision,
+        rules: body.rules,
+      });
+      return appendScopeRevisionRequest(input.engagementId, body, keys.current.keyFor(intent));
+    },
+    onSuccess: async (revision, input) => {
+      const body = AppendScopeRevisionRequestSchema.parse({
+        expectedRevision: input.expectedRevision,
+        rules: input.rules,
+      });
+      keys.current.reset(
+        requestFingerprint({
+          engagementId: input.engagementId,
+          expectedRevision: body.expectedRevision,
+          rules: body.rules,
+        }),
+      );
+      applyScopeRevisionToCaches(
+        queryClient,
+        input.engagementId,
+        revision,
+        input.expectedRevision,
+      );
+      await queryClient.invalidateQueries({
+        queryKey: engagementDetailQueryKey(input.engagementId),
+      });
+      await queryClient.invalidateQueries({ queryKey: ENGAGEMENTS_QUERY_KEY });
     },
     onError: (error) => handleLifecycleError(queryClient, error),
   });

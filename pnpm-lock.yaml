@@ -38,6 +38,9 @@ importers:
       '@blackglass/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@blackglass/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@blackglass/ui':
         specifier: workspace:*
         version: link:../../packages/ui

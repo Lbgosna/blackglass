@@ -43,6 +43,29 @@ const archivedEngagement = {
 
 const readyStatus = { version: 1, overall: "ready", developmentStorage: "ready" };
 
+function isReadRequest(init?: RequestInit) {
+  return init?.method === undefined || init.method === "GET";
+}
+
+type TestEngagement = typeof activeEngagement | typeof archivedEngagement;
+
+function readEngagementResponse(
+  url: string,
+  list: readonly TestEngagement[],
+  scopes: Readonly<Record<string, unknown>> = {},
+): Response | undefined {
+  if (url.includes("/system/status")) return response(readyStatus);
+  if (url === "/api/v1/engagements") return response([...list]);
+  const match = /^\/api\/v1\/engagements\/([^/?]+)$/.exec(url);
+  if (match?.[1] === undefined) return undefined;
+  const engagement = list.find((item) => item.id === match[1]);
+  if (engagement === undefined) return response({ code: "engagement_not_found" }, 404);
+  return response({
+    engagement,
+    activeScopeRevision: scopes[engagement.id] ?? null,
+  });
+}
+
 function response(payload: unknown, status = 200): Response {
   return {
     json: async () => payload,
@@ -114,9 +137,9 @@ afterEach(() => {
 
 describe("engagement workspace", () => {
   it("shows a primary empty state without synthetic records", async () => {
-    stubFetch((url) => {
-      if (url.includes("/system/status")) return response(readyStatus);
-      return response([]);
+    stubFetch((url, init) => {
+      if (!isReadRequest(init)) return response({ code: "invalid_request" }, 400);
+      return readEngagementResponse(url, []) ?? response([]);
     });
 
     await renderWorkspace();
@@ -156,11 +179,13 @@ describe("engagement workspace", () => {
     let list: unknown[] = [];
     const keys: string[] = [];
     stubFetch((url, init) => {
-      if (url.includes("/system/status")) return response(readyStatus);
       if (url === "/api/v1/engagements" && init?.method === "POST") {
         keys.push((init.headers as Record<string, string>)["Idempotency-Key"] ?? "");
         list = [created];
         return response(created, 201);
+      }
+      if (isReadRequest(init)) {
+        return readEngagementResponse(url, list as TestEngagement[]) ?? response(list);
       }
       return response(list);
     });
@@ -185,9 +210,9 @@ describe("engagement workspace", () => {
   });
 
   it("keeps the dialog open and shows a local validation error", async () => {
-    stubFetch((url) => {
-      if (url.includes("/system/status")) return response(readyStatus);
-      return response([]);
+    stubFetch((url, init) => {
+      if (!isReadRequest(init)) return response({ code: "invalid_request" }, 400);
+      return readEngagementResponse(url, []) ?? response([]);
     });
     await renderWorkspace();
     fireEvent.click(screen.getAllByRole("button", { name: "New engagement" })[0]!);
@@ -200,9 +225,8 @@ describe("engagement workspace", () => {
 
   it("shows a server failure without a success state", async () => {
     stubFetch((url, init) => {
-      if (url.includes("/system/status")) return response(readyStatus);
       if (init?.method === "POST") return response({ code: "storage_busy" }, 503);
-      return response([]);
+      return readEngagementResponse(url, []) ?? response([]);
     });
     await renderWorkspace();
     fireEvent.click(screen.getAllByRole("button", { name: "New engagement" })[0]!);
@@ -214,9 +238,9 @@ describe("engagement workspace", () => {
   });
 
   it("closes the create dialog with Escape and restores focus", async () => {
-    stubFetch((url) => {
-      if (url.includes("/system/status")) return response(readyStatus);
-      return response([]);
+    stubFetch((url, init) => {
+      if (!isReadRequest(init)) return response({ code: "invalid_request" }, 400);
+      return readEngagementResponse(url, []) ?? response([]);
     });
     await renderWorkspace();
     const trigger = screen.getAllByRole("button", { name: "New engagement" })[0]!;
@@ -231,7 +255,6 @@ describe("engagement workspace", () => {
   it("archives an active engagement and reopens the archived result", async () => {
     let current = { ...activeEngagement };
     stubFetch((url, init) => {
-      if (url.includes("/system/status")) return response(readyStatus);
       if (url.endsWith("/archive") && init?.method === "POST") {
         expect(JSON.parse(String(init.body))).toEqual({ expectedRevision: current.revision });
         current = { ...current, status: "archived", revision: current.revision + 1 };
@@ -242,7 +265,7 @@ describe("engagement workspace", () => {
         current = { ...current, status: "active", revision: current.revision + 1 };
         return response(current);
       }
-      return response([current]);
+      return readEngagementResponse(url, [current]) ?? response([current]);
     });
 
     await renderWorkspace(`/engagements/${activeEngagement.id}`);
@@ -258,7 +281,6 @@ describe("engagement workspace", () => {
     const newer = { ...activeEngagement, revision: 5, name: "Target lab", description: "Newer note" };
     let list = [activeEngagement];
     stubFetch((url, init) => {
-      if (url.includes("/system/status")) return response(readyStatus);
       if (url.endsWith("/archive") && init?.method === "POST") {
         list = [newer];
         return response(
@@ -271,7 +293,7 @@ describe("engagement workspace", () => {
           409,
         );
       }
-      return response(list);
+      return readEngagementResponse(url, list) ?? response(list);
     });
 
     await renderWorkspace(`/engagements/${activeEngagement.id}`);
@@ -287,9 +309,12 @@ describe("engagement workspace", () => {
   });
 
   it("lists archived engagements separately from active ones", async () => {
-    stubFetch((url) => {
-      if (url.includes("/system/status")) return response(readyStatus);
-      return response([activeEngagement, archivedEngagement]);
+    stubFetch((url, init) => {
+      if (!isReadRequest(init)) return response({ code: "invalid_request" }, 400);
+      return (
+        readEngagementResponse(url, [activeEngagement, archivedEngagement]) ??
+        response([activeEngagement, archivedEngagement])
+      );
     });
     await renderWorkspace();
     expect((await screen.findAllByText("Target lab")).length).toBeGreaterThan(0);
@@ -298,9 +323,12 @@ describe("engagement workspace", () => {
   });
 
   it("filters the loaded sidebar list locally without inventing results", async () => {
-    stubFetch((url) => {
-      if (url.includes("/system/status")) return response(readyStatus);
-      return response([activeEngagement, archivedEngagement]);
+    stubFetch((url, init) => {
+      if (!isReadRequest(init)) return response({ code: "invalid_request" }, 400);
+      return (
+        readEngagementResponse(url, [activeEngagement, archivedEngagement]) ??
+        response([activeEngagement, archivedEngagement])
+      );
     });
     await renderWorkspace();
     expect((await screen.findAllByText("Target lab")).length).toBeGreaterThan(0);
@@ -321,13 +349,15 @@ describe("engagement workspace", () => {
   });
 
   it("announces unavailable next-step actions without claiming success", async () => {
-    stubFetch((url) => {
-      if (url.includes("/system/status")) return response(readyStatus);
-      return response([activeEngagement]);
+    stubFetch((url, init) => {
+      if (!isReadRequest(init)) return response({ code: "invalid_request" }, 400);
+      return readEngagementResponse(url, [activeEngagement]) ?? response([activeEngagement]);
     });
     await renderWorkspace(`/engagements/${activeEngagement.id}`);
     expect(await screen.findByRole("heading", { level: 1, name: "Target lab" })).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "No saved scope yet" })).toBeTruthy();
+    expect(screen.getAllByText(/Scope is context, not authorization/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "New run" }));
     await waitFor(() =>
@@ -335,7 +365,7 @@ describe("engagement workspace", () => {
     );
     expect(screen.queryByText("Run queued")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Targets and saved scope/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
     expect(screen.getByTestId("workspace-notice").textContent).toBe("Not connected yet");
     expect(screen.queryByText("Scope saved")).toBeNull();
 

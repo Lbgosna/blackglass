@@ -14,14 +14,11 @@ import {
   ENGAGEMENT_STATUS_LABELS,
   formatEngagementTimestamp,
 } from "./format.js";
-import { partitionEngagements, useEngagementsQuery } from "./query.js";
+import { partitionEngagements, useEngagementDetailQuery, useEngagementsQuery } from "./query.js";
+import { SavedScopeEditor } from "./scope-editor.js";
 import { useEngagementWorkspace } from "./workspace-context.js";
 
 const NEXT_SURFACES = [
-  {
-    title: "Targets and saved scope",
-    detail: "Define hosts and saved scope here. Scope is context, not authorization. Not connected yet.",
-  },
   {
     title: "Runs",
     detail: "Choose an action, receive at most one warning, then queue, cancel, or retry. Not connected yet.",
@@ -215,37 +212,49 @@ function EngagementSummaryLink({ engagement }: { engagement: Engagement }) {
   );
 }
 
+function selectDisplayedEngagement(listed: Engagement, detailed: Engagement | undefined): Engagement {
+  if (detailed === undefined) return listed;
+  return detailed.revision >= listed.revision ? detailed : listed;
+}
+
 function EngagementDetail({ engagement }: { engagement: Engagement }) {
   const { announce } = useEngagementWorkspace();
+  const detail = useEngagementDetailQuery(engagement.id);
+  const displayed = selectDisplayedEngagement(engagement, detail.data?.engagement);
 
   return (
     <article>
       <p className="m-0 text-[11px] text-muted-foreground">
-        {ENGAGEMENT_KIND_LABELS[engagement.kind]}
+        {ENGAGEMENT_KIND_LABELS[displayed.kind]}
       </p>
       <h1 className="mt-1 mb-0 text-[26px] leading-none font-semibold tracking-[-0.04em]">
-        {engagement.name}
+        {displayed.name}
       </h1>
       <p className="mt-2 mb-0 text-[13px] text-muted-foreground">
-        <span aria-label={`Status: ${ENGAGEMENT_STATUS_LABELS[engagement.status]}`}>
-          {ENGAGEMENT_STATUS_LABELS[engagement.status]}
+        <span aria-label={`Status: ${ENGAGEMENT_STATUS_LABELS[displayed.status]}`}>
+          {ENGAGEMENT_STATUS_LABELS[displayed.status]}
         </span>
         <span className="mx-2 text-border">·</span>
-        <span className="font-mono">rev {engagement.revision}</span>
+        <span className="font-mono">rev {displayed.revision}</span>
       </p>
+      <SavedScopeEditor
+        archived={displayed.status === "archived"}
+        engagementId={displayed.id}
+        expectedRevision={displayed.revision}
+      />
       <div className="mt-5 grid gap-4 border-t border-border pt-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
         <dl className="grid gap-3 text-[13px]">
-          <Detail term="Description" value={engagement.description ?? "None"} />
+          <Detail term="Description" value={displayed.description ?? "None"} />
           <Detail
             term="Authorization context"
-            value={engagement.authorizationContext ?? "None"}
+            value={displayed.authorizationContext ?? "None"}
           />
           <Detail
             term="Auto-continue warnings"
-            value={engagement.autoContinueWarnings ? "On" : "Off"}
+            value={displayed.autoContinueWarnings ? "On" : "Off"}
           />
-          <Detail term="Created" value={formatEngagementTimestamp(engagement.createdAt)} />
-          <Detail term="Updated" value={formatEngagementTimestamp(engagement.updatedAt)} />
+          <Detail term="Created" value={formatEngagementTimestamp(displayed.createdAt)} />
+          <Detail term="Updated" value={formatEngagementTimestamp(displayed.updatedAt)} />
         </dl>
         <section aria-label="Next in this engagement">
           <h2 className="m-0 px-1 text-[13px] font-semibold">Next in this engagement</h2>
