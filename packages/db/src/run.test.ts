@@ -887,6 +887,20 @@ describe("run persistence", () => {
         )
         .get(acquired.lease.leaseId),
     ).toEqual({ sequence: 2, heartbeat: 1 });
+    const replayedWithoutSequence = fixture.runs.completeRun({
+      presented: presentation(acquired.lease),
+      terminalKind: "succeeded",
+      reason: null,
+      digest: digestB,
+      serverNow: "2026-08-09T12:00:40.000Z",
+    });
+    expect(replayedWithoutSequence).toMatchObject({
+      ok: true,
+      value: {
+        disposition: "stored_terminal_replayed",
+        event: { type: "succeeded", sequence: 2 },
+      },
+    });
   });
 
   it("retry allocates attempt N+1 and does not mutate prior terminal rows", () => {
@@ -1128,6 +1142,59 @@ describe("run persistence adversarial checks", () => {
     });
     expect(first).toMatchObject({ ok: true, value: { disposition: "acquired" } });
     expect(second).toEqual({ ok: false, error: { code: "no_work" } });
+  });
+
+  it("replays a stored started event after the lease expires", () => {
+    const fixture = createFixture();
+    const created = queuedAction(fixture, "action-replay-after-expiry");
+    const acquired = acquire(fixture, created.runId);
+    const first = startRun(fixture, acquired.lease);
+    const replayed = fixture.runs.appendEvent({
+      presented: presentation(acquired.lease),
+      sequence: 1,
+      type: "started",
+      payload: { started: true },
+      digest: digestA,
+      serverNow: "2026-08-09T12:00:30.001Z",
+    });
+    expect(replayed).toMatchObject({
+      ok: true,
+      value: {
+        disposition: "stored_event_replayed",
+        event: { eventId: first.event.eventId, type: "started" },
+      },
+    });
+  });
+
+  it("rejects a control-plane completion sequence gap and a succeeded reason", () => {
+    const fixture = createFixture();
+    const created = queuedAction(fixture, "action-control-complete");
+    const acquired = acquire(fixture, created.runId);
+    startRun(fixture, acquired.lease);
+    expect(
+      fixture.runs.completeRun({
+        presented: null,
+        runId: created.runId,
+        sequence: 9,
+        terminalKind: "failed",
+        reason: "runner_lost",
+        digest: digestB,
+        serverNow: "2026-08-09T12:00:12.000Z",
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "event_sequence_gap", expectedSequence: 2 },
+    });
+    expect(
+      fixture.runs.completeRun({
+        presented: presentation(acquired.lease),
+        sequence: 2,
+        terminalKind: "succeeded",
+        reason: "suspicious",
+        digest: digestB,
+        serverNow: "2026-08-09T12:00:12.000Z",
+      }),
+    ).toEqual({ ok: false, error: { code: "invalid_repository_input" } });
   });
 
   it("rejects a succeeded Action retry and keeps the terminal Run untouched", () => {

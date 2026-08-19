@@ -294,6 +294,25 @@ function storedRunnerEvent(
     .find((row) => RUNNER_EVENT_TYPES.has(row.type));
 }
 
+function storedCompletionEvent(
+  client: RunQueryClient,
+  runId: string,
+  terminalKind: RunTerminalKind,
+  fence?: string,
+  sequence?: number,
+): RunEventRow | undefined {
+  const rows = client
+    .select()
+    .from(runEvents)
+    .where(and(eq(runEvents.runId, runId), eq(runEvents.type, terminalKind)))
+    .all();
+  return rows.find(
+    (row) =>
+      (fence === undefined || row.fence === fence) &&
+      (sequence === undefined || row.sequence === sequence),
+  );
+}
+
 function insertEvent(
   client: RunQueryClient,
   values: {
@@ -625,6 +644,38 @@ export function heartbeatRunLease(
 ): RunResult<AcceptHeartbeatResult & { expiryWriteCount: number }> {
   const parsed = PersistRunHeartbeatInputSchema.safeParse(input);
   if (!parsed.success) return failed({ code: "invalid_repository_input" });
+  const presentedLease = context.client
+    .select()
+    .from(runLeases)
+    .where(eq(runLeases.leaseId, parsed.data.presented.leaseId))
+    .get();
+  if (presentedLease === undefined) return failed({ code: "stale_fence" });
+  const storedHeartbeat =
+    presentedLease.latestHeartbeatSequence === parsed.data.heartbeatSequence &&
+    presentedLease.latestHeartbeatDigest !== null
+      ? {
+          heartbeatSequence: presentedLease.latestHeartbeatSequence,
+          requestDigest: presentedLease.latestHeartbeatDigest,
+          leaseExpiresAt: presentedLease.expiresAt,
+        }
+      : null;
+  if (storedHeartbeat !== null) {
+    const storedLease = leaseFromRow(presentedLease);
+    if (!storedLease.ok) return storedLease;
+    const replayed = acceptHeartbeat({
+      lease: storedLease.value,
+      presented: parsed.data.presented,
+      heartbeatSequence: parsed.data.heartbeatSequence,
+      requestDigest: parsed.data.requestDigest,
+      serverNow: parsed.data.serverNow,
+      storedHeartbeat,
+    });
+    if (!replayed.ok) return failed(mapDomainError(replayed.error));
+    if (replayed.disposition === "stored_heartbeat_replayed") {
+      return { ok: true, value: { ...replayed, expiryWriteCount: 0 } };
+    }
+  }
+
   const current = currentLeaseForRun(context.client, parsed.data.presented.runId);
   const lease = requireCurrentLeaseAuthority(
     current,
@@ -634,22 +685,13 @@ export function heartbeatRunLease(
   if (!lease.ok) return lease;
   if (current === undefined) return failed({ code: "stale_fence" });
 
-  const storedHeartbeat =
-    current.latestHeartbeatSequence === parsed.data.heartbeatSequence &&
-    current.latestHeartbeatDigest !== null
-      ? {
-          heartbeatSequence: current.latestHeartbeatSequence,
-          requestDigest: current.latestHeartbeatDigest,
-          leaseExpiresAt: current.expiresAt,
-        }
-      : null;
   const accepted = acceptHeartbeat({
     lease: lease.value,
     presented: parsed.data.presented,
     heartbeatSequence: parsed.data.heartbeatSequence,
     requestDigest: parsed.data.requestDigest,
     serverNow: parsed.data.serverNow,
-    storedHeartbeat,
+    storedHeartbeat: null,
   });
   if (!accepted.ok) return failed(mapDomainError(accepted.error));
   if (accepted.disposition === "stored_heartbeat_replayed") {
@@ -782,6 +824,36 @@ export function appendRunEvent(
     .where(eq(runs.id, parsed.data.presented.runId))
     .get();
   if (runRow === undefined) return failed({ code: "run_not_found" });
+  const payload = payloadJsonForStorage(parsed.data.payload ?? {});
+  if (!payload.ok) return payload;
+  const digest = parsed.data.digest ?? eventDigest(payload.value);
+  const storedRow = storedRunnerEvent(
+    context.client,
+    runRow.id,
+    parsed.data.presented.fence,
+    parsed.data.sequence,
+  );
+  if (storedRow !== undefined) {
+    const replay = evaluateRunEventSequence({
+      kind: "event",
+      lastAcceptedSequence: parsed.data.sequence,
+      presentedSequence: parsed.data.sequence,
+      presentedDigest: digest,
+      storedAtSequence: {
+        kind: "event",
+        digest: storedRow.digest,
+        eventId: storedRow.eventId,
+        terminalKind: null,
+      },
+      currentTerminalKind: runRow.terminalKind,
+    });
+    if (!replay.ok) return failed(mapDomainError(replay.error));
+    const event = eventFromRow(storedRow);
+    return event.ok
+      ? { ok: true, value: { disposition: replay.disposition, event: event.value } }
+      : event;
+  }
+
   const current = currentLeaseForRun(context.client, runRow.id);
   const lease = requireCurrentLeaseAuthority(
     current,
@@ -791,42 +863,15 @@ export function appendRunEvent(
   if (!lease.ok) return lease;
   if (current === undefined) return failed({ code: "stale_fence" });
 
-  const payload = payloadJsonForStorage(parsed.data.payload ?? {});
-  if (!payload.ok) return payload;
-  const digest = parsed.data.digest ?? eventDigest(payload.value);
-  const storedRow = storedRunnerEvent(
-    context.client,
-    runRow.id,
-    current.fence,
-    parsed.data.sequence,
-  );
   const sequence = evaluateRunEventSequence({
     kind: "event",
     lastAcceptedSequence: current.latestEventSequence,
     presentedSequence: parsed.data.sequence,
     presentedDigest: digest,
-    storedAtSequence:
-      storedRow === undefined
-        ? null
-        : {
-            kind: "event",
-            digest: storedRow.digest,
-            eventId: storedRow.eventId,
-            terminalKind: null,
-          },
+    storedAtSequence: null,
     currentTerminalKind: runRow.terminalKind,
   });
   if (!sequence.ok) return failed(mapDomainError(sequence.error));
-  if (
-    sequence.disposition === "stored_event_replayed" ||
-    sequence.disposition === "stored_terminal_replayed"
-  ) {
-    if (storedRow === undefined) return failed({ code: "invalid_persisted_data" });
-    const event = eventFromRow(storedRow);
-    return event.ok
-      ? { ok: true, value: { disposition: sequence.disposition, event: event.value } }
-      : event;
-  }
 
   const transition = transitionRunState({ from: runRow.state, to: "running" });
   if (!transition.ok) return failed(mapDomainError(transition.error));
@@ -884,6 +929,12 @@ export function completePersistedRun(
 ): RunResult<StoredRunEventResult> {
   const parsed = CompletePersistedRunInputSchema.safeParse(input);
   if (!parsed.success) return failed({ code: "invalid_repository_input" });
+  if (
+    (parsed.data.terminalKind === "succeeded" && parsed.data.reason !== null) ||
+    (parsed.data.terminalKind !== "succeeded" && parsed.data.reason === null)
+  ) {
+    return failed({ code: "invalid_repository_input" });
+  }
   const runId = parsed.data.presented?.runId ?? parsed.data.runId;
   if (runId === undefined) return failed({ code: "invalid_repository_input" });
   const runRow = context.client.select().from(runs).where(eq(runs.id, runId)).get();
@@ -894,6 +945,24 @@ export function completePersistedRun(
   const digest = parsed.data.digest ?? eventDigest(payload.value);
   const timestamp = parsed.data.serverNow;
 
+  if (isTerminalRunState(runRow.state) && runRow.terminalKind !== null) {
+    const stored =
+      storedCompletionEvent(
+        context.client,
+        runRow.id,
+        runRow.terminalKind,
+        parsed.data.presented?.fence,
+        parsed.data.sequence,
+      ) ??
+      storedCompletionEvent(context.client, runRow.id, runRow.terminalKind);
+    return replayOrRejectTerminal(
+      runRow,
+      parsed.data.terminalKind,
+      parsed.data.reason,
+      stored,
+    );
+  }
+
   if (parsed.data.presented !== null) {
     const current = currentLeaseForRun(context.client, runRow.id);
     const lease = requireCurrentLeaseAuthority(
@@ -901,23 +970,7 @@ export function completePersistedRun(
       parsed.data.presented,
       timestamp,
     );
-    if (!lease.ok) {
-      if (isTerminalRunState(runRow.state)) {
-        const stored = storedRunnerEvent(
-          context.client,
-          runRow.id,
-          runRow.currentFence,
-          parsed.data.sequence ?? current?.latestEventSequence ?? 1,
-        );
-        return replayOrRejectTerminal(
-          runRow,
-          parsed.data.terminalKind,
-          parsed.data.reason,
-          stored,
-        );
-      }
-      return lease;
-    }
+    if (!lease.ok) return lease;
     if (current === undefined) return failed({ code: "stale_fence" });
     const presentedSequence =
       parsed.data.sequence ?? current.latestEventSequence + 1;
@@ -1001,21 +1054,19 @@ export function completePersistedRun(
       : event;
   }
 
-  if (isTerminalRunState(runRow.state)) {
-    const stored = context.client
-      .select()
-      .from(runEvents)
-      .where(
-        and(eq(runEvents.runId, runRow.id), eq(runEvents.type, parsed.data.terminalKind)),
-      )
-      .get();
-    return replayOrRejectTerminal(
-      runRow,
-      parsed.data.terminalKind,
-      parsed.data.reason,
-      stored,
-    );
-  }
+  const current = currentLeaseForRun(context.client, runRow.id);
+  const lastAccepted = current?.latestEventSequence ?? 0;
+  const presentedSequence = parsed.data.sequence ?? lastAccepted + 1;
+  const sequence = evaluateRunEventSequence({
+    kind: "completion",
+    lastAcceptedSequence: lastAccepted,
+    presentedSequence,
+    presentedDigest: digest,
+    storedAtSequence: null,
+    currentTerminalKind: runRow.terminalKind,
+    terminalKind: parsed.data.terminalKind,
+  });
+  if (!sequence.ok) return failed(mapDomainError(sequence.error));
   const transition = transitionRunState({
     from: runRow.state,
     to: parsed.data.terminalKind,
@@ -1023,8 +1074,6 @@ export function completePersistedRun(
   if (!transition.ok) return failed(mapDomainError(transition.error));
   const action = loadAction(context.client, runRow.actionId);
   if (action === undefined) return failed({ code: "action_not_found" });
-  const current = currentLeaseForRun(context.client, runRow.id);
-  const presentedSequence = parsed.data.sequence ?? (current?.latestEventSequence ?? 0) + 1;
   const fence = current?.fence ?? runRow.currentFence;
   if (fence === "0") return failed({ code: "invalid_run_transition" });
   const inserted = insertEvent(context.client, {
