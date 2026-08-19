@@ -1227,7 +1227,7 @@ describe("run persistence schema", () => {
       fixture.database.sqlite
         .prepare("select count(*) as count from __drizzle_migrations")
         .get(),
-    ).toEqual({ count: 4 });
+    ).toEqual({ count: 5 });
     expect(() =>
       fixture.database.sqlite.prepare("update run_events set sequence = 99").run(),
     ).toThrow("run events are immutable");

@@ -1152,6 +1152,91 @@ export function retryPersistedRun(
   return queued;
 }
 
+export function selectOldestQueuedRun(
+  client: RunQueryClient,
+): RunResult<PersistedRun> {
+  const row = client
+    .select()
+    .from(runs)
+    .where(eq(runs.state, "queued"))
+    .orderBy(asc(runs.createdAt), asc(runs.id))
+    .get();
+  return row === undefined ? failed({ code: "no_work" }) : runFromRow(row);
+}
+
+export function fenceCurrentLeasesForRunner(
+  context: RunPersistenceContext,
+  input: { runnerId: string; serverNow: string },
+): RunResult<{ leasesFenced: number; cancellationRequested: boolean }> {
+  if (input.runnerId.length < 1 || input.runnerId.length > 255) {
+    return failed({ code: "invalid_repository_input" });
+  }
+  const currentLeases = context.client
+    .select()
+    .from(runLeases)
+    .where(
+      and(eq(runLeases.runnerId, input.runnerId), eq(runLeases.current, true)),
+    )
+    .all();
+  let cancellationRequested = false;
+  const timestamp = input.serverNow;
+  for (const lease of currentLeases) {
+    const runRow = context.client
+      .select()
+      .from(runs)
+      .where(eq(runs.id, lease.runId))
+      .get();
+    if (runRow === undefined) return failed({ code: "invalid_persisted_data" });
+    const leaseUpdate = context.client
+      .update(runLeases)
+      .set({ current: false })
+      .where(and(eq(runLeases.leaseId, lease.leaseId), eq(runLeases.current, true)))
+      .run();
+    if (leaseUpdate.changes !== 1) abortInvalidWrite();
+    if (runRow.state !== "leased" && runRow.state !== "running") {
+      if (runRow.currentLeaseId === lease.leaseId) {
+        context.client
+          .update(runs)
+          .set({ currentLeaseId: null, updatedAt: timestamp })
+          .where(eq(runs.id, runRow.id))
+          .run();
+      }
+      continue;
+    }
+    const transition = transitionRunState({
+      from: runRow.state,
+      to: "cancel_requested",
+    });
+    if (!transition.ok) return failed(mapDomainError(transition.error));
+    const runUpdate = context.client
+      .update(runs)
+      .set({
+        state: "cancel_requested",
+        currentLeaseId: null,
+        updatedAt: timestamp,
+      })
+      .where(and(eq(runs.id, runRow.id), eq(runs.state, runRow.state)))
+      .run();
+    if (runUpdate.changes !== 1) abortInvalidWrite();
+    const action = loadAction(context.client, runRow.actionId);
+    if (action === undefined) return failed({ code: "action_not_found" });
+    const actionUpdate = bumpAction(context.client, action, {
+      state: action.state,
+      runState: "cancel_requested",
+      updatedAt: timestamp,
+    });
+    if (!actionUpdate.ok) abortInvalidWrite();
+    cancellationRequested = true;
+  }
+  return {
+    ok: true,
+    value: {
+      leasesFenced: currentLeases.length,
+      cancellationRequested,
+    },
+  };
+}
+
 export function getPersistedRun(
   client: RunQueryClient,
   runId: string,
@@ -1285,6 +1370,29 @@ export class RunRepository {
 
   retryRun(input: unknown, transaction?: RunWriteClient): RunResult<PersistedRun> {
     return this.write((context) => retryPersistedRun(context, input), transaction);
+  }
+
+  selectOldestQueued(): RunResult<PersistedRun> {
+    try {
+      return selectOldestQueuedRun(this.db);
+    } catch (error) {
+      return failed({
+        code: isStorageBusy(error) ? "storage_busy" : "invalid_persisted_data",
+      });
+    }
+  }
+
+  fenceCurrentLeases(input: {
+    runnerId: string;
+    serverNow: string;
+  }, transaction?: RunWriteClient): RunResult<{
+    leasesFenced: number;
+    cancellationRequested: boolean;
+  }> {
+    return this.write(
+      (context) => fenceCurrentLeasesForRunner(context, input),
+      transaction,
+    );
   }
 
   getRun(runId: string): RunResult<PersistedRun> {

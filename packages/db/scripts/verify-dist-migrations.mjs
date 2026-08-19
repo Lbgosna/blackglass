@@ -27,7 +27,10 @@ try {
       !tables.includes("action_covered_destinations") ||
       !tables.includes("runs") ||
       !tables.includes("run_leases") ||
-      !tables.includes("run_events")
+      !tables.includes("run_events") ||
+      !tables.includes("runner_identities") ||
+      !tables.includes("runner_enrollment_challenges") ||
+      !tables.includes("runner_sessions")
     ) {
       throw new Error("Built package did not resolve or apply its migrations.");
     }

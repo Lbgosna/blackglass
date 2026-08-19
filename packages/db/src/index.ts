@@ -24,6 +24,8 @@ export { bindActionSnapshot } from "./action-snapshot.js";
 export {
   RunRepository,
   allocateQueuedRun,
+  fenceCurrentLeasesForRunner,
+  selectOldestQueuedRun,
   type AcquiredRunLease,
   type RunPersistenceContext,
   type RunRepositoryError,
@@ -34,6 +36,20 @@ export {
   type StoredRunEventResult,
 } from "./run.js";
 export {
+  RunnerRepository,
+  decodeRunnerSecret,
+  encodeRunnerSecret,
+  hashRunnerSecret,
+  runnerCredentialFingerprint,
+  secretsMatch,
+  type AuthenticatedRunner,
+  type ConfirmedRunnerEnrollment,
+  type RevokedRunner,
+  type RunnerRepositoryError,
+  type RunnerRepositoryProviders,
+  type RunnerResult,
+} from "./runner.js";
+export {
   actionCoveredDestinations,
   actionSnapshots,
   actionWarningAcknowledgments,
@@ -43,6 +59,9 @@ export {
   operatorCommandIdempotency,
   runEvents,
   runLeases,
+  runnerEnrollmentChallenges,
+  runnerIdentities,
+  runnerSessions,
   runs,
   scopeRevisions,
 } from "./schema.js";

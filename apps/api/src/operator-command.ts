@@ -47,7 +47,8 @@ type CommandRepository = Pick<
   "executeOperatorCommand"
 >;
 
-export function prepareLocalOperatorCommand(
+export function prepareActorCommand(
+  actorId: string,
   input: LocalOperatorCommandInput,
 ): PrepareLocalOperatorCommandResult {
   const key = IdempotencyKeySchema.safeParse(input.key);
@@ -57,7 +58,7 @@ export function prepareLocalOperatorCommand(
     return { ok: false, error: { code: "invalid_command_input" } };
   }
   const canonical = canonicalizeJson({
-    actorId: LOCAL_OPERATOR_ACTOR_ID,
+    actorId,
     body: input.body,
     canonicalizationProfile: COMMAND_CANONICALIZATION_PROFILE,
     operation: operation.data,
@@ -74,7 +75,7 @@ export function prepareLocalOperatorCommand(
   return {
     ok: true,
     command: {
-      actorId: LOCAL_OPERATOR_ACTOR_ID,
+      actorId,
       route: route.data,
       operation: operation.data,
       idempotencyKey: key.data,
@@ -82,6 +83,12 @@ export function prepareLocalOperatorCommand(
       requestDigest,
     },
   };
+}
+
+export function prepareLocalOperatorCommand(
+  input: LocalOperatorCommandInput,
+): PrepareLocalOperatorCommandResult {
+  return prepareActorCommand(LOCAL_OPERATOR_ACTOR_ID, input);
 }
 
 export function parseBoundedDigestInput(
@@ -117,9 +124,10 @@ export function readPathParam(
   return typeof value === "string" ? value : undefined;
 }
 
-export function executeOperatorMutation(
+export function executeActorMutation(
   repository: CommandRepository,
   input: {
+    actorId: string;
     key: string;
     route: string;
     operation: string;
@@ -141,7 +149,7 @@ export function executeOperatorMutation(
     query,
     body,
   });
-  const prepared = prepareLocalOperatorCommand({
+  const prepared = prepareActorCommand(input.actorId, {
     key: input.key,
     route: input.route,
     operation: input.operation,
@@ -151,6 +159,26 @@ export function executeOperatorMutation(
   });
   if (!prepared.ok) return prepared;
   return repository.executeOperatorCommand(prepared.command, mutate);
+}
+
+export function executeOperatorMutation(
+  repository: CommandRepository,
+  input: {
+    key: string;
+    route: string;
+    operation: string;
+    path: unknown;
+    query: unknown;
+    body: unknown;
+    digest: CommandJsonV1DigestProjection;
+  },
+  mutate: OperatorMutationCallback,
+): OperatorCommandResult {
+  return executeActorMutation(
+    repository,
+    { actorId: LOCAL_OPERATOR_ACTOR_ID, ...input },
+    mutate,
+  );
 }
 
 const FIXED_COMMAND_ERRORS = {
@@ -191,11 +219,12 @@ export function sendOperatorCommandResult(
     .send(result.response.bodyJson);
 }
 
-export function dispatchOperatorMutation(
+export function dispatchActorMutation(
   request: FastifyRequest,
   reply: FastifyReply,
   repository: CommandRepository,
   options: {
+    actorId: string;
     route: string;
     operation: string;
     digest: CommandJsonV1DigestProjection;
@@ -208,9 +237,10 @@ export function dispatchOperatorMutation(
   }
   return sendOperatorCommandResult(
     reply,
-    executeOperatorMutation(
+    executeActorMutation(
       repository,
       {
+        actorId: options.actorId,
         key,
         route: options.route,
         operation: options.operation,
@@ -222,4 +252,21 @@ export function dispatchOperatorMutation(
       options.mutate,
     ),
   );
+}
+
+export function dispatchOperatorMutation(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  repository: CommandRepository,
+  options: {
+    route: string;
+    operation: string;
+    digest: CommandJsonV1DigestProjection;
+    mutate: OperatorMutationCallback;
+  },
+) {
+  return dispatchActorMutation(request, reply, repository, {
+    actorId: LOCAL_OPERATOR_ACTOR_ID,
+    ...options,
+  });
 }
