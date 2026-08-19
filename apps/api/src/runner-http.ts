@@ -48,16 +48,6 @@ export function stripAuthorizationHeader(
   return redacted;
 }
 
-export function redactSecretFields(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactSecretFields);
-  if (typeof value !== "object" || value === null) return value;
-  const redacted: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    redacted[key] = key === "secret" ? "[redacted]" : redactSecretFields(nested);
-  }
-  return redacted;
-}
-
 export function sendRunnerError(
   reply: FastifyReply,
   status: number,
@@ -173,10 +163,13 @@ export function registerRunnerAuthHook(
         credential.secret,
       );
       if (!authenticated.ok) {
-        const mapped = mapRunnerRepositoryError(authenticated.error);
-        return sendRunnerError(reply, mapped.status === 409 ? 401 : mapped.status, {
-          code: "runner_unauthorized",
-        });
+        if (authenticated.error.code === "storage_busy") {
+          return sendRunnerError(reply, 503, { code: "storage_busy" });
+        }
+        if (authenticated.error.code === "invalid_persisted_data") {
+          return sendRunnerError(reply, 500, { code: "invalid_persisted_data" });
+        }
+        return sendRunnerError(reply, 401, { code: "runner_unauthorized" });
       }
       request.runnerAuth = {
         runnerId: authenticated.value.runner.id,

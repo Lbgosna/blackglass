@@ -627,6 +627,35 @@ describe("runner enrollment and lease routes", () => {
     ]);
   });
 
+  it("does not treat storage_busy during authenticate as credential rejection", async () => {
+    const harness = await createHarness();
+    const enrolled = await enroll(harness.app);
+    const original = harness.runnerRepository.authenticate.bind(
+      harness.runnerRepository,
+    );
+    harness.runnerRepository.authenticate = () => ({
+      ok: false as const,
+      error: { code: "storage_busy" as const },
+    });
+    try {
+      const busy = await harness.app.inject({
+        method: "POST",
+        url: "/api/v1/runner/handshake",
+        headers: runnerHeaders(enrolled.runner.id, enrolled.secret),
+        payload: {
+          protocol: "runner-control-v1",
+          sessionId: "session-fixture-busy",
+          installationFingerprint: fixtureFingerprint,
+          eventSchemas: ["runner-event-v1"],
+        },
+      });
+      expect(busy.statusCode).toBe(503);
+      expect(busy.json()).toEqual({ code: "storage_busy" });
+    } finally {
+      harness.runnerRepository.authenticate = original;
+    }
+  });
+
   it("fails closed on a second enabled enroll and an expired HTTP challenge", async () => {
     const harness = await createHarness();
     await enroll(harness.app);
