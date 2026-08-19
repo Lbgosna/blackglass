@@ -365,6 +365,60 @@ describe("action planner", () => {
     ).toHaveLength(1);
   });
 
+  it("reuses the add-scope-and-run idempotency key across an ordinary retry", async () => {
+    const paused = persistedAction("paused_for_warning");
+    const queued = persistedAction("queued", {
+      queuedSnapshotVersion: 2,
+      snapshots: [
+        snapshotFields("paused_for_warning"),
+        {
+          ...snapshotFields("queued"),
+          version: 2,
+          snapshotId: "40000000-0000-4000-8000-000000000003",
+          binding: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          scopeRevisionId: "20000000-0000-4000-8000-000000000011",
+        },
+      ],
+      warningAcknowledgment: {
+        ...operatorContinueAck(),
+        source: "add_scope_and_run",
+        snapshotId: "40000000-0000-4000-8000-000000000003",
+        snapshotVersion: 2,
+        snapshotBinding: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        scopeRevisionId: "20000000-0000-4000-8000-000000000011",
+        reasonCodes: [],
+      },
+    });
+    let addCalls = 0;
+    const fetchMock = stubFetch((url, init) => {
+      if (url.endsWith("/actions") && init?.method === "POST") return response(paused, 201);
+      if (url.endsWith(`/actions/${ACTION_ID}/add-scope-and-run`) && init?.method === "POST") {
+        addCalls += 1;
+        if (addCalls === 1) return Promise.reject(new Error("offline"));
+        return response(queued);
+      }
+      return readResponse(url, activeEngagement, emptyRevision) ?? response({ code: "invalid_request" }, 400);
+    });
+
+    await renderPlanner();
+    await planTarget();
+    const dialog = await screen.findByRole("dialog", { name: "Action needs a warning" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add to scope & run" }));
+    expect(await screen.findByText("The engagement request failed.")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add to scope & run" }));
+    expect(await screen.findByText(/A new saved-scope revision was created/)).toBeTruthy();
+
+    const addRequests = fetchMock.mock.calls.filter(([called]) =>
+      String(called).includes("/add-scope-and-run"),
+    );
+    expect(addRequests).toHaveLength(2);
+    const keys = addRequests.map(([, init]) => (init?.headers as Record<string, string>)["Idempotency-Key"]);
+    expect(keys[0]).toBe(keys[1]);
+    expect(JSON.parse(String(addRequests[0]?.[1]?.body))).toEqual(
+      JSON.parse(String(addRequests[1]?.[1]?.body)),
+    );
+  });
+
   it("cancels a paused action without fabricating an acknowledgment", async () => {
     const paused = persistedAction("paused_for_warning");
     const cancelled = persistedAction("cancelled");

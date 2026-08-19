@@ -3,6 +3,7 @@ import { Button, LoadingRegion, Skeleton, cn } from "@blackglass/ui";
 import {
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -273,6 +274,10 @@ function WarningCard({
   const snapshot = latestActionSnapshot(action);
   const reasonCodes = warningReasonCodes(action);
   const showAddToScope = reasonCodes.includes("outside_scope");
+  const addScopeRules = useMemo(
+    () => buildAddScopeAndRunRules(scopeRules, action, plannedTargets),
+    [action, plannedTargets, scopeRules],
+  );
   const pending = continueAction.isPending || addScopeAndRun.isPending || cancelAction.isPending;
   const mutationError = firstMutationError([continueAction, addScopeAndRun, cancelAction]);
 
@@ -298,7 +303,7 @@ function WarningCard({
         actionId: action.action.actionId,
         expectedEngagementRevision,
         expectedActionRevision: action.revision,
-        rules: buildAddScopeAndRunRules(scopeRules, action, plannedTargets),
+        rules: addScopeRules,
       },
       { onSuccess: onAddScopeAndRun },
     );
