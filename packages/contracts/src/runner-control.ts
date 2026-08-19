@@ -80,6 +80,109 @@ export const LeaseAuthorityPresentationSchema = z.strictObject({
   fence: PositiveFencingTokenSchema,
 });
 
+export const RUN_PERSISTENCE_CONTRACT_VERSION = 1 as const;
+
+export const RunTerminalReasonSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_]*$/);
+
+export const RunEventTypeSchema = z.enum([
+  "lease_acquired",
+  "heartbeat",
+  "started",
+  "lease_expired",
+  "succeeded",
+  "failed",
+  "cancelled",
+]);
+
+export const PersistedRunSchema = z.strictObject({
+  contractVersion: z.literal(RUN_PERSISTENCE_CONTRACT_VERSION),
+  id: IdentifierSchema,
+  actionId: IdentifierSchema,
+  engagementId: IdentifierSchema,
+  attempt: SafeIntegerSchema.positive(),
+  state: RunStateSchema,
+  currentLeaseId: IdentifierSchema.nullable(),
+  currentFence: FencingTokenSchema,
+  terminalKind: RunTerminalKindSchema.nullable(),
+  terminalReason: RunTerminalReasonSchema.nullable(),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+});
+
+export const PersistedRunEventSchema = z.strictObject({
+  eventId: RunnerSequenceSchema,
+  runId: IdentifierSchema,
+  sequence: RunnerSequenceSchema,
+  type: RunEventTypeSchema,
+  fence: FencingTokenSchema,
+  payloadJson: z.string().min(2).max(1_048_576),
+  digest: RunnerEventDigestSchema,
+  createdAt: TimestampSchema,
+});
+
+export const CreateQueuedRunInputSchema = z.strictObject({
+  actionId: IdentifierSchema,
+  engagementId: IdentifierSchema,
+  attempt: SafeIntegerSchema.positive().optional(),
+});
+
+export const AcquireRunLeaseInputSchema = z.strictObject({
+  runId: IdentifierSchema,
+  runnerId: IdentifierSchema,
+  sessionId: IdentifierSchema,
+  serverNow: TimestampSchema,
+});
+
+export const PersistRunHeartbeatInputSchema = z.strictObject({
+  presented: LeaseAuthorityPresentationSchema,
+  heartbeatSequence: RunnerSequenceSchema,
+  requestDigest: RunnerEventDigestSchema,
+  serverNow: TimestampSchema,
+});
+
+export const ExpirePersistedRunLeaseInputSchema = z.strictObject({
+  runId: IdentifierSchema,
+  serverNow: TimestampSchema,
+});
+
+export const AppendPersistedRunEventInputSchema = z.strictObject({
+  presented: LeaseAuthorityPresentationSchema,
+  sequence: RunnerSequenceSchema,
+  type: RunEventTypeSchema,
+  payload: z.unknown().optional(),
+  digest: RunnerEventDigestSchema.optional(),
+  serverNow: TimestampSchema,
+});
+
+export const CompletePersistedRunInputSchema = z
+  .strictObject({
+    presented: LeaseAuthorityPresentationSchema.nullable(),
+    runId: IdentifierSchema.optional(),
+    sequence: RunnerSequenceSchema.optional(),
+    terminalKind: RunTerminalKindSchema,
+    reason: RunTerminalReasonSchema.nullable(),
+    payload: z.unknown().optional(),
+    digest: RunnerEventDigestSchema.optional(),
+    serverNow: TimestampSchema,
+  })
+  .superRefine((input, context) => {
+    if (input.presented === null && input.runId === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "control-plane completion requires runId",
+        path: ["runId"],
+      });
+    }
+  });
+
+export const RetryRunInputSchema = z.strictObject({
+  actionId: IdentifierSchema,
+});
+
 export const ValidateLeaseAuthorityInputSchema = z.strictObject({
   lease: RunnerLeaseSchema,
   presented: LeaseAuthorityPresentationSchema,
@@ -398,3 +501,21 @@ export type SelectSseResumeResult = z.infer<typeof SelectSseResumeResultSchema>;
 export type SelfFenceDeadlineResult = z.infer<
   typeof SelfFenceDeadlineResultSchema
 >;
+export type PersistedRun = z.infer<typeof PersistedRunSchema>;
+export type PersistedRunEvent = z.infer<typeof PersistedRunEventSchema>;
+export type RunEventType = z.infer<typeof RunEventTypeSchema>;
+export type CreateQueuedRunInput = z.infer<typeof CreateQueuedRunInputSchema>;
+export type AcquireRunLeaseInput = z.infer<typeof AcquireRunLeaseInputSchema>;
+export type PersistRunHeartbeatInput = z.infer<
+  typeof PersistRunHeartbeatInputSchema
+>;
+export type ExpirePersistedRunLeaseInput = z.infer<
+  typeof ExpirePersistedRunLeaseInputSchema
+>;
+export type AppendPersistedRunEventInput = z.infer<
+  typeof AppendPersistedRunEventInputSchema
+>;
+export type CompletePersistedRunInput = z.infer<
+  typeof CompletePersistedRunInputSchema
+>;
+export type RetryRunInput = z.infer<typeof RetryRunInputSchema>;

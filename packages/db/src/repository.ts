@@ -8,6 +8,7 @@ import {
   EngagementSchema,
   EngagementWithActiveScopeSchema,
   ScopeRevisionSchema,
+  type AcceptHeartbeatResult,
   type AppendScopeRevisionInput,
   type CreateEngagementInput,
   type Engagement,
@@ -15,6 +16,8 @@ import {
   type EngagementWithActiveScope,
   type CanonicalUrlHost,
   type PersistedAction,
+  type PersistedRun,
+  type PersistedRunEvent,
   type RetryActionContext,
   type ScopeRevision,
   type SavedScopeRule,
@@ -43,6 +46,19 @@ import {
   normalizeOperatorTargets,
   parseCreateActionRequest,
 } from "./action-operator.js";
+import {
+  acquireRunLease,
+  allocateQueuedRun,
+  appendRunEvent,
+  completePersistedRun,
+  expirePersistedRunLease,
+  getPersistedRun,
+  heartbeatRunLease,
+  retryPersistedRun,
+  type AcquiredRunLease,
+  type RunResult,
+  type StoredRunEventResult,
+} from "./run.js";
 import {
   engagementActiveScopes,
   engagements,
@@ -143,6 +159,20 @@ export interface EngagementWriteTransaction {
   continueLateWarning(
     input: unknown,
   ): RepositoryResult<PersistedAction, ActionRepositoryError>;
+  createQueuedRun(input: unknown): RunResult<PersistedRun>;
+  acquireLease(input: unknown): RunResult<AcquiredRunLease>;
+  heartbeat(
+    input: unknown,
+  ): RunResult<AcceptHeartbeatResult & { expiryWriteCount: number }>;
+  expireLease(input: unknown): RunResult<{
+    run: PersistedRun;
+    event: PersistedRunEvent;
+    automaticallyRequeued: boolean;
+  }>;
+  appendEvent(input: unknown): RunResult<StoredRunEventResult>;
+  completeRun(input: unknown): RunResult<StoredRunEventResult>;
+  retryRun(input: unknown): RunResult<PersistedRun>;
+  getRun(runId: string): RunResult<PersistedRun>;
 }
 
 function failed<T, E = RepositoryError>(error: E): RepositoryResult<T, E> {
@@ -748,6 +778,44 @@ class TransactionRepository implements EngagementWriteTransaction {
     input: unknown,
   ): RepositoryResult<PersistedAction, ActionRepositoryError> {
     return continuePersistedLateWarning(this.actionContext(), input);
+  }
+
+  createQueuedRun(input: unknown): RunResult<PersistedRun> {
+    return allocateQueuedRun(this.actionContext(), input);
+  }
+
+  acquireLease(input: unknown): RunResult<AcquiredRunLease> {
+    return acquireRunLease(this.actionContext(), input);
+  }
+
+  heartbeat(
+    input: unknown,
+  ): RunResult<AcceptHeartbeatResult & { expiryWriteCount: number }> {
+    return heartbeatRunLease(this.actionContext(), input);
+  }
+
+  expireLease(input: unknown): RunResult<{
+    run: PersistedRun;
+    event: PersistedRunEvent;
+    automaticallyRequeued: boolean;
+  }> {
+    return expirePersistedRunLease(this.actionContext(), input);
+  }
+
+  appendEvent(input: unknown): RunResult<StoredRunEventResult> {
+    return appendRunEvent(this.actionContext(), input);
+  }
+
+  completeRun(input: unknown): RunResult<StoredRunEventResult> {
+    return completePersistedRun(this.actionContext(), input);
+  }
+
+  retryRun(input: unknown): RunResult<PersistedRun> {
+    return retryPersistedRun(this.actionContext(), input);
+  }
+
+  getRun(runId: string): RunResult<PersistedRun> {
+    return getPersistedRun(this.client, runId);
   }
 }
 

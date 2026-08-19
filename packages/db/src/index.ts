@@ -22,6 +22,18 @@ export {
 } from "./repository.js";
 export { bindActionSnapshot } from "./action-snapshot.js";
 export {
+  RunRepository,
+  allocateQueuedRun,
+  type AcquiredRunLease,
+  type RunPersistenceContext,
+  type RunRepositoryError,
+  type RunRepositoryProviders,
+  type RunResult,
+  type RunQueryClient,
+  type RunWriteClient,
+  type StoredRunEventResult,
+} from "./run.js";
+export {
   actionCoveredDestinations,
   actionSnapshots,
   actionWarningAcknowledgments,
@@ -29,5 +41,8 @@ export {
   engagementActiveScopes,
   engagements,
   operatorCommandIdempotency,
+  runEvents,
+  runLeases,
+  runs,
   scopeRevisions,
 } from "./schema.js";

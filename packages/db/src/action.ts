@@ -44,6 +44,10 @@ import {
   type DatabaseWriteClient,
   type RepositoryResult,
 } from "./repository.js";
+import {
+  allocateQueuedRun,
+  cancelQueuedRunForAction,
+} from "./run.js";
 import * as schema from "./schema.js";
 import {
   actionCoveredDestinations,
@@ -522,6 +526,33 @@ function abortWrite(result: { ok: false; error: ActionRepositoryError }): never 
   throw new Error(`action persist write aborted: ${result.error.code}`);
 }
 
+function allocateRunOnQueue(
+  context: ActionPersistenceContext,
+  engagementId: string,
+  actionId: string,
+  previousState: string | null,
+  nextState: string,
+): void {
+  if (nextState !== "queued" || previousState === "queued") return;
+  const allocated = allocateQueuedRun(context, { actionId, engagementId });
+  if (!allocated.ok) {
+    throw new Error(`action persist write aborted: ${allocated.error.code}`);
+  }
+}
+
+function cancelRunOnQueuedCancel(
+  context: ActionPersistenceContext,
+  actionId: string,
+  previousState: string,
+  nextState: string,
+): void {
+  if (nextState !== "cancelled" || previousState !== "queued") return;
+  const cancelled = cancelQueuedRunForAction(context, actionId);
+  if (!cancelled.ok) {
+    throw new Error(`action persist write aborted: ${cancelled.error.code}`);
+  }
+}
+
 function writeActionProjection(
   context: ActionPersistenceContext,
   engagementId: string,
@@ -598,6 +629,20 @@ function writeActionProjection(
     );
     if (!destinations.ok) abortWrite(destinations);
   }
+
+  allocateRunOnQueue(
+    context,
+    engagementId,
+    next.actionId,
+    persisted.action.state,
+    next.state,
+  );
+  cancelRunOnQueuedCancel(
+    context,
+    next.actionId,
+    persisted.action.state,
+    next.state,
+  );
 
   return loadPersistedAction(context.client, engagementId, next.actionId);
 }
@@ -707,6 +752,14 @@ export function persistPlannedAction(
     );
     if (!inserted.ok) abortWrite(inserted);
   }
+
+  allocateRunOnQueue(
+    context,
+    parsed.data.engagementId,
+    planned.action.actionId,
+    null,
+    planned.action.state,
+  );
 
   return loadPersistedAction(
     context.client,

@@ -405,6 +405,219 @@ export const actionCoveredDestinations = sqliteTable(
   ],
 );
 
+export const runs = sqliteTable(
+  "runs",
+  {
+    id: text("id").primaryKey(),
+    contractVersion: integer("contract_version").notNull(),
+    actionId: text("action_id").notNull(),
+    engagementId: text("engagement_id").notNull(),
+    attempt: integer("attempt").notNull(),
+    state: text("state", {
+      enum: [
+        "queued",
+        "leased",
+        "running",
+        "cancel_requested",
+        "succeeded",
+        "failed",
+        "cancelled",
+      ],
+    }).notNull(),
+    currentLeaseId: text("current_lease_id"),
+    currentFence: text("current_fence").notNull(),
+    terminalKind: text("terminal_kind", {
+      enum: ["succeeded", "failed", "cancelled"],
+    }),
+    terminalReason: text("terminal_reason"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check("run_contract_version", sql`${table.contractVersion} = 1`),
+    check("run_id_length", sql`length(${table.id}) between 1 and 255`),
+    check(
+      "run_attempt_safe_positive",
+      sql`${table.attempt} between 1 and 9007199254740991`,
+    ),
+    check(
+      "run_state",
+      sql`${table.state} in ('queued', 'leased', 'running', 'cancel_requested', 'succeeded', 'failed', 'cancelled')`,
+    ),
+    check(
+      "run_current_fence_canonical_int64",
+      sql`length(${table.currentFence}) between 1 and 19 and ${table.currentFence} not glob '*[^0-9]*' and (${table.currentFence} = '0' or substr(${table.currentFence}, 1, 1) between '1' and '9') and (length(${table.currentFence}) < 19 or ${table.currentFence} <= '9223372036854775807')`,
+    ),
+    check(
+      "run_positive_fence_after_queue",
+      sql`${table.currentFence} <> '0' or ${table.state} in ('queued', 'cancelled')`,
+    ),
+    check(
+      "run_terminal_fields",
+      sql`(
+        ${table.state} = 'succeeded' and ${table.terminalKind} = 'succeeded' and ${table.terminalReason} is null
+      ) or (
+        ${table.state} in ('failed', 'cancelled') and ${table.terminalKind} = ${table.state} and ${table.terminalReason} is not null
+      ) or (
+        ${table.state} not in ('succeeded', 'failed', 'cancelled') and ${table.terminalKind} is null and ${table.terminalReason} is null
+      )`,
+    ),
+    check(
+      "run_terminal_reason",
+      sql`${table.terminalReason} is null or (length(${table.terminalReason}) between 1 and 64 and substr(${table.terminalReason}, 1, 1) glob '[a-z]' and ${table.terminalReason} not glob '*[^a-z0-9_]*')`,
+    ),
+    uniqueIndex("run_action_attempt_unique").on(table.actionId, table.attempt),
+    uniqueIndex("run_engagement_id_unique").on(table.engagementId, table.id),
+    uniqueIndex("run_action_nonterminal_unique")
+      .on(table.actionId)
+      .where(
+        sql`${table.state} not in ('succeeded', 'failed', 'cancelled')`,
+      ),
+    index("run_queue_order_idx").on(table.state, table.createdAt, table.id),
+    foreignKey({
+      columns: [table.engagementId, table.actionId],
+      foreignColumns: [actions.engagementId, actions.id],
+      name: "run_belongs_to_action",
+    }).onDelete("restrict"),
+  ],
+);
+
+export const runLeases = sqliteTable(
+  "run_leases",
+  {
+    leaseId: text("lease_id").primaryKey(),
+    contractVersion: integer("contract_version").notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "restrict" }),
+    runnerId: text("runner_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    fence: text("fence").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    latestHeartbeatSequence: integer("latest_heartbeat_sequence").notNull(),
+    latestEventSequence: integer("latest_event_sequence").notNull(),
+    latestHeartbeatDigest: text("latest_heartbeat_digest"),
+    current: integer("current", { mode: "boolean" }).notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check("run_lease_contract_version", sql`${table.contractVersion} = 1`),
+    check(
+      "run_lease_id_length",
+      sql`length(${table.leaseId}) between 1 and 255`,
+    ),
+    check(
+      "run_lease_runner_id_length",
+      sql`length(${table.runnerId}) between 1 and 255`,
+    ),
+    check(
+      "run_lease_session_id_length",
+      sql`length(${table.sessionId}) between 1 and 255`,
+    ),
+    check(
+      "run_lease_fence_canonical_int64",
+      sql`length(${table.fence}) between 1 and 19 and ${table.fence} not glob '*[^0-9]*' and substr(${table.fence}, 1, 1) between '1' and '9' and (length(${table.fence}) < 19 or ${table.fence} <= '9223372036854775807')`,
+    ),
+    check(
+      "run_lease_heartbeat_sequence",
+      sql`${table.latestHeartbeatSequence} between 0 and 9007199254740991`,
+    ),
+    check(
+      "run_lease_event_sequence",
+      sql`${table.latestEventSequence} between 0 and 9007199254740991`,
+    ),
+    check(
+      "run_lease_heartbeat_digest",
+      sql`${table.latestHeartbeatDigest} is null or (length(${table.latestHeartbeatDigest}) = 71 and ${table.latestHeartbeatDigest} glob 'sha256:[0-9a-f]*' and ${table.latestHeartbeatDigest} not glob 'sha256:*[^0-9a-f]*')`,
+    ),
+    check("run_lease_current_boolean", sql`${table.current} in (0, 1)`),
+    uniqueIndex("run_lease_run_fence_unique").on(table.runId, table.fence),
+    uniqueIndex("run_lease_identity_unique").on(
+      table.leaseId,
+      table.runId,
+      table.fence,
+    ),
+    uniqueIndex("run_lease_current_run_unique")
+      .on(table.runId)
+      .where(sql`${table.current} = 1`),
+    index("run_lease_runner_current_idx").on(
+      table.runnerId,
+      table.sessionId,
+      table.current,
+      table.expiresAt,
+    ),
+  ],
+);
+
+export const runEvents = sqliteTable(
+  "run_events",
+  {
+    eventId: integer("event_id").primaryKey({ autoIncrement: true }),
+    contractVersion: integer("contract_version").notNull(),
+    runId: text("run_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    type: text("type", {
+      enum: [
+        "lease_acquired",
+        "heartbeat",
+        "started",
+        "lease_expired",
+        "succeeded",
+        "failed",
+        "cancelled",
+      ],
+    }).notNull(),
+    fence: text("fence").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    digest: text("digest").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check("run_event_contract_version", sql`${table.contractVersion} = 1`),
+    check(
+      "run_event_id_safe_positive",
+      sql`${table.eventId} between 1 and 9007199254740991`,
+    ),
+    check(
+      "run_event_sequence_safe_positive",
+      sql`${table.sequence} between 1 and 9007199254740991`,
+    ),
+    check(
+      "run_event_type",
+      sql`${table.type} in ('lease_acquired', 'heartbeat', 'started', 'lease_expired', 'succeeded', 'failed', 'cancelled')`,
+    ),
+    check(
+      "run_event_fence_canonical_int64",
+      sql`length(${table.fence}) between 1 and 19 and ${table.fence} not glob '*[^0-9]*' and substr(${table.fence}, 1, 1) between '1' and '9' and (length(${table.fence}) < 19 or ${table.fence} <= '9223372036854775807')`,
+    ),
+    check(
+      "run_event_payload_json",
+      sql`json_valid(${table.payloadJson}) and length(cast(${table.payloadJson} as blob)) <= 1048576`,
+    ),
+    check(
+      "run_event_digest",
+      sql`length(${table.digest}) = 71 and ${table.digest} glob 'sha256:[0-9a-f]*' and ${table.digest} not glob 'sha256:*[^0-9a-f]*'`,
+    ),
+    uniqueIndex("run_event_run_type_sequence_unique").on(
+      table.runId,
+      table.fence,
+      table.type,
+      table.sequence,
+    ),
+    uniqueIndex("run_event_runner_sequence_unique")
+      .on(table.runId, table.fence, table.sequence)
+      .where(
+        sql`${table.type} in ('started', 'succeeded', 'failed', 'cancelled')`,
+      ),
+    index("run_event_run_created_idx").on(table.runId, table.eventId),
+    foreignKey({
+      columns: [table.runId],
+      foreignColumns: [runs.id],
+      name: "run_event_belongs_to_run",
+    }).onDelete("restrict"),
+  ],
+);
+
 export type EngagementRow = typeof engagements.$inferSelect;
 export type ScopeRevisionRow = typeof scopeRevisions.$inferSelect;
 export type OperatorCommandIdempotencyRow =
@@ -415,3 +628,6 @@ export type ActionWarningAcknowledgmentRow =
   typeof actionWarningAcknowledgments.$inferSelect;
 export type ActionCoveredDestinationRow =
   typeof actionCoveredDestinations.$inferSelect;
+export type RunRow = typeof runs.$inferSelect;
+export type RunLeaseRow = typeof runLeases.$inferSelect;
+export type RunEventRow = typeof runEvents.$inferSelect;

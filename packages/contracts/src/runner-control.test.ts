@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   AcceptHeartbeatInputSchema,
   AcceptHeartbeatResultSchema,
+  CompletePersistedRunInputSchema,
   EvaluateRunEventSequenceInputSchema,
   EvaluateRunEventSequenceResultSchema,
   FencingTokenSchema,
   IncrementFenceResultSchema,
   LeaseAuthorityResultSchema,
+  PersistedRunSchema,
   PositiveFencingTokenSchema,
   RunnerEventDigestSchema,
   RunnerLeaseSchema,
@@ -250,5 +252,41 @@ describe("runner control contracts", () => {
         nextEventSequence: 2,
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts a queued persisted Run and rejects a control-plane completion without runId", () => {
+    expect(
+      PersistedRunSchema.safeParse({
+        contractVersion: 1,
+        id: "run-fixture-1",
+        actionId: "action-fixture-1",
+        engagementId: "engagement-fixture-1",
+        attempt: 1,
+        state: "queued",
+        currentLeaseId: null,
+        currentFence: "0",
+        terminalKind: null,
+        terminalReason: null,
+        createdAt: "2026-08-09T12:00:00.000Z",
+        updatedAt: "2026-08-09T12:00:00.000Z",
+      }).success,
+    ).toBe(true);
+    expect(
+      CompletePersistedRunInputSchema.safeParse({
+        presented: null,
+        terminalKind: "failed",
+        reason: "runner_lost",
+        serverNow: "2026-08-09T12:00:30.000Z",
+      }).success,
+    ).toBe(false);
+    expect(
+      CompletePersistedRunInputSchema.safeParse({
+        presented: null,
+        runId: "run-fixture-1",
+        terminalKind: "failed",
+        reason: "runner_lost",
+        serverNow: "2026-08-09T12:00:30.000Z",
+      }).success,
+    ).toBe(true);
   });
 });
