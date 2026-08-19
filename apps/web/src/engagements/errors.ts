@@ -1,5 +1,7 @@
 import {
+  ActionMutationErrorSchema,
   EngagementMutationErrorSchema,
+  type ActionMutationError,
   type EngagementMutationError,
 } from "@blackglass/contracts";
 
@@ -19,6 +21,23 @@ export const ENGAGEMENT_MUTATION_ERROR_COPY = {
   request_failed: ENGAGEMENT_MUTATION_ERROR_MESSAGE,
 } as const;
 
+export const ACTION_MUTATION_ERROR_COPY = {
+  action_not_found: "That action is no longer available.",
+  invalid_action_transition: "That action is not valid now.",
+  action_already_queued: "That action is already queued.",
+  capability_error_not_overridable: "This action cannot run. Continue is not available.",
+  snapshot_binding_mismatch: "The action snapshot changed. Showing the latest revision.",
+  invalid_run_transition: "That run action is not valid now.",
+  run_not_retryable: "That run cannot be retried.",
+} as const;
+
+const OPERATOR_MUTATION_ERROR_COPY = {
+  ...ENGAGEMENT_MUTATION_ERROR_COPY,
+  ...ACTION_MUTATION_ERROR_COPY,
+} as const;
+
+export type OperatorMutationErrorCode = keyof typeof OPERATOR_MUTATION_ERROR_COPY;
+
 export class EngagementsQueryError extends Error {
   constructor() {
     super(ENGAGEMENTS_QUERY_ERROR_MESSAGE);
@@ -34,20 +53,22 @@ export class EngagementDetailQueryError extends Error {
 }
 
 export class EngagementMutationClientError extends Error {
-  readonly code: keyof typeof ENGAGEMENT_MUTATION_ERROR_COPY;
+  readonly code: OperatorMutationErrorCode;
   readonly currentRevision?: number;
   readonly resourceId?: string;
+  readonly resourceType?: "action" | "engagement";
 
   constructor(
-    code: keyof typeof ENGAGEMENT_MUTATION_ERROR_COPY,
-    details?: { currentRevision: number; resourceId: string },
+    code: OperatorMutationErrorCode,
+    details?: { currentRevision: number; resourceId: string; resourceType?: "action" | "engagement" },
   ) {
-    super(ENGAGEMENT_MUTATION_ERROR_COPY[code]);
+    super(OPERATOR_MUTATION_ERROR_COPY[code]);
     this.name = "EngagementMutationClientError";
     this.code = code;
     if (details) {
       this.currentRevision = details.currentRevision;
       this.resourceId = details.resourceId;
+      if (details.resourceType !== undefined) this.resourceType = details.resourceType;
     }
   }
 }
@@ -66,9 +87,11 @@ export function isRevisionConflict(
 }
 
 export function parseEngagementMutationError(payload: unknown): EngagementMutationClientError {
-  const parsed = EngagementMutationErrorSchema.safeParse(payload);
-  if (!parsed.success) return new EngagementMutationClientError("request_failed");
-  return mutationErrorFromContract(parsed.data);
+  const engagement = EngagementMutationErrorSchema.safeParse(payload);
+  if (engagement.success) return mutationErrorFromContract(engagement.data);
+  const action = ActionMutationErrorSchema.safeParse(payload);
+  if (action.success) return mutationErrorFromActionContract(action.data);
+  return new EngagementMutationClientError("request_failed");
 }
 
 export function mutationErrorFromContract(
@@ -78,6 +101,20 @@ export function mutationErrorFromContract(
     return new EngagementMutationClientError("revision_conflict", {
       currentRevision: error.currentRevision,
       resourceId: error.resourceId,
+      resourceType: "engagement",
+    });
+  }
+  return new EngagementMutationClientError(error.code);
+}
+
+export function mutationErrorFromActionContract(
+  error: ActionMutationError,
+): EngagementMutationClientError {
+  if (error.code === "revision_conflict") {
+    return new EngagementMutationClientError("revision_conflict", {
+      currentRevision: error.currentRevision,
+      resourceId: error.resourceId,
+      resourceType: error.resourceType,
     });
   }
   return new EngagementMutationClientError(error.code);

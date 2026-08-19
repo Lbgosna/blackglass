@@ -4,8 +4,10 @@ interface EngagementWorkspaceContextValue {
   announce: (message: string) => void;
   clearNotice: () => void;
   engagementFilter: string;
+  focusRunsToken: number;
   notice: string | null;
   openCreate: () => void;
+  requestFocusRuns: () => void;
   setEngagementFilter: (value: string) => void;
 }
 
@@ -19,6 +21,7 @@ export function EngagementWorkspaceProvider({
   openCreate: () => void;
 }) {
   const [engagementFilter, setEngagementFilter] = useState("");
+  const [focusRunsToken, setFocusRunsToken] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const announce = useCallback((message: string) => {
     setNotice(message);
@@ -26,16 +29,29 @@ export function EngagementWorkspaceProvider({
   const clearNotice = useCallback(() => {
     setNotice(null);
   }, []);
+  const requestFocusRuns = useCallback(() => {
+    setFocusRunsToken((current) => current + 1);
+  }, []);
   const value = useMemo(
     () => ({
       announce,
       clearNotice,
       engagementFilter,
+      focusRunsToken,
       notice,
       openCreate,
+      requestFocusRuns,
       setEngagementFilter,
     }),
-    [announce, clearNotice, engagementFilter, notice, openCreate],
+    [
+      announce,
+      clearNotice,
+      engagementFilter,
+      focusRunsToken,
+      notice,
+      openCreate,
+      requestFocusRuns,
+    ],
   );
 
   return (

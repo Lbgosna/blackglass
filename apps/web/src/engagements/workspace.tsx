@@ -15,14 +15,11 @@ import {
   formatEngagementTimestamp,
 } from "./format.js";
 import { partitionEngagements, useEngagementDetailQuery, useEngagementsQuery } from "./query.js";
+import { ActionPlanner } from "./action-planner.js";
 import { SavedScopeEditor } from "./scope-editor.js";
 import { useEngagementWorkspace } from "./workspace-context.js";
 
 const NEXT_SURFACES = [
-  {
-    title: "Runs",
-    detail: "Choose an action, receive at most one warning, then queue, cancel, or retry. Not connected yet.",
-  },
   {
     title: "Evidence",
     detail: "Inspect captured output and services from completed work. Not connected yet.",
@@ -237,6 +234,10 @@ function EngagementDetail({ engagement }: { engagement: Engagement }) {
         <span className="mx-2 text-border">·</span>
         <span className="font-mono">rev {displayed.revision}</span>
       </p>
+      <ActionPlanner
+        archived={displayed.status === "archived"}
+        engagementId={displayed.id}
+      />
       <SavedScopeEditor
         archived={displayed.status === "archived"}
         engagementId={displayed.id}

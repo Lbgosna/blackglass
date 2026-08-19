@@ -1,0 +1,169 @@
+import type {
+  ActionSnapshot,
+  CanonicalTarget,
+  PersistedAction,
+  SavedScopeRule,
+  WarningReasonCode,
+} from "@blackglass/contracts";
+import { normalizeTarget } from "@blackglass/domain";
+
+import { createDraftScopeRule, SCOPE_TARGET_FIELD_ERROR } from "./scope-rules.js";
+
+export const EMPTY_TARGETS_ERROR = "Enter at least one target.";
+export const DUPLICATE_TARGETS_ERROR = "Duplicate targets are not allowed.";
+
+export type ParsedPlannedTargets =
+  | { ok: true; targets: string[] }
+  | { ok: false; message: string };
+
+export function parsePlannedTargets(raw: string): ParsedPlannedTargets {
+  const tokens: string[] = [];
+  for (const part of raw.split(/[\n,]+/)) {
+    const token = part.trim();
+    if (token.length === 0) continue;
+    tokens.push(token);
+  }
+
+  if (tokens.length === 0) return { ok: false, message: EMPTY_TARGETS_ERROR };
+
+  const seenRaw = new Set<string>();
+  const seenCanonical = new Set<string>();
+  for (const token of tokens) {
+    if (seenRaw.has(token)) return { ok: false, message: DUPLICATE_TARGETS_ERROR };
+    seenRaw.add(token);
+
+    const normalized = normalizeTarget(token);
+    if (!normalized.ok) return { ok: false, message: SCOPE_TARGET_FIELD_ERROR };
+
+    const identity = formatCanonicalTarget(normalized.target);
+    if (seenCanonical.has(identity)) return { ok: false, message: DUPLICATE_TARGETS_ERROR };
+    seenCanonical.add(identity);
+  }
+
+  return { ok: true, targets: tokens };
+}
+
+export function latestActionSnapshot(action: PersistedAction): ActionSnapshot {
+  return action.action.snapshots.reduce((latest, snapshot) =>
+    snapshot.version > latest.version ? snapshot : latest,
+  );
+}
+
+export function warningReasonCodes(action: PersistedAction): readonly WarningReasonCode[] {
+  return action.action.pendingWarning?.reasonCodes ?? latestActionSnapshot(action).warningState.reasonCodes;
+}
+
+export function warningReasonSummary(reasonCodes: readonly WarningReasonCode[]): string {
+  return reasonCodes.map(warningReasonCopy).join(" ");
+}
+
+export function warningReasonCopy(code: WarningReasonCode): string {
+  switch (code) {
+    case "outside_scope":
+      return "At least one target is outside the saved scope.";
+    case "large_target_set":
+      return "This action covers a large target set.";
+    case "risk_tier_t0":
+      return "This action is labelled T0.";
+    case "risk_tier_t1":
+      return "This action is labelled T1.";
+    case "risk_tier_t2":
+      return "This action is labelled T2.";
+    case "risk_tier_t3":
+      return "This action is labelled T3.";
+    case "risk_tier_t4":
+      return "This action is labelled T4.";
+  }
+}
+
+export function formatCanonicalTarget(target: CanonicalTarget): string {
+  switch (target.kind) {
+    case "ip":
+      return target.zone === null ? target.address : `${target.address}%${target.zone}`;
+    case "cidr":
+      return `${target.network}/${String(target.prefixLength)}`;
+    case "hostname":
+      return target.hostname;
+    case "url":
+      return target.url;
+  }
+}
+
+export function capabilityErrorCopy(
+  code: NonNullable<PersistedAction["action"]["capabilityErrorCode"]>,
+): string {
+  switch (code) {
+    case "required_resolution_unavailable":
+      return "Required DNS resolution is unavailable. This is not a warning and cannot be continued.";
+    case "target_set_unrepresentable":
+      return "The requested target set cannot be represented. This is not a warning and cannot be continued.";
+    case "capability_error":
+      return "This action cannot run. Continue is not available.";
+  }
+}
+
+function ruleIdentity(rule: SavedScopeRule): string {
+  switch (rule.kind) {
+    case "ip":
+      return `ip:${formatCanonicalTarget(rule.target)}:${formatPortIdentity(rule.portRanges)}`;
+    case "cidr":
+      return `cidr:${formatCanonicalTarget(rule.target)}:${formatPortIdentity(rule.portRanges)}`;
+    case "domain":
+      return `domain:${rule.target.hostname}:${String(rule.includeSubdomains)}:${formatPortIdentity(rule.portRanges)}`;
+    case "url-origin":
+      return `url-origin:${formatUrlOriginIdentity(rule)}:${formatPortIdentity(rule.portRanges)}`;
+  }
+}
+
+function formatPortIdentity(ranges: SavedScopeRule["portRanges"]): string {
+  if (ranges === undefined) return "";
+  return ranges.map((range) => `${String(range.from)}-${String(range.to)}`).join(",");
+}
+
+function formatUrlOriginIdentity(rule: Extract<SavedScopeRule, { kind: "url-origin" }>): string {
+  if ("hostname" in rule.origin.host) {
+    return `${rule.origin.scheme}:${rule.origin.host.hostname}:${String(rule.origin.effectivePort)}`;
+  }
+  const zone = "zone" in rule.origin.host ? rule.origin.host.zone : null;
+  return `${rule.origin.scheme}:${rule.origin.host.address}%${zone ?? ""}:${String(rule.origin.effectivePort)}`;
+}
+
+function draftRulesFromRawTargets(rawTargets: readonly string[]): SavedScopeRule[] | undefined {
+  const rules: SavedScopeRule[] = [];
+  for (const rawTarget of rawTargets) {
+    const drafted = createDraftScopeRule({
+      includeSubdomains: false,
+      portRanges: "",
+      rawTarget,
+    });
+    if (!drafted.ok) return undefined;
+    rules.push(drafted.rule);
+  }
+  return rules;
+}
+
+export function buildAddScopeAndRunRules(
+  activeRules: readonly SavedScopeRule[],
+  action: PersistedAction,
+  rawTargets: readonly string[],
+): SavedScopeRule[] {
+  const fromCanonical: SavedScopeRule[] = [];
+  let ambiguous = false;
+  for (const target of latestActionSnapshot(action).canonicalTargets) {
+    const drafted = createDraftScopeRule({
+      includeSubdomains: false,
+      portRanges: "",
+      rawTarget: formatCanonicalTarget(target),
+    });
+    if (!drafted.ok) {
+      ambiguous = true;
+      break;
+    }
+    fromCanonical.push(drafted.rule);
+  }
+
+  const drafted = ambiguous ? draftRulesFromRawTargets(rawTargets) : fromCanonical;
+  const additions = drafted ?? [];
+  const existing = new Set(activeRules.map(ruleIdentity));
+  return [...activeRules, ...additions.filter((rule) => !existing.has(ruleIdentity(rule)))];
+}
