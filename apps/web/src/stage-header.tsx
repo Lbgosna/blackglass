@@ -70,7 +70,7 @@ function GlobalStageActions() {
     <div className="flex shrink-0 items-center gap-1">
       <button
         type="button"
-        className="inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-[13px] font-semibold text-primary-foreground outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-[13px] font-semibold text-primary-foreground outline-none hover:brightness-[1.06] focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
         onClick={openCreate}
       >
         New engagement
@@ -105,7 +105,7 @@ function EngagementStageActions({ engagementId }: { engagementId: string }) {
       </span>
       <button
         type="button"
-        className="inline-flex min-h-11 items-center rounded-md px-2 text-[13px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-h-11 items-center rounded-md px-2 text-[13px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
         onClick={() => requestFocusRuns()}
       >
         New run
@@ -113,7 +113,7 @@ function EngagementStageActions({ engagementId }: { engagementId: string }) {
       <button
         type="button"
         disabled={pending}
-        className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-[13px] font-semibold text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-[13px] font-semibold text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:min-h-8"
         onClick={() => {
           if (isActive) {
             archive.mutate({

@@ -112,7 +112,7 @@ function SidebarActions({
 
   return (
     <div className="flex items-center gap-0.5 px-2 py-1.5">
-      <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sidebar-muted-foreground focus-within:bg-sidebar-hover">
+      <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sidebar-muted-foreground focus-within:bg-sidebar-hover md:min-h-8">
         <SearchIcon />
         <span className="sr-only">Filter engagements</span>
         <input
@@ -127,7 +127,7 @@ function SidebarActions({
       <button
         type="button"
         aria-label="New engagement"
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring md:size-8"
         onClick={() => {
           onNavigate();
           onCreate();
@@ -152,7 +152,7 @@ function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
                 activeProps={{
                   className: "bg-sidebar-active text-sidebar-foreground",
                 }}
-                className="flex min-h-11 items-center rounded-md px-3 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-11 items-center rounded-md px-3 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
                 inactiveProps={{
                   className:
                     "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
@@ -176,7 +176,7 @@ function SidebarFooter({ onNavigate }: { onNavigate: () => void }) {
       to="/settings"
       activeOptions={{ exact: true }}
       activeProps={{ className: "bg-sidebar-active text-sidebar-foreground" }}
-      className="flex min-h-14 items-center px-5 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="flex min-h-11 items-center px-5 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-10"
       inactiveProps={{
         className:
           "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
@@ -261,7 +261,7 @@ export function DashboardPage() {
           </p>
         </header>
 
-        <section className="rounded-[10px] border border-border px-4 py-4">
+        <section className="rounded-[10px] border border-border bg-card px-4 py-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="m-0 text-[13px] font-semibold">Control plane</h2>
             <Button variant="quiet" onClick={retrySystemStatus}>
@@ -306,7 +306,7 @@ export function DashboardPage() {
         </section>
 
         {recent ? (
-          <section className="mt-4 rounded-[10px] border border-border px-4 py-4">
+          <section className="mt-4 rounded-[10px] border border-border bg-card px-4 py-4">
             <h2 className="m-0 text-[13px] font-semibold">Current engagement</h2>
             <p className="mt-2 mb-3 text-[13px] text-muted-foreground">
               Continue from the selected engagement. Targets and runs are not connected yet.
@@ -314,7 +314,7 @@ export function DashboardPage() {
             <Link
               to="/engagements/$engagementId"
               params={{ engagementId: recent.id }}
-              className="inline-flex min-h-11 items-center text-[13px] font-semibold text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex min-h-11 items-center text-[13px] font-semibold text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
             >
               {recent.name}
             </Link>
@@ -343,7 +343,7 @@ function mostRecentlyUpdated<T extends { id: string; updatedAt: string }>(
 function EmptyEngagementPrompt({ onCreate }: { onCreate: () => void }) {
   const navigate = useNavigate();
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-dashed border-border px-4 py-4">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] px-1 py-2">
       <p className="m-0 text-[13px] text-muted-foreground">
         Open Engagements to load records from the API, or create one here.
       </p>

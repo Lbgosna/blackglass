@@ -1,13 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  DEFAULT_THEME_FAMILY,
+  THEME_FAMILIES,
+  THEME_FAMILY_STORAGE_KEY,
   THEME_STORAGE_KEY,
   applyTheme,
   listenForSystemTheme,
+  listenForThemeFamilyStorage,
   listenForThemeStorage,
+  parseThemeFamily,
   parseThemePreference,
+  readThemeFamily,
   readThemePreference,
   resolveTheme,
+  storeThemeFamily,
   storeThemePreference,
   suppressThemeTransitions,
 } from "./theme.js";
@@ -58,8 +65,65 @@ describe("theme preferences", () => {
     expect(resolveTheme("system", true)).toBe("dark");
     expect(resolveTheme("system", false)).toBe("light");
     expect(applyTheme(root, "light", true)).toBe("light");
-    expect(root.dataset).toEqual({ theme: "light", themePreference: "light" });
+    expect(root.dataset).toEqual({
+      theme: "light",
+      themeFamily: DEFAULT_THEME_FAMILY,
+      themePreference: "light",
+    });
     expect(root.style.colorScheme).toBe("light");
+  });
+});
+
+describe("theme families", () => {
+  it("accepts only the six mock families and defaults to smoked", () => {
+    expect(THEME_FAMILIES).toEqual(["smoked", "void", "instrument", "grove", "ember", "iris"]);
+    expect(parseThemeFamily("void")).toBe("void");
+    expect(parseThemeFamily("iris")).toBe("iris");
+    expect(parseThemeFamily("mint")).toBeNull();
+    expect(parseThemeFamily("dark")).toBeNull();
+    expect(parseThemeFamily(null)).toBeNull();
+    expect(readThemeFamily({ getItem: () => null, setItem: vi.fn() })).toBe("smoked");
+    expect(readThemeFamily({ getItem: () => "sepia", setItem: vi.fn() })).toBe("smoked");
+    expect(
+      readThemeFamily({
+        getItem: () => {
+          throw new Error("blocked");
+        },
+        setItem: vi.fn(),
+      }),
+    ).toBe("smoked");
+  });
+
+  it("applies family independently of light and dark", () => {
+    const root = {
+      classList: { add: vi.fn(), remove: vi.fn() },
+      dataset: {} as DOMStringMap,
+      style: { colorScheme: "" },
+    };
+
+    expect(applyTheme(root, "dark", false, "ember")).toBe("dark");
+    expect(root.dataset).toEqual({
+      theme: "dark",
+      themeFamily: "ember",
+      themePreference: "dark",
+    });
+    expect(applyTheme(root, "system", false, "grove")).toBe("light");
+    expect(root.dataset.themeFamily).toBe("grove");
+    expect(root.dataset.theme).toBe("light");
+  });
+
+  it("keeps family selection usable when storage writes fail", () => {
+    expect(() =>
+      storeThemeFamily(
+        {
+          getItem: vi.fn(),
+          setItem: () => {
+            throw new Error("full");
+          },
+        },
+        "void",
+      ),
+    ).not.toThrow();
   });
 });
 
@@ -104,6 +168,33 @@ describe("theme synchronization", () => {
     listener?.({ key: null, newValue: null } as StorageEvent);
     expect(onPreference).toHaveBeenNthCalledWith(2, "system");
     expect(onPreference).toHaveBeenNthCalledWith(3, "system");
+
+    cleanup();
+    expect(events.removeEventListener).toHaveBeenCalledWith("storage", listener);
+  });
+
+  it("accepts valid cross-tab families, ignores malformed values, and resets to smoked", () => {
+    let listener: ((event: StorageEvent) => void) | undefined;
+    const events = {
+      addEventListener: vi.fn((_type: "storage", next: (event: StorageEvent) => void) => {
+        listener = next;
+      }),
+      removeEventListener: vi.fn(),
+    };
+    const onFamily = vi.fn();
+
+    const cleanup = listenForThemeFamilyStorage(events, onFamily);
+    listener?.({ key: THEME_FAMILY_STORAGE_KEY, newValue: "mint" } as StorageEvent);
+    listener?.({ key: THEME_STORAGE_KEY, newValue: "void" } as StorageEvent);
+    expect(onFamily).not.toHaveBeenCalled();
+
+    listener?.({ key: THEME_FAMILY_STORAGE_KEY, newValue: "iris" } as StorageEvent);
+    expect(onFamily).toHaveBeenCalledWith("iris");
+
+    listener?.({ key: THEME_FAMILY_STORAGE_KEY, newValue: null } as StorageEvent);
+    listener?.({ key: null, newValue: null } as StorageEvent);
+    expect(onFamily).toHaveBeenNthCalledWith(2, "smoked");
+    expect(onFamily).toHaveBeenNthCalledWith(3, "smoked");
 
     cleanup();
     expect(events.removeEventListener).toHaveBeenCalledWith("storage", listener);

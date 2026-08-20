@@ -374,7 +374,7 @@ function WarningCard({
         </Button>
       </div>
       <details className="mt-2">
-        <summary className="min-h-11 cursor-pointer text-[12px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <summary className="min-h-11 cursor-pointer text-[12px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8">
           Normalized targets
         </summary>
         <ul className="mt-1 mb-0 list-none p-0">

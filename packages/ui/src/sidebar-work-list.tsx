@@ -50,12 +50,12 @@ const compactVisibilityStyle: CSSProperties = {
 
 function surfaceClasses({ background, current, selected }: SidebarSurfaceState): string {
   return cn(
-    "sidebar-work-row group flex rounded-lg border border-transparent transition-colors",
-    current && "border-sidebar-border bg-sidebar-active text-sidebar-foreground",
-    !current && selected && "border-sidebar-border bg-sidebar-selected text-sidebar-foreground",
+    "sidebar-work-row group flex rounded-[10px] border-0 bg-transparent transition-colors",
+    current && "bg-sidebar-active text-sidebar-foreground",
+    !current && selected && "bg-sidebar-selected text-sidebar-foreground",
     !current &&
       !selected &&
-      "hover:border-sidebar-border hover:bg-sidebar-hover focus-within:border-sidebar-border focus-within:bg-sidebar-hover",
+      "hover:bg-sidebar-hover focus-within:bg-sidebar-hover",
     background && !current && !selected && "text-sidebar-muted-foreground",
   );
 }
@@ -66,7 +66,7 @@ export function SidebarRowAction({ className, label, type = "button", ...props }
       type={type}
       aria-label={label}
       className={cn(
-        "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-xs font-bold text-sidebar-muted-foreground outline-none hover:bg-sidebar-control hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-xs font-semibold text-sidebar-muted-foreground outline-none hover:bg-sidebar-control hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-8 md:min-w-8",
         className,
       )}
       {...props}
@@ -99,10 +99,10 @@ export function SidebarCardRow({
       <a
         href={href}
         aria-current={current ? "page" : undefined}
-        className="flex min-h-[78px] min-w-0 flex-1 flex-col justify-center rounded-lg px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex min-h-[78px] min-w-0 flex-1 flex-col justify-center rounded-[10px] px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={onNavigate}
       >
-        <span className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-sidebar-muted-foreground uppercase">
+        <span className="flex items-center gap-2 text-[11px] font-medium text-sidebar-muted-foreground">
           <span className="min-w-0 flex-1 truncate">{context}</span>
           <span className="shrink-0 normal-case" aria-label={`Status: ${status}`}>
             {status}
@@ -110,7 +110,7 @@ export function SidebarCardRow({
         </span>
         <span
           className={cn(
-            "mt-1 truncate text-sm font-bold text-sidebar-foreground",
+            "mt-1 truncate text-[13px] font-semibold text-sidebar-foreground",
             background &&
               !current &&
               !selected &&
@@ -154,7 +154,7 @@ export function SidebarCompactRow({
       <a
         href={href}
         aria-current={current ? "page" : undefined}
-        className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[10px] px-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-9"
         onClick={onNavigate}
       >
         {leading && <span className="shrink-0 text-sidebar-muted-foreground">{leading}</span>}
@@ -162,7 +162,7 @@ export function SidebarCompactRow({
           <span className="flex items-center gap-2">
             <span
               className={cn(
-                "min-w-0 flex-1 truncate text-sm font-bold text-sidebar-foreground",
+                "min-w-0 flex-1 truncate text-[13px] font-semibold text-sidebar-foreground",
                 background &&
                   !current &&
                   !selected &&
@@ -234,7 +234,7 @@ export function SidebarShelf<Item>({
         type="button"
         aria-controls={contentId}
         aria-expanded={open}
-        className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-bold tracking-wide text-sidebar-muted-foreground uppercase outline-none hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] font-medium tracking-wide text-sidebar-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-8"
         onClick={() => setOpen((current) => !current)}
       >
         <ChevronDown
@@ -259,7 +259,7 @@ export function SidebarShelf<Item>({
         {hasMore && (
           <button
             type="button"
-            className="mt-1 flex min-h-11 w-full items-center justify-center rounded-md px-3 text-xs font-bold text-sidebar-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="mt-1 flex min-h-11 w-full items-center justify-center rounded-md px-3 text-xs font-semibold text-sidebar-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-8"
             onClick={() => setVisibleCount((current) => Math.min(current + pageSize, items.length))}
           >
             Show more ({nextBatch})

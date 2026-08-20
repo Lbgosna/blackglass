@@ -192,7 +192,7 @@ function EngagementSummaryLink({ engagement }: { engagement: Engagement }) {
     <Link
       to="/engagements/$engagementId"
       params={{ engagementId: engagement.id }}
-      className="flex min-h-14 items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-foreground outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
+      className="surface-row flex min-h-14 items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="min-w-0">
         <span className="block truncate text-[13px] font-semibold tracking-[-0.02em]">
@@ -258,12 +258,12 @@ function EngagementDetail({ engagement }: { engagement: Engagement }) {
         </dl>
         <section aria-label="Next in this engagement">
           <h2 className="m-0 px-1 text-[13px] font-semibold">Next in this engagement</h2>
-          <ul className="mt-2 mb-0 list-none divide-y divide-border rounded-[10px] border border-border p-0">
+          <ul className="mt-2 mb-0 list-none p-0">
             {NEXT_SURFACES.map((surface) => (
               <li key={surface.title}>
                 <button
                   type="button"
-                  className="flex min-h-11 w-full flex-col items-start justify-center px-3 py-2 text-left outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className="surface-row flex min-h-11 w-full flex-col items-start justify-center rounded-[10px] px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:min-h-8"
                   onClick={() => announce("Not connected yet")}
                 >
                   <span className="text-[13px] font-semibold">{surface.title}</span>

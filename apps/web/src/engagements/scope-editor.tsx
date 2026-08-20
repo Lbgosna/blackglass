@@ -166,7 +166,7 @@ function ScopeEditorBody({
     <div>
       {revision === null ? (
         <section
-          className="rounded-[10px] border border-dashed border-border px-3 py-3"
+          className="rounded-[10px] px-1 py-2"
           data-empty-variant="default"
         >
           <h3 className="m-0 text-[13px] font-semibold text-foreground">No saved scope yet</h3>
@@ -311,12 +311,12 @@ function ScopeRuleList({
   return (
     <div className="mt-3">
       <h3 className="m-0 text-[11px] font-medium text-muted-foreground">{caption}</h3>
-      <ul className="mt-2 mb-0 list-none divide-y divide-border rounded-[10px] border border-border p-0">
+      <ul className="mt-2 mb-0 list-none p-0">
         {rules.map((rule) => {
           const target = formatScopeRuleTarget(rule);
           const ports = formatScopePortRanges(rule.portRanges);
           return (
-            <li key={rule.id} className="flex min-h-11 items-center justify-between gap-3 px-3 py-2">
+            <li key={rule.id} className="surface-row flex min-h-11 items-center justify-between gap-3 rounded-[10px] px-3 py-2 md:min-h-8">
               <div className="min-w-0">
                 <p className="m-0 truncate font-mono text-[13px] text-foreground">{target}</p>
                 <p className="mt-0.5 mb-0 text-[11px] text-muted-foreground">
@@ -333,7 +333,7 @@ function ScopeRuleList({
               {onRemove && (
                 <button
                   type="button"
-                  className="inline-flex min-h-11 shrink-0 items-center rounded-md px-3 text-[13px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex min-h-11 shrink-0 items-center rounded-md px-3 text-[13px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-8"
                   onClick={() => onRemove(rule.id)}
                 >
                   Remove
@@ -373,7 +373,7 @@ function Field({
 
 function fieldClassName(invalid: boolean) {
   return cn(
-    "min-h-11 w-full rounded-md border bg-transparent px-2.5 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "min-h-11 w-full rounded-md border bg-transparent px-2.5 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-8",
     invalid ? "border-destructive" : "border-input",
   );
 }
