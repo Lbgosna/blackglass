@@ -1,0 +1,21 @@
+{
+  "name": "@blackglass/runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Blackglass native host runner — fake-action slice for M3",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@blackglass/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}
