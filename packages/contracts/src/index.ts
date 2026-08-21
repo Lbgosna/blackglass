@@ -18,3 +18,4 @@ export {
 } from "./system-status.js";
 export * from "./saved-scope.js";
 export * from "./target-normalization.js";
+export * from "./nmap.js";
